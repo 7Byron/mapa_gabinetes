@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../class/gabinete.dart';
 import '../banco_dados/database_helper.dart';
 
@@ -13,12 +14,12 @@ class CadastroGabinete extends StatefulWidget {
 
 class CadastroGabineteState extends State<CadastroGabinete> {
   final _formKey = GlobalKey<FormState>();
-  final _setorController = TextEditingController(); // Controlador para Setor/Piso
-  final _nomeController = TextEditingController(); // Controlador para Número do Gabinete
-  final _especialidadesController = TextEditingController(); // Controlador para Especialidades Permitidas
+  final _setorController = TextEditingController();
+  final _nomeController = TextEditingController();
+  final _especialidadesController = TextEditingController();
 
-  List<String> _setoresDisponiveis = []; // Setores/Pisos disponíveis
-  List<String> _especialidadesDisponiveis = []; // Especialidades disponíveis
+  List<String> _setoresDisponiveis = [];
+  List<String> _especialidadesDisponiveis = [];
 
   @override
   void initState() {
@@ -36,20 +37,18 @@ class CadastroGabineteState extends State<CadastroGabinete> {
     final gabinetes = await DatabaseHelper.buscarGabinetes();
 
     setState(() {
-      _setoresDisponiveis = {
-        ...gabinetes.map((g) => g.setor)
-      }.toList(); // Garante valores únicos
+      _setoresDisponiveis = {...gabinetes.map((g) => g.setor)}.toList();
 
-      _especialidadesDisponiveis = {
-        ...gabinetes.expand((g) => g.especialidadesPermitidas)
-      }.toList(); // Combina listas de especialidades e remove duplicados
+      _especialidadesDisponiveis =
+          {...gabinetes.expand((g) => g.especialidadesPermitidas)}.toList();
     });
   }
 
-  void _salvarGabinete() {
+  Future<void> _salvarGabinete() async {
     if (_formKey.currentState!.validate()) {
       final gabinete = Gabinete(
-        id: widget.gabinete?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        id: widget.gabinete?.id ??
+            DateTime.now().millisecondsSinceEpoch.toString(),
         setor: _setorController.text,
         nome: _nomeController.text,
         especialidadesPermitidas: _especialidadesController.text
@@ -58,96 +57,121 @@ class CadastroGabineteState extends State<CadastroGabinete> {
             .toList(),
       );
 
-      Navigator.pop(context, gabinete);
+      // Salva ou atualiza o gabinete no banco de dados
+      if (widget.gabinete != null) {
+        await DatabaseHelper.atualizarGabinete(gabinete);
+      } else {
+        await DatabaseHelper.salvarGabinete(gabinete);
+      }
+
+      Navigator.pop(context, gabinete); // Retorna o gabinete atualizado
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.save),
-            onPressed: _salvarGabinete,
+    return WillPopScope(
+        onWillPop: () async {
+          await _salvarGabinete(); // Chama o método para salvar ao voltar
+          return true; // Permite a navegação para trás
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(
+                widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete'),
           ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              // Campo para o setor/piso com opções do banco de dados
-              TextFormField(
-                controller: _setorController,
-                decoration: InputDecoration(
-                  labelText: 'Setor / Piso',
-                  hintText: 'Exemplo: Piso 1, Andar Térreo',
+          body: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Form(
+                  key: _formKey,
+                  child: ListView(
+                    children: [
+                      // Campo para Setor / Piso com TypeAheadField estilizado
+                      TypeAheadField<String>(
+                        suggestionsCallback: (pattern) {
+                          return _setoresDisponiveis
+                              .where((setor) => setor
+                                  .toLowerCase()
+                                  .contains(pattern.toLowerCase()))
+                              .toList();
+                        },
+                        builder: (context, controller, focusNode) {
+                          return TextField(
+                            controller: _setorController,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'Setor / Piso',
+                              hintText: 'Exemplo: Piso 1, Andar Térreo',
+                              border: OutlineInputBorder(), // Borda quadrada
+                            ),
+                          );
+                        },
+                        itemBuilder: (context, suggestion) {
+                          return ListTile(
+                            title: Text(suggestion),
+                          );
+                        },
+                        onSelected: (suggestion) {
+                          _setorController.text = suggestion;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Campo para o Número do Gabinete
+                      TextFormField(
+                        controller: _nomeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Número do Gabinete',
+                          border: OutlineInputBorder(), // Borda quadrada
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Informe o número do gabinete';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Campo para Especialidades Permitidas com TypeAheadField estilizado
+                      TypeAheadField<String>(
+                        suggestionsCallback: (pattern) {
+                          return _especialidadesDisponiveis
+                              .where((especialidade) => especialidade
+                                  .toLowerCase()
+                                  .contains(pattern.toLowerCase()))
+                              .toList();
+                        },
+                        builder: (context, controller, focusNode) {
+                          return TextField(
+                            controller: _especialidadesController,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'Especialidades Permitidas',
+                              hintText:
+                                  'Exemplo: Ortopedia, ORL, Medicina Dentária',
+                              border: OutlineInputBorder(), // Borda quadrada
+                            ),
+                          );
+                        },
+                        itemBuilder: (context, suggestion) {
+                          return ListTile(
+                            title: Text(suggestion),
+                          );
+                        },
+                        onSelected: (suggestion) {
+                          _especialidadesController.text = suggestion;
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Informe o setor / piso';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  if (!_setoresDisponiveis.contains(value)) {
-                    setState(() {
-                      _setoresDisponiveis.add(value);
-                    });
-                  }
-                },
               ),
-              const SizedBox(height: 16),
-
-              // Campo para o número do gabinete
-              TextFormField(
-                controller: _nomeController,
-                decoration: InputDecoration(labelText: 'Número do Gabinete'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Informe o número do gabinete';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Campo para especialidades permitidas com opções do banco de dados
-              TextFormField(
-                controller: _especialidadesController,
-                decoration: InputDecoration(
-                  labelText: 'Especialidades Permitidas',
-                  hintText: 'Exemplo: Ortopedia, ORL, Medicina Dentária',
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Informe pelo menos uma especialidade';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  final novasEspecialidades = value
-                      .split(',')
-                      .map((e) => e.trim())
-                      .toList();
-
-                  for (final especialidade in novasEspecialidades) {
-                    if (!_especialidadesDisponiveis.contains(especialidade)) {
-                      setState(() {
-                        _especialidadesDisponiveis.add(especialidade);
-                      });
-                    }
-                  }
-                },
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 }

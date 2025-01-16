@@ -84,36 +84,41 @@ class ListaGabinetesState extends State<ListaGabinetes> {
           ? Center(child: CircularProgressIndicator())
           : gabinetes.isEmpty
           ? Center(child: Text('Nenhum gabinete encontrado'))
-          : ListView.builder(
-        itemCount: gabinetes.length,
-        itemBuilder: (context, index) {
-          final gabinete = gabinetes[index];
-          return Card(
-            margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: ListTile(
-              title: Text('Setor: ${gabinete.setor} - Gabinete: ${gabinete.nome}'),
-              subtitle: Text(
-                'Especialidades Permitidas: ${gabinete.especialidadesPermitidas.join(', ')}',
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.edit, color: Colors.blue),
-                    onPressed: () {
-                      _adicionarOuEditarGabinete(gabineteExistente: gabinete);
-                    },
+          : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: ListView.builder(
+                      itemCount: gabinetes.length,
+                      itemBuilder: (context, index) {
+              final gabinete = gabinetes[index];
+              return Card(
+                margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: ListTile(
+                  title: Text('Setor: ${gabinete.setor} - Gabinete: ${gabinete.nome}'),
+                  subtitle: Text(
+                    'Especialidades Permitidas: ${gabinete.especialidadesPermitidas.join(', ')}',
                   ),
-                  IconButton(
-                    icon: Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _confirmarDelecao(context, gabinete.id),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () {
+                          _adicionarOuEditarGabinete(gabineteExistente: gabinete);
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _confirmarDelecao(context, gabinete.id),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              );
+                      },
+                    ),
             ),
-          );
-        },
-      ),
+          ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarOuEditarGabinete(),
         child: Icon(Icons.add),

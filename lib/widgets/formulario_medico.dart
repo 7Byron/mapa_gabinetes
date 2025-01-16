@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import '../banco_dados/database_helper.dart';
 
 class FormularioMedico extends StatelessWidget {
   final TextEditingController nomeController;
@@ -22,12 +24,36 @@ class FormularioMedico extends StatelessWidget {
           value == null || value.isEmpty ? 'Informe o nome' : null,
         ),
         const SizedBox(height: 16),
-        TextFormField(
-          controller: especialidadeController,
-          decoration: const InputDecoration(labelText: 'Especialidade'),
-          validator: (value) => value == null || value.isEmpty
-              ? 'Informe a especialidade'
-              : null,
+        TypeAheadField<String>(
+          suggestionsCallback: (pattern) async {
+            // Obtém sugestões do banco de dados
+            final especialidades = await DatabaseHelper.buscarEspecialidades();
+            return especialidades
+                .where((especialidade) =>
+                especialidade.toLowerCase().contains(pattern.toLowerCase()))
+                .toList();
+          },
+          builder: (context, controller, focusNode) {
+            return TextField(
+              controller: especialidadeController,
+              focusNode: focusNode,
+              decoration: const InputDecoration(
+                labelText: 'Especialidade',
+                border: OutlineInputBorder(),
+              ),
+            );
+          },
+          itemBuilder: (context, suggestion) {
+            return ListTile(
+              title: Text(suggestion),
+            );
+          },
+          onSelected: (suggestion) {
+            especialidadeController.text = suggestion;
+          },
+          hideOnEmpty: true,
+          hideOnLoading: false,
+          animationDuration: const Duration(milliseconds: 300),
         ),
       ],
     );

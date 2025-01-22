@@ -4,8 +4,18 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+
 
 Future<Database> initDatabase() async {
+
+  // Inicializa o databaseFactory para desktop
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
   // Obtém o diretório de suporte da aplicação
   Directory appSupportDir = await getApplicationSupportDirectory();
   final dbPath = p.join(appSupportDir.path, 'clinica_v2.db');

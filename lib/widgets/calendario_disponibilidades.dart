@@ -11,11 +11,11 @@ class CalendarioDisponibilidades extends StatelessWidget {
   final Function(DateTime, bool) onRemoverData;
 
   const CalendarioDisponibilidades({
-    Key? key,
+    super.key,
     required this.diasSelecionados,
     required this.onAdicionarData,
     required this.onRemoverData,
-  }) : super(key: key);
+  });
 
   Future<void> _mostrarDialogoTipoMarcacao(
       BuildContext context, DateTime date) async {

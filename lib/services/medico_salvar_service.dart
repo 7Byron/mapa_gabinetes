@@ -3,17 +3,16 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-
-import '../banco_dados/init_banco_dados.dart';
 import '../class/medico.dart';
 import '../class/disponibilidade.dart';
+import '../banco_dados/database_helper.dart';
 
-/// Salva (ou atualiza) um médico no banco, removendo suas disponibilidades anteriores
-/// e inserindo as novas (que estão no atributo `medico.disponibilidades`).
-///
-/// É parecido com o que faríamos no DatabaseHelper, mas aqui fica isolado.
 Future<void> salvarMedicoCompleto(Medico medico) async {
-  final db = await initDatabase();
+  // Agora vamos usar o DatabaseHelper para obter a base de dados
+  final dbHelper =
+      DatabaseHelper(); // Passar o caminho da pasta partilhada
+  final db = await DatabaseHelper
+      .database; // Usar o DatabaseHelper para obter a base de dados
   try {
     if (kDebugMode) {
       print('Tentando salvar o médico: ${medico.toMap()}');

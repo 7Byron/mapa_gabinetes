@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'banco_dados/database_helper.dart';
 import 'ecrans/tela_principal.dart';
-//import 'widgets/teste.dart'; // Importa a Tela Principal que criamos.
 
-void main() {
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+  // Define o caminho que será usado pelo DatabaseHelper
+  await DatabaseHelper.database;
+  // Garante que o banco de dados seja inicializado antes de rodar o app
+  //await DatabaseHelper.database;
   runApp(const MyApp());
-}
+  }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

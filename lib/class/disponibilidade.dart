@@ -1,13 +1,15 @@
 import 'dart:convert';
 
 class Disponibilidade {
-  final String id;
+  late final String id;
+  late final String medicoId;
   final DateTime data;
   final String tipo; // Novo campo para armazenar o tipo de marcação
   List<String> horarios;
 
   Disponibilidade({
     required this.id,
+    required this.medicoId,
     required this.data,
     required this.horarios,
     required this.tipo,
@@ -26,6 +28,7 @@ class Disponibilidade {
   static Disponibilidade fromMap(Map<String, dynamic> map) {
     return Disponibilidade(
       id: map['id'],
+      medicoId: map['medicoId'],
       data: DateTime.parse(map['data']),
       horarios: (jsonDecode(map['horarios']) as List<dynamic>).cast<String>(),
       tipo: map['tipo'] ?? 'Única', // Padrão: única

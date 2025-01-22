@@ -7,10 +7,10 @@ class DisponibilidadesGrid extends StatefulWidget {
   final Function(DateTime, bool) onRemoverData;
 
   const DisponibilidadesGrid({
-    Key? key,
+    super.key,
     required this.disponibilidades,
     required this.onRemoverData,
-  }) : super(key: key);
+  });
 
   @override
   DisponibilidadesGridState createState() => DisponibilidadesGridState();

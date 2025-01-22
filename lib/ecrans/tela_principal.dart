@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:mapa_gabinetes/ecrans/alocacao_medicos_screen.dart';
+import 'banco_dados_screen.dart';
 import 'lista_gabinetes.dart';
-import 'lista_reservas.dart';
 import 'lista_medicos.dart';
 
 class TelaPrincipal extends StatelessWidget {
@@ -18,7 +19,7 @@ class TelaPrincipal extends StatelessWidget {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(
-                color: Colors.blue, // Cor do cabeçalho do drawer
+                color: Colors.blue,
               ),
               child: Text(
                 'Gestão Mapa Gabinetes',
@@ -29,18 +30,18 @@ class TelaPrincipal extends StatelessWidget {
                 ),
               ),
             ),
-            // ListTile(
-            //   leading: Icon(Icons.event), // Ícone para reservas
-            //   title: Text('Gerir Reservas'),
-            //   onTap: () {
-            //     Navigator.push(
-            //       context,
-            //       MaterialPageRoute(builder: (context) => ListaReservas()),
-            //     );
-            //   },
-            // ),
             ListTile(
-              leading: Icon(Icons.medical_services), // Ícone para médicos
+              leading: Icon(Icons.calendar_month),
+              title: Text('Gerir Alocações'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => AlocacaoMedicos()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.medical_services),
               title: Text('Gerir Médicos'),
               onTap: () {
                 Navigator.push(
@@ -50,12 +51,25 @@ class TelaPrincipal extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: Icon(Icons.business), // Ícone para gabinetes
+              leading: Icon(Icons.business),
               title: Text('Gerir Gabinetes'),
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => ListaGabinetes()),
+                );
+              },
+            ),
+            // New ListTile for Settings
+            ListTile(
+              leading: Icon(Icons.dataset_outlined), // Icon for settings
+              title: Text('Base de Dados'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) =>
+                          BancoDadosScreen()), // Navigate to the settings screen
                 );
               },
             ),

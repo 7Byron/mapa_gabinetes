@@ -2,17 +2,15 @@ import 'disponibilidade.dart'; // Importa a classe Disponibilidade
 
 class Medico {
   final String id; // Identificador único
-  final String nome; // Nome do médico
-  final String especialidade; // Ex: 'Cardiologia'
+  late final String nome; // Nome do médico
+  late final String especialidade; // Ex: 'Cardiologia'
   final List<Disponibilidade> disponibilidades; // Lista de disponibilidades
-  final List<PeriodoIndisponibilidade> ferias; // Ex: férias ou indisponibilidade
 
   Medico({
     required this.id,
     required this.nome,
     required this.especialidade,
     required this.disponibilidades,
-    required this.ferias,
   });
 
   /// Cria um objeto [Medico] a partir de um Map
@@ -24,9 +22,6 @@ class Medico {
       disponibilidades: (map['disponibilidades'] as List)
           .map((d) => Disponibilidade.fromMap(d))
           .toList(),
-      ferias: (map['ferias'] as List)
-          .map((f) => PeriodoIndisponibilidade.fromMap(f))
-          .toList(),
     );
   }
 
@@ -37,7 +32,6 @@ class Medico {
       'nome': nome,
       'especialidade': especialidade,
       'disponibilidades': disponibilidades.map((d) => d.toMap(id)).toList(),
-      'ferias': ferias.map((f) => f.toMap()).toList(),
     };
   }
 }

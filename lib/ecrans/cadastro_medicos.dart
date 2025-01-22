@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../banco_dados/database_helper.dart';
-import '../class/medico.dart';
 import '../class/disponibilidade.dart';
+import '../class/medico.dart';
 
 // Services
 import '../services/medico_salvar_service.dart';
@@ -18,7 +18,7 @@ import '../widgets/formulario_medico.dart';
 class CadastroMedico extends StatefulWidget {
   final Medico? medico;
 
-  const CadastroMedico({Key? key, this.medico}) : super(key: key);
+  const CadastroMedico({super.key, this.medico});
 
   @override
   CadastroMedicoState createState() => CadastroMedicoState();
@@ -26,19 +26,31 @@ class CadastroMedico extends StatefulWidget {
 
 class CadastroMedicoState extends State<CadastroMedico> {
   final _formKey = GlobalKey<FormState>();
+
+  // Vamos manter o ID do médico numa variável interna
+  late String _medicoId;
+
+  // Disponibilidades e datas selecionadas
   List<Disponibilidade> disponibilidades = [];
   List<DateTime> diasSelecionados = [];
 
+  // Controllers de texto
   TextEditingController especialidadeController = TextEditingController();
   TextEditingController nomeController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    // Se vier "medico" no construtor, usamos o ID dele
+    // Senão, geramos um novo ID
+    _medicoId = widget.medico?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
     if (widget.medico != null) {
+      // Estamos editando um médico existente
       nomeController.text = widget.medico!.nome;
       especialidadeController.text = widget.medico!.especialidade;
-      _carregarDisponibilidadesSalvas(widget.medico!.id);
+      // Carregamos as disponibilidades deste médico do banco
+      _carregarDisponibilidadesSalvas(_medicoId);
     }
   }
 
@@ -55,14 +67,18 @@ class CadastroMedicoState extends State<CadastroMedico> {
     setState(() {});
   }
 
+  /// Adiciona um dia no calendário, com um [tipo] (Única, Semanal, etc.).
+  /// Agora passamos `medicoId: _medicoId` para criar as disponibilidades.
   void _adicionarData(DateTime date, String tipo) {
     final geradas = criarDisponibilidadesSerie(
       date,
       tipo,
+      medicoId: _medicoId,       // <-- IMPORTANTE
       limitarAoAno: true,
     );
 
     for (final novaDisp in geradas) {
+      // Se esse dia ainda não estava selecionado, adicionamos
       if (!diasSelecionados.contains(novaDisp.data)) {
         setState(() {
           disponibilidades.add(novaDisp);
@@ -83,22 +99,23 @@ class CadastroMedicoState extends State<CadastroMedico> {
     });
   }
 
+  /// Salva o médico atual (novo ou já existente).
+  /// Ao salvar, passamos as disponibilidades que já possuem o `medicoId`.
   Future<void> _salvarMedico() async {
-    // Remova a validação se quiser salvar mesmo com campos incompletos
-    // if (!_formKey.currentState!.validate()) return;
+    // if (!_formKey.currentState!.validate()) return; // se quiser validar
 
     final medico = Medico(
-      id: widget.medico?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: _medicoId, // <-- Usamos o ID definido no initState
       nome: nomeController.text,
       especialidade: especialidadeController.text,
       disponibilidades: disponibilidades,
-      ferias: widget.medico?.ferias ?? [],
     );
 
     try {
+      // Salva no banco (inserindo/atualizando)
       await salvarMedicoCompleto(medico);
       if (kDebugMode) {
-        print('Salvo automaticamente ao sair via WillPopScope');
+        print('Medico ${medico.id} salvo com sucesso!');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -113,9 +130,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     return WillPopScope(
       onWillPop: () async {
-        // 1) Chama salvar
+        // 1) Chama salvar antes de sair
         await _salvarMedico();
-
         // 2) Retorna true para concluir o pop
         return true;
       },
@@ -131,6 +147,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 ? Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Coluna esquerda (dados do médico + calendário)
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 300),
                   child: SingleChildScrollView(
@@ -156,6 +173,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
                   ),
                 ),
                 const SizedBox(width: 16),
+
+                // Coluna direita (grid das disponibilidades)
                 Expanded(
                   flex: 1,
                   child: SingleChildScrollView(

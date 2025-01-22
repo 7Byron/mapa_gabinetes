@@ -1,7 +1,7 @@
 class Gabinete {
   final String id;
   final String setor;
-  final String nome;
+  late final String nome;
   final List<String> especialidadesPermitidas;
 
   Gabinete({
@@ -30,4 +30,17 @@ class Gabinete {
       especialidadesPermitidas: (map['especialidades'] as String).split(',').map((e) => e.trim()).toList(),
     );
   }
+
+  // Para agrupar a lista por sectores
+  Map<String, List<Gabinete>> agruparPorSetor(List<Gabinete> gabinetes) {
+    Map<String, List<Gabinete>> gabinetesPorSetor = {};
+    for (var gabinete in gabinetes) {
+      if (!gabinetesPorSetor.containsKey(gabinete.setor)) {
+        gabinetesPorSetor[gabinete.setor] = [];
+      }
+      gabinetesPorSetor[gabinete.setor]!.add(gabinete);
+    }
+    return gabinetesPorSetor;
+  }
+
 }

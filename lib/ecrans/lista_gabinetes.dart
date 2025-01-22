@@ -12,6 +12,7 @@ class ListaGabinetes extends StatefulWidget {
 
 class ListaGabinetesState extends State<ListaGabinetes> {
   List<Gabinete> gabinetes = [];
+  Map<String, List<Gabinete>> gabinetesPorSetor = {};
   bool isLoading = true;
 
   @override
@@ -23,7 +24,20 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   Future<void> _carregarGabinetes() async {
     setState(() => isLoading = true);
     gabinetes = await DatabaseHelper.buscarGabinetes();
+    gabinetesPorSetor = agruparPorSetor(gabinetes);
     setState(() => isLoading = false);
+  }
+
+  // Função para agrupar os gabinetes por setor
+  Map<String, List<Gabinete>> agruparPorSetor(List<Gabinete> gabinetes) {
+    Map<String, List<Gabinete>> gabinetesPorSetor = {};
+    for (var gabinete in gabinetes) {
+      if (!gabinetesPorSetor.containsKey(gabinete.setor)) {
+        gabinetesPorSetor[gabinete.setor] = [];
+      }
+      gabinetesPorSetor[gabinete.setor]!.add(gabinete);
+    }
+    return gabinetesPorSetor;
   }
 
   Future<void> _adicionarOuEditarGabinete({Gabinete? gabineteExistente}) async {
@@ -83,42 +97,80 @@ class ListaGabinetesState extends State<ListaGabinetes> {
       body: isLoading
           ? Center(child: CircularProgressIndicator())
           : gabinetes.isEmpty
-          ? Center(child: Text('Nenhum gabinete encontrado'))
-          : Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600),
-              child: ListView.builder(
-                      itemCount: gabinetes.length,
+              ? Center(child: Text('Nenhum gabinete encontrado'))
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: ListView.builder(
+                      itemCount: gabinetesPorSetor.length,
                       itemBuilder: (context, index) {
-              final gabinete = gabinetes[index];
-              return Card(
-                margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                child: ListTile(
-                  title: Text('Setor: ${gabinete.setor} - Gabinete: ${gabinete.nome}'),
-                  subtitle: Text(
-                    'Especialidades Permitidas: ${gabinete.especialidadesPermitidas.join(', ')}',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () {
-                          _adicionarOuEditarGabinete(gabineteExistente: gabinete);
-                        },
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _confirmarDelecao(context, gabinete.id),
-                      ),
-                    ],
-                  ),
-                ),
-              );
+                        String setor = gabinetesPorSetor.keys.elementAt(index);
+                        List<Gabinete> gabinetesDoSetor =
+                            gabinetesPorSetor[setor]!;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                setor,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            for (var gabinete in gabinetesDoSetor)
+                              Card(
+                                margin: EdgeInsets.symmetric(
+                                    vertical: 8, horizontal: 16),
+                                child: ListTile(
+                                  title: RichText(
+                                    text: TextSpan(
+                                      text: 'Gabinete ${gabinete.nome} - ',
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 16,
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text:
+                                              gabinete.especialidadesPermitidas.isNotEmpty ? gabinete.especialidadesPermitidas.first : 'Sem Especialidades',
+                                          style: TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.edit,
+                                            color: Colors.blue),
+                                        onPressed: () {
+                                          _adicionarOuEditarGabinete(
+                                              gabineteExistente: gabinete);
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.delete,
+                                            color: Colors.red),
+                                        onPressed: () => _confirmarDelecao(
+                                            context, gabinete.id),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
                       },
                     ),
-            ),
-          ),
+                  ),
+                ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarOuEditarGabinete(),
         child: Icon(Icons.add),

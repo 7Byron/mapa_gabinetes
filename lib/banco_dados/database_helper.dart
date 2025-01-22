@@ -101,6 +101,7 @@ class DatabaseHelper {
         id: maps[i]['id'].toString(),
         nome: maps[i]['nome'].toString(),
         especialidade: maps[i]['especialidade'].toString(),
+        observacoes: maps[i]['observacoes']?.toString(),
         disponibilidades: [],
       );
     });
@@ -147,11 +148,7 @@ class DatabaseHelper {
       // Insere/Atualiza o médico
       await db.insert(
         'medicos',
-        {
-          'id': medico.id,
-          'nome': medico.nome,
-          'especialidade': medico.especialidade,
-        },
+        medico.toMap(), // Agora usamos o método `toMap` da classe `Medico`
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
@@ -297,6 +294,7 @@ class DatabaseHelper {
         'id': medico.id,
         'nome': medico.nome,
         'especialidade': medico.especialidade,
+        'observacoes': medico.observacoes,
       },
       where: 'id = ?',
       whereArgs: [medico.id],

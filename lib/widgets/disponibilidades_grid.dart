@@ -17,6 +17,38 @@ class DisponibilidadesGrid extends StatefulWidget {
 }
 
 class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
+
+// Determina a cor do cartão baseado na validação dos horários
+  Color _determinarCorDoCartao(Disponibilidade disponibilidade) {
+    if (disponibilidade.horarios.isEmpty) {
+      return Colors.orange; // Nenhum horário definido
+    }
+    if (disponibilidade.horarios.length == 1) {
+      return Colors.orange; // Apenas um horário definido
+    }
+
+    try {
+      final inicio = TimeOfDay(
+        hour: int.parse(disponibilidade.horarios[0].split(':')[0]),
+        minute: int.parse(disponibilidade.horarios[0].split(':')[1]),
+      );
+      final fim = TimeOfDay(
+        hour: int.parse(disponibilidade.horarios[1].split(':')[0]),
+        minute: int.parse(disponibilidade.horarios[1].split(':')[1]),
+      );
+
+      // Validação: horário de início deve ser antes do fim
+      if (inicio.hour < fim.hour ||
+          (inicio.hour == fim.hour && inicio.minute < fim.minute)) {
+        return Colors.lightGreen; // Válido
+      } else {
+        return Colors.red; // Início depois do fim
+      }
+    } catch (e) {
+      return Colors.red; // Erro de formatação de horário
+    }
+  }
+
   Future<void> _mostrarDialogoRemocaoSeries(
       BuildContext context,
       Disponibilidade disponibilidade,
@@ -216,6 +248,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             return Card(
               elevation: 4,
               margin: const EdgeInsets.all(8),
+              color: _determinarCorDoCartao(disponibilidade),
               child: Padding(
                 padding:
                 const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),

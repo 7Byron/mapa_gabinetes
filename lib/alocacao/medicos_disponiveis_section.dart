@@ -55,9 +55,9 @@ class MedicosDisponiveisSection extends StatelessWidget {
                   feedback: MedicoCard.dragFeedback(medico, horariosStr),
                   childWhenDragging: Opacity(
                     opacity: 0.5,
-                    child: MedicoCard.buildSmallMedicoCard(medico, horariosStr),
+                    child: MedicoCard.buildSmallMedicoCard(medico, horariosStr, Colors.grey, true),
                   ),
-                  child: MedicoCard.buildSmallMedicoCard(medico, horariosStr),
+                  child: MedicoCard.buildSmallMedicoCard(medico, horariosStr, Colors.grey, true),
                 );
               }).toList(),
             ),

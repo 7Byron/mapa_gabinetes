@@ -34,9 +34,11 @@ class CadastroMedicoState extends State<CadastroMedico> {
   List<Disponibilidade> disponibilidades = [];
   List<DateTime> diasSelecionados = [];
 
+
   // Controllers de texto
   TextEditingController especialidadeController = TextEditingController();
   TextEditingController nomeController = TextEditingController();
+  TextEditingController observacoesController = TextEditingController();
 
   @override
   void initState() {
@@ -49,6 +51,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       // Estamos editando um médico existente
       nomeController.text = widget.medico!.nome;
       especialidadeController.text = widget.medico!.especialidade;
+      observacoesController.text = widget.medico!.observacoes ?? '';
       // Carregamos as disponibilidades deste médico do banco
       _carregarDisponibilidadesSalvas(_medicoId);
     }
@@ -108,18 +111,18 @@ class CadastroMedicoState extends State<CadastroMedico> {
       id: _medicoId, // <-- Usamos o ID definido no initState
       nome: nomeController.text,
       especialidade: especialidadeController.text,
+      observacoes: observacoesController.text,
       disponibilidades: disponibilidades,
     );
 
     try {
-      // Salva no banco (inserindo/atualizando)
       await salvarMedicoCompleto(medico);
-      if (kDebugMode) {
-        print('Medico ${medico.id} salvo com sucesso!');
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Médico salvo com sucesso!')),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar o médico: $e')),
+        SnackBar(content: Text('Erro ao salvar médico: $e')),
       );
     }
   }
@@ -157,6 +160,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                         FormularioMedico(
                           nomeController: nomeController,
                           especialidadeController: especialidadeController,
+                          observacoesController: observacoesController,
                         ),
                         const SizedBox(height: 16),
                         CalendarioDisponibilidades(
@@ -195,6 +199,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                   FormularioMedico(
                     nomeController: nomeController,
                     especialidadeController: especialidadeController,
+                    observacoesController: observacoesController,
                   ),
                   const SizedBox(height: 16),
                   CalendarioDisponibilidades(

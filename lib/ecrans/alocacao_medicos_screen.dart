@@ -211,6 +211,7 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
               gabinetes: gabinetes,
               alocacoes: alocacoes,
               medicos: medicos,
+              disponibilidades: disponibilidades,
               selectedDate: selectedDate,
               onAlocarMedico: _alocarMedico,
             ),

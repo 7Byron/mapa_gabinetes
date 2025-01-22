@@ -5,11 +5,13 @@ import '../banco_dados/database_helper.dart';
 class FormularioMedico extends StatelessWidget {
   final TextEditingController nomeController;
   final TextEditingController especialidadeController;
+  final TextEditingController observacoesController;
 
   const FormularioMedico({
     super.key,
     required this.nomeController,
     required this.especialidadeController,
+    required this.observacoesController,
   });
 
   @override
@@ -19,41 +21,25 @@ class FormularioMedico extends StatelessWidget {
       children: [
         TextFormField(
           controller: nomeController,
-          decoration: const InputDecoration(labelText: 'Nome'),
-          validator: (value) =>
-          value == null || value.isEmpty ? 'Informe o nome' : null,
+          decoration: const InputDecoration(
+            labelText: 'Nome do Médico',
+          ),
         ),
         const SizedBox(height: 16),
-        TypeAheadField<String>(
-          suggestionsCallback: (pattern) async {
-            // Obtém sugestões do banco de dados
-            final especialidades = await DatabaseHelper.buscarEspecialidades();
-            return especialidades
-                .where((especialidade) =>
-                especialidade.toLowerCase().contains(pattern.toLowerCase()))
-                .toList();
-          },
-          builder: (context, controller, focusNode) {
-            return TextField(
-              controller: especialidadeController,
-              focusNode: focusNode,
-              decoration: const InputDecoration(
-                labelText: 'Especialidade',
-                border: OutlineInputBorder(),
-              ),
-            );
-          },
-          itemBuilder: (context, suggestion) {
-            return ListTile(
-              title: Text(suggestion),
-            );
-          },
-          onSelected: (suggestion) {
-            especialidadeController.text = suggestion;
-          },
-          hideOnEmpty: true,
-          hideOnLoading: false,
-          animationDuration: const Duration(milliseconds: 300),
+        TextFormField(
+          controller: especialidadeController,
+          decoration: const InputDecoration(
+            labelText: 'Especialidade',
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: observacoesController,
+          maxLines: 3, // Permitir múltiplas linhas para observações
+          decoration: const InputDecoration(
+            labelText: 'Observações',
+            hintText: 'Adicione informações adicionais sobre o médico',
+          ),
         ),
       ],
     );

@@ -8,9 +8,7 @@ import '../class/disponibilidade.dart';
 import '../banco_dados/database_helper.dart';
 
 Future<void> salvarMedicoCompleto(Medico medico) async {
-  // Agora vamos usar o DatabaseHelper para obter a base de dados
-  final dbHelper =
-      DatabaseHelper(); // Passar o caminho da pasta partilhada
+
   final db = await DatabaseHelper
       .database; // Usar o DatabaseHelper para obter a base de dados
   try {
@@ -25,6 +23,7 @@ Future<void> salvarMedicoCompleto(Medico medico) async {
         'id': medico.id,
         'nome': medico.nome,
         'especialidade': medico.especialidade,
+        'observacoes': medico.observacoes,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );

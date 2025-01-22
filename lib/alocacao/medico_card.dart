@@ -4,22 +4,20 @@ import '../class/medico.dart';
 
 class MedicoCard {
   /// Cartão do médico (compacto)
-  static Widget buildSmallMedicoCard(Medico medico, String horariosStr) {
+  static Widget buildSmallMedicoCard(Medico medico, String horariosStr, Color cor, bool valido) {
     return Container(
-      padding: EdgeInsets.all(6),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.purple[50],
+        color: valido ? Colors.green[100] : Colors.red[100], // Verde ou vermelho
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(medico.nome, style: TextStyle(fontWeight: FontWeight.bold)),
-          if (medico.especialidade.isNotEmpty)
-            Text(medico.especialidade),
-          if (horariosStr.isNotEmpty)
-            Text(horariosStr, style: TextStyle(fontSize: 12)),
+          Text(medico.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
+          if (medico.especialidade.isNotEmpty) Text(medico.especialidade),
+          if (horariosStr.isNotEmpty) Text(horariosStr, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );

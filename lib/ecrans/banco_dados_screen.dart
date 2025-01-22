@@ -155,7 +155,7 @@ class _BancoDadosScreenState extends State<BancoDadosScreen> {
   /// **Mostrar a localização do banco de dados**
   Future<void> _showDatabaseLocation() async {
     final dbDirectory = await getApplicationSupportDirectory();
-    final dbPath = "${dbDirectory.path}/clinica_v2.db";
+    final dbPath = "${dbDirectory.path}/mapa_gabinetes.db";
     showDialog(
       context: context,
       builder: (BuildContext context) {

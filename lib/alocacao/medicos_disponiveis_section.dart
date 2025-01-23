@@ -1,4 +1,3 @@
-// medicos_disponiveis_section.dart
 import 'package:flutter/material.dart';
 import '../class/medico.dart';
 import '../class/disponibilidade.dart';
@@ -18,15 +17,34 @@ class MedicosDisponiveisSection extends StatelessWidget {
     required this.onDesalocarMedico,
   });
 
+  bool _validarDisponibilidade(Disponibilidade disp) {
+    if (disp.horarios.length != 2) return false;
+    try {
+      final inicioParts = disp.horarios[0].split(':');
+      final fimParts = disp.horarios[1].split(':');
+      final inicio = TimeOfDay(
+        hour: int.parse(inicioParts[0]),
+        minute: int.parse(inicioParts[1]),
+      );
+      final fim = TimeOfDay(
+        hour: int.parse(fimParts[0]),
+        minute: int.parse(fimParts[1]),
+      );
+      // Horário de início deve ser antes do fim
+      if (inicio.hour < fim.hour) return true;
+      if (inicio.hour == fim.hour && inicio.minute < fim.minute) return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DragTarget<String>(
-      onWillAccept: (medicoId) {
-        // Permitir que qualquer médico seja solto aqui
-        return true;
-      },
+      // Permite que qualquer médico seja solto aqui para “desalocar”
+      onWillAccept: (medicoId) => true,
       onAccept: (medicoId) {
-        // Quando o médico é solto, ele é desalocado
         onDesalocarMedico(medicoId);
       },
       builder: (context, candidateData, rejectedData) {
@@ -39,25 +57,42 @@ class MedicosDisponiveisSection extends StatelessWidget {
               runSpacing: 8,
               spacing: 8,
               children: medicosDisponiveis.map((medico) {
-                // Calcula os horários disponíveis
-                final dispDoMedico = disponibilidades.where((d) =>
-                d.medicoId == medico.id &&
-                    d.data.year == selectedDate.year &&
-                    d.data.month == selectedDate.month &&
-                    d.data.day == selectedDate.day).toList();
+                // Descobre as disponibilidades desse médico no dia
+                final dispDoMedico = disponibilidades.where((d) {
+                  return d.medicoId == medico.id &&
+                      d.data.year == selectedDate.year &&
+                      d.data.month == selectedDate.month &&
+                      d.data.day == selectedDate.day;
+                }).toList();
 
+                // Junta todos os horários numa string
                 final horariosStr = dispDoMedico
                     .expand((d) => d.horarios)
                     .join(', ');
 
+                // Se ao menos uma disponibilidade for válida -> isValido = true
+                final bool isValido =
+                dispDoMedico.any((d) => _validarDisponibilidade(d));
+                final Color corFundo = isValido ? Colors.grey[200]! : Colors.red[200]!;
+
                 return Draggable<String>(
-                  data: medico.id, // ID do médico
+                  data: medico.id,
                   feedback: MedicoCard.dragFeedback(medico, horariosStr),
                   childWhenDragging: Opacity(
                     opacity: 0.5,
-                    child: MedicoCard.buildSmallMedicoCard(medico, horariosStr, Colors.grey, true),
+                    child: MedicoCard.buildSmallMedicoCard(
+                      medico,
+                      horariosStr,
+                      corFundo,
+                      isValido,
+                    ),
                   ),
-                  child: MedicoCard.buildSmallMedicoCard(medico, horariosStr, Colors.grey, true),
+                  child: MedicoCard.buildSmallMedicoCard(
+                    medico,
+                    horariosStr,
+                    corFundo,
+                    isValido,
+                  ),
                 );
               }).toList(),
             ),

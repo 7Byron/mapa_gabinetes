@@ -1,11 +1,11 @@
-// conflict_utils.dart
-import '../class/alocacao.dart';
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import '../class/alocacao.dart';   // aqui está sua classe Alocacao oficial
 import 'time_utils.dart';
 
 class ConflictUtils {
   static bool temConflitoGabinete(List<Alocacao> alocs) {
     if (alocs.length < 2) return false;
-
     for (int i = 0; i < alocs.length; i++) {
       for (int j = i + 1; j < alocs.length; j++) {
         if (temConflitoEntre(alocs[i], alocs[j])) {
@@ -19,7 +19,6 @@ class ConflictUtils {
   static bool temConflitoEntre(Alocacao a, Alocacao b) {
     final intervalsA = TimeUtils.parseHorarios(a.horarioInicio);
     final intervalsB = TimeUtils.parseHorarios(b.horarioInicio);
-
     for (final iA in intervalsA) {
       for (final iB in intervalsB) {
         if (TimeUtils.intervalsSeSobrepoem(iA, iB)) {

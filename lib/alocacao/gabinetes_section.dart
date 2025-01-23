@@ -44,16 +44,18 @@ class _GabinetesSectionState extends State<GabinetesSection> {
     pisosSelecionados = widget.gabinetes.map((g) => g.setor).toSet().toList();
   }
 
-  // Filtra os gabinetes com base nos critérios
+  // Filtra os gabinetes de acordo com os filtros
   List<Gabinete> _filtrarGabinetes() {
     return widget.gabinetes.where((gabinete) {
       if (!pisosSelecionados.contains(gabinete.setor)) return false;
 
-      final alocacoesDoGabinete = widget.alocacoes.where((a) =>
-      a.gabineteId == gabinete.id &&
-          a.data.year == widget.selectedDate.year &&
-          a.data.month == widget.selectedDate.month &&
-          a.data.day == widget.selectedDate.day).toList();
+      final alocacoesDoGabinete = widget.alocacoes.where(
+            (a) =>
+        a.gabineteId == gabinete.id &&
+            a.data.year == widget.selectedDate.year &&
+            a.data.month == widget.selectedDate.month &&
+            a.data.day == widget.selectedDate.day,
+      ).toList();
 
       if (filtroOcupacao == 'Livres' && alocacoesDoGabinete.isNotEmpty) {
         return false;
@@ -72,16 +74,15 @@ class _GabinetesSectionState extends State<GabinetesSection> {
   }
 
   Map<String, List<Gabinete>> _agruparPorSetor(List<Gabinete> gabinetes) {
-    Map<String, List<Gabinete>> gabinetesPorSetor = {};
+    final gabinetesPorSetor = <String, List<Gabinete>>{};
     for (var gabinete in gabinetes) {
-      if (!gabinetesPorSetor.containsKey(gabinete.setor)) {
-        gabinetesPorSetor[gabinete.setor] = [];
-      }
+      gabinetesPorSetor[gabinete.setor] ??= [];
       gabinetesPorSetor[gabinete.setor]!.add(gabinete);
     }
     return gabinetesPorSetor;
   }
 
+  /// Verifica se a disponibilidade tem 2 horários válidos (início < fim).
   bool _validarDisponibilidade(Disponibilidade disponibilidade) {
     if (disponibilidade.horarios.isEmpty) return false;
     if (disponibilidade.horarios.length != 2) return false;
@@ -95,7 +96,6 @@ class _GabinetesSectionState extends State<GabinetesSection> {
         hour: int.parse(disponibilidade.horarios[1].split(':')[0]),
         minute: int.parse(disponibilidade.horarios[1].split(':')[1]),
       );
-
       return (inicio.hour < fim.hour) ||
           (inicio.hour == fim.hour && inicio.minute < fim.minute);
     } catch (e) {
@@ -109,6 +109,9 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
     return Row(
       children: [
+        // -------------------------------------------------------
+        // COLUNA LATERAL COM FILTROS DE PISO E OCUPAÇÃO
+        // -------------------------------------------------------
         SizedBox(
           width: 220,
           child: Container(
@@ -117,15 +120,15 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Filtros',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text('Pisos'),
+                const Text('Pisos'),
                 Wrap(
                   spacing: 4,
                   runSpacing: 4,
@@ -148,14 +151,16 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                       .toList(),
                 ),
                 const Divider(),
-                Text('Ocupação'),
+                const Text('Ocupação'),
                 DropdownButton<String>(
                   value: filtroOcupacao,
                   items: ['Todos', 'Livres', 'Ocupados']
-                      .map((opcao) => DropdownMenuItem(
-                    value: opcao,
-                    child: Text(opcao),
-                  ))
+                      .map(
+                        (opcao) => DropdownMenuItem(
+                      value: opcao,
+                      child: Text(opcao),
+                    ),
+                  )
                       .toList(),
                   onChanged: (value) {
                     setState(() {
@@ -165,7 +170,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                 ),
                 const Divider(),
                 CheckboxListTile(
-                  title: Text('Mostrar Conflitos'),
+                  title: const Text('Mostrar Conflitos'),
                   value: mostrarConflitos,
                   onChanged: (value) {
                     setState(() {
@@ -178,6 +183,10 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             ),
           ),
         ),
+
+        // -------------------------------------------------------
+        // LISTA DE GABINETES AGRUPADOS POR SETOR
+        // -------------------------------------------------------
         Expanded(
           child: ListView.builder(
             itemCount: _agruparPorSetor(gabinetesFiltrados).keys.length,
@@ -189,6 +198,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // TÍTULO DO SETOR
                   Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Text(
@@ -199,6 +209,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                       ),
                     ),
                   ),
+
+                  // GRELHA DE GABINETES
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -210,15 +222,20 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                     itemBuilder: (context, gabineteIndex) {
                       final gabinete = gabinetesDoSetor[gabineteIndex];
 
-                      final alocacoesDoGabinete = widget.alocacoes.where((a) =>
-                      a.gabineteId == gabinete.id &&
-                          a.data.year == widget.selectedDate.year &&
-                          a.data.month == widget.selectedDate.month &&
-                          a.data.day == widget.selectedDate.day).toList();
+                      // Alocações desse gabinete no dia selecionado
+                      final alocacoesDoGabinete = widget.alocacoes.where((a) {
+                        return a.gabineteId == gabinete.id &&
+                            a.data.year == widget.selectedDate.year &&
+                            a.data.month == widget.selectedDate.month &&
+                            a.data.day == widget.selectedDate.day;
+                      }).toList();
 
-                      final temConflito =
-                      ConflictUtils.temConflitoGabinete(alocacoesDoGabinete);
+                      // Se há conflito
+                      final temConflito = ConflictUtils.temConflitoGabinete(
+                        alocacoesDoGabinete,
+                      );
 
+                      // Cor de fundo do gabinete
                       Color corFundo;
                       if (alocacoesDoGabinete.isEmpty) {
                         corFundo = Colors.grey[300]!;
@@ -230,13 +247,44 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                       return DragTarget<String>(
                         onWillAccept: (medicoId) {
-                          final medico = widget.medicos.firstWhere((m) => m.id == medicoId);
-                          final disponibilidade = widget.disponibilidades.cast<Disponibilidade?>().firstWhere(
-                                (d) => d?.medicoId == medico.id && d?.data == widget.selectedDate,
-                            orElse: () => null, // Permite retorno de null
+                          // 1) Ache o médico
+                          final medico = widget.medicos.firstWhere(
+                                (m) => m.id == medicoId,
+                            orElse: () => Medico(
+                              id: '',
+                              nome: '',
+                              especialidade: '',
+                              disponibilidades: [],
+                            ),
+                          );
+                          if (medico.id.isEmpty) {
+                            // Não encontrou um médico real
+                            return false;
+                          }
+
+                          // 2) Disponibilidade do médico no dia
+                          final disponibilidade = widget.disponibilidades.firstWhere(
+                                (d) =>
+                            d.medicoId == medico.id &&
+                                d.data.year == widget.selectedDate.year &&
+                                d.data.month == widget.selectedDate.month &&
+                                d.data.day == widget.selectedDate.day,
+                            orElse: () => Disponibilidade(
+                              id: '',
+                              medicoId: '',
+                              data: DateTime(1900,1,1),
+                              horarios: [],
+                              tipo: 'Única',
+                            ),
                           );
 
-                          if (disponibilidade == null || !_validarDisponibilidade(disponibilidade)) {
+                          if (disponibilidade.medicoId.isEmpty) {
+                            // Não há disponibilidade “real”
+                            return false;
+                          }
+
+                          // 3) Verifica se horários são válidos
+                          if (!_validarDisponibilidade(disponibilidade)) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
@@ -246,24 +294,14 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             );
                             return false;
                           }
+
+                          // Se tudo ok, aceita
                           return true;
                         },
                         onAccept: (medicoId) {
                           setState(() {
-                            widget.onAlocarMedico(medicoId, gabinete.id); // Atualiza a alocação
-
-                            // Atualiza visualmente
-                            final medico = widget.medicos.firstWhere((m) => m.id == medicoId);
-                            widget.alocacoes.add(
-                              Alocacao(
-                                id: UniqueKey().toString(),
-                                medicoId: medico.id,
-                                gabineteId: gabinete.id,
-                                data: widget.selectedDate,
-                                horarioInicio: '08:00', // Exemplos, pode ser ajustado
-                                horarioFim: '12:00',
-                              ),
-                            );
+                            // Chama callback que efetivamente salva a alocação
+                            widget.onAlocarMedico(medicoId, gabinete.id);
                           });
                         },
                         builder: (context, candidateData, rejectedData) {
@@ -274,7 +312,61 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               color: corFundo,
                             ),
                             child: Center(
-                              child: Text(gabinete.nome),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // Nome do gabinete
+                                  Text(
+                                    gabinete.nome,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+
+                                  // Lista de médicos alocados
+                                  if (alocacoesDoGabinete.isNotEmpty)
+                                    ...alocacoesDoGabinete.map((a) {
+                                      final medico = widget.medicos.firstWhere(
+                                            (m) => m.id == a.medicoId,
+                                        orElse: () => Medico(
+                                          id: '',
+                                          nome: 'Desconhecido',
+                                          especialidade: '',
+                                          disponibilidades: [],
+                                        ),
+                                      );
+
+                                      // Monta string de horário, ex. "08:00 - 12:00"
+                                      final horariosAlocacao =
+                                      (a.horarioFim.isNotEmpty)
+                                          ? '${a.horarioInicio} - ${a.horarioFim}'
+                                          : a.horarioInicio;
+
+                                      return Draggable<String>(
+                                        data: medico.id,
+                                        feedback: MedicoCard.dragFeedback(
+                                          medico,
+                                          horariosAlocacao,
+                                        ),
+                                        childWhenDragging: Opacity(
+                                          opacity: 0.5,
+                                          child: MedicoCard.buildSmallMedicoCard(
+                                            medico,
+                                            horariosAlocacao,
+                                            Colors.white,
+                                            true, // assumimos que já é válido
+                                          ),
+                                        ),
+                                        child: MedicoCard.buildSmallMedicoCard(
+                                          medico,
+                                          horariosAlocacao,
+                                          Colors.white,
+                                          true,
+                                        ),
+                                      );
+                                    }).toList(),
+                                ],
+                              ),
                             ),
                           );
                         },

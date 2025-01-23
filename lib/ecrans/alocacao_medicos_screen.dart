@@ -1,15 +1,13 @@
-// alocacao_medicos_screen.dart
 import 'package:flutter/material.dart';
 
+import '../alocacao/date_picker_section. dart.dart';
 import '../class/medico.dart';
 import '../class/gabinete.dart';
 import '../class/alocacao.dart';
 import '../class/disponibilidade.dart';
-import '../banco_dados/database_helper.dart';
-import '../alocacao/date_picker_section. dart.dart';
+import '../banco_dados/database_helper.dart'; // Ajuste para seu caminho real
 import '../alocacao/gabinetes_section.dart';
 import '../alocacao/medicos_disponiveis_section.dart';
-
 
 class AlocacaoMedicos extends StatefulWidget {
   @override
@@ -49,88 +47,87 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
     }).toList();
 
     final idsMedicosNoDia = dispNoDia.map((d) => d.medicoId).toSet();
-    final alocadosNoDia = alocacoes.where((a) {
-      return a.data.year == dataSelecionada.year &&
-          a.data.month == dataSelecionada.month &&
-          a.data.day == dataSelecionada.day;
-    }).map((a) => a.medicoId).toSet();
+    final alocadosNoDia = alocacoes
+        .where((a) =>
+    a.data.year == dataSelecionada.year &&
+        a.data.month == dataSelecionada.month &&
+        a.data.day == dataSelecionada.day)
+        .map((a) => a.medicoId)
+        .toSet();
 
+    // Médicos que têm disponibilidade no dia e não estão alocados
     medicosDisponiveis = medicos
-        .where((m) =>
-    idsMedicosNoDia.contains(m.id) && !alocadosNoDia.contains(m.id))
+        .where((m) => idsMedicosNoDia.contains(m.id) && !alocadosNoDia.contains(m.id))
         .toList();
   }
 
   Future<void> _alocarMedico(String medicoId, String novoGabineteId) async {
-    // 1. Verificar se o médico já está alocado em algum gabinete no mesmo dia
+    // 1) Verifica se o médico já está alocado no mesmo dia
     final indexAlocacaoAtual = alocacoes.indexWhere((a) =>
     a.medicoId == medicoId &&
         a.data.year == selectedDate.year &&
         a.data.month == selectedDate.month &&
         a.data.day == selectedDate.day);
 
-    // 2. Se encontrado, remover a alocação antiga
+    // 2) Se já estava, remove do local antigo
     if (indexAlocacaoAtual != -1) {
       final alocacaoAntiga = alocacoes[indexAlocacaoAtual];
       alocacoes.removeAt(indexAlocacaoAtual);
 
-      // Remover também do banco de dados
+      // Remover também do banco (se for o caso)
       await DatabaseHelper.deletarAlocacao(alocacaoAntiga.id);
     }
 
-    // 3. Buscar os horários disponíveis do médico para o dia selecionado
+    // 3) Pega horários disponíveis do médico
     final disponibilidadeDoMedico = disponibilidades.where((d) =>
     d.medicoId == medicoId &&
         d.data.year == selectedDate.year &&
         d.data.month == selectedDate.month &&
         d.data.day == selectedDate.day).toList();
 
-    final horarios = disponibilidadeDoMedico.expand((d) => d.horarios).join(', ');
+    final horarios = disponibilidadeDoMedico
+        .expand((d) => d.horarios)
+        .join(', ');
 
-    // 4. Criar a nova alocação
+    // 4) Cria a nova alocação
     final novaAlocacao = Alocacao(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       medicoId: medicoId,
       gabineteId: novoGabineteId,
       data: selectedDate,
-      horarioInicio: horarios,
-      horarioFim: '',
+      horarioInicio: horarios, // ex.: "08:00, 12:00"
+      horarioFim: '',          // pode definir como quiser
     );
 
-    // 5. Salvar a nova alocação no banco de dados
+    // 5) Salva no banco
     await DatabaseHelper.salvarAlocacao(novaAlocacao);
 
-    // 6. Adicionar a nova alocação à lista local
+    // 6) Adiciona localmente
     alocacoes.add(novaAlocacao);
 
-    // 7. Remover o médico da lista de disponíveis, caso ainda esteja nela
+    // 7) Remove da lista de disponíveis
     medicosDisponiveis.removeWhere((m) => m.id == medicoId);
 
-    // Atualizar a interface
+    // Atualiza interface
     setState(() {});
   }
 
-
-
   Future<void> _desalocarMedico(String medicoId) async {
-    // Localiza a alocação do médico no dia selecionado
+    // Encontra a alocação para esse dia
     final indexAloc = alocacoes.indexWhere((a) =>
     a.medicoId == medicoId &&
         a.data.year == selectedDate.year &&
         a.data.month == selectedDate.month &&
         a.data.day == selectedDate.day);
-
-    // Se não encontrar nenhuma alocação, retorna sem fazer nada
     if (indexAloc == -1) return;
 
-    // Remove a alocação localmente
     final alocRemovida = alocacoes[indexAloc];
     alocacoes.removeAt(indexAloc);
 
-    // Atualiza o banco de dados (se necessário)
+    // Remove do banco também
     await DatabaseHelper.deletarAlocacao(alocRemovida.id);
 
-    // Localiza o médico correspondente ou cria um placeholder (caso não encontrado)
+    // Acha o médico
     final medico = medicos.firstWhere(
           (m) => m.id == medicoId,
       orElse: () => Medico(
@@ -141,22 +138,19 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
       ),
     );
 
-    // Verifica se o médico ainda tem disponibilidade no dia selecionado
+    // Se ele ainda tem disponibilidade no dia, volta para a lista de disponíveis
     final temDisponibilidade = disponibilidades.any((d) =>
     d.medicoId == medicoId &&
         d.data.year == selectedDate.year &&
         d.data.month == selectedDate.month &&
         d.data.day == selectedDate.day);
 
-    // Se ele tiver disponibilidade, retorna para a lista de médicos disponíveis
     if (temDisponibilidade) {
       medicosDisponiveis.add(medico);
     }
 
-    // Atualiza a interface
     setState(() {});
   }
-
 
   void _onDateChanged(DateTime newDate) {
     setState(() {
@@ -169,13 +163,13 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Alocação de Médicos'),
+        title: const Text('Alocação de Médicos'),
       ),
       body: Column(
         children: [
-          // -------------------------------
-          // TOPO (flex:1): calendário + médicos
-          // -------------------------------
+          // -----------------------------------------
+          // TOPO: calendário + médicos disponíveis
+          // -----------------------------------------
           Expanded(
             flex: 1,
             child: Row(
@@ -201,10 +195,12 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
               ],
             ),
           ),
+
           const Divider(height: 1, thickness: 1, color: Colors.black),
-          // -------------------------------
-          // PARTE INFERIOR (flex:2): gabinetes
-          // -------------------------------
+
+          // -----------------------------------------
+          // PARTE DE BAIXO: gabinetes
+          // -----------------------------------------
           Expanded(
             flex: 2,
             child: GabinetesSection(

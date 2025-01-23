@@ -1,25 +1,54 @@
-// medico_card.dart
 import 'package:flutter/material.dart';
 import '../class/medico.dart';
 
 class MedicoCard {
-  /// Cartão do médico (compacto)
-  static Widget buildSmallMedicoCard(Medico medico, String horariosStr, Color cor, bool valido) {
+  /// Cartão compacto principal, permitindo personalizar cor e "validez".
+  static Widget buildSmallMedicoCard(
+      Medico medico,
+      String horariosStr,
+      Color corFundo,
+      bool valido,
+      ) {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: valido ? Colors.green[100] : Colors.red[100], // Verde ou vermelho
+        color: corFundo,
         borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: valido ? Colors.green : Colors.red,
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(medico.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-          if (medico.especialidade.isNotEmpty) Text(medico.especialidade),
-          if (horariosStr.isNotEmpty) Text(horariosStr, style: const TextStyle(fontSize: 12)),
+          Text(
+            medico.nome,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          if (medico.especialidade.isNotEmpty)
+            Text(
+              medico.especialidade,
+              style: const TextStyle(fontSize: 12),
+            ),
+          if (horariosStr.isNotEmpty)
+            Text(
+              horariosStr,
+              style: const TextStyle(fontSize: 12),
+            ),
         ],
       ),
+    );
+  }
+
+  /// Cartão simples, se quiser usar sem se preocupar com cores/validez
+  static Widget buildSmallMedicoCardSimple(Medico medico, String horariosStr) {
+    return buildSmallMedicoCard(
+      medico,
+      horariosStr,
+      Colors.green[100]!,
+      true,
     );
   }
 
@@ -29,7 +58,7 @@ class MedicoCard {
       color: Colors.transparent,
       child: Container(
         width: 160,
-        padding: EdgeInsets.all(8),
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: Colors.deepPurple,
           borderRadius: BorderRadius.circular(4),
@@ -40,7 +69,7 @@ class MedicoCard {
           children: [
             Text(
               medico.nome,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
@@ -48,12 +77,12 @@ class MedicoCard {
             if (medico.especialidade.isNotEmpty)
               Text(
                 medico.especialidade,
-                style: TextStyle(color: Colors.white),
+                style: const TextStyle(color: Colors.white),
               ),
             if (horariosStr.isNotEmpty)
               Text(
                 horariosStr,
-                style: TextStyle(color: Colors.white, fontSize: 12),
+                style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
           ],
         ),

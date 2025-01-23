@@ -17,8 +17,7 @@ class DisponibilidadesGrid extends StatefulWidget {
 }
 
 class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
-
-// Determina a cor do cartão baseado na validação dos horários
+  // Determina cor do cartão baseado na validação dos horários
   Color _determinarCorDoCartao(Disponibilidade disponibilidade) {
     if (disponibilidade.horarios.isEmpty) {
       return Colors.orange; // Nenhum horário definido
@@ -37,7 +36,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         minute: int.parse(disponibilidade.horarios[1].split(':')[1]),
       );
 
-      // Validação: horário de início deve ser antes do fim
       if (inicio.hour < fim.hour ||
           (inicio.hour == fim.hour && inicio.minute < fim.minute)) {
         return Colors.lightGreen; // Válido
@@ -45,7 +43,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         return Colors.red; // Início depois do fim
       }
     } catch (e) {
-      return Colors.red; // Erro de formatação de horário
+      return Colors.red; // Erro de formatação
     }
   }
 
@@ -62,7 +60,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           return AlertDialog(
             title: const Text('Remover disponibilidade'),
             content: Text(
-              'Remover apenas este dia ou toda a série desde dia em diante (${disponibilidade.tipo})?',
+              'Remover apenas este dia ou toda a série desde este dia em diante (${disponibilidade.tipo})?',
             ),
             actions: [
               TextButton(
@@ -88,7 +86,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         widget.onRemoverData(disponibilidade.data, true);
       }
     } else {
-      // Única
       final confirmacao = await showDialog<bool>(
         context: context,
         builder: (context) {
@@ -118,25 +115,32 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
   }
 
-  Future<void> _selecionarHorario(
-      BuildContext context,
-      DateTime data,
-      bool isInicio,
-      ) async {
+  Future<void> _selecionarHorario(BuildContext context, DateTime data, bool isInicio) async {
     final TimeOfDay? time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
     );
 
     if (time != null) {
-      final horario =
-          '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+      final horario = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
       setState(() {
-        // 1. Atualiza o horário só do dia selecionado
-        final disponibilidade =
-        widget.disponibilidades.firstWhere((d) => d.data == data);
+        // Acha a disponibilidade do dia
+        final disponibilidade = widget.disponibilidades.firstWhere(
+              (d) => d.data == data,
+          orElse: () => Disponibilidade(
+            id: '',
+            medicoId: '',
+            data: DateTime(1900,1,1),
+            horarios: [],
+            tipo: 'Única',
+          ),
+        );
 
+        // Se não encontrou uma real, não faz nada
+        if (disponibilidade.data == DateTime(1900,1,1)) return;
+
+        // Ajusta horário
         if (isInicio) {
           if (disponibilidade.horarios.isEmpty) {
             disponibilidade.horarios = [horario];
@@ -149,14 +153,11 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           } else if (disponibilidade.horarios.length == 2) {
             disponibilidade.horarios[1] = horario;
           } else if (disponibilidade.horarios.isEmpty) {
-            // Caso extremo: se não há nada, adiciona primeiro um placeholder
-            disponibilidade.horarios = isInicio
-                ? [horario]
-                : ['', horario];
+            disponibilidade.horarios = isInicio ? [horario] : ['', horario];
           }
         }
 
-        // 2. Se for uma série (tipo != 'Única'), pergunta ao usuário
+        // Se for série, pergunta se quer aplicar em todos
         if (disponibilidade.tipo != 'Única') {
           Future.delayed(Duration.zero, () async {
             final aplicarEmTodos = await showDialog<bool>(
@@ -184,21 +185,16 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             );
 
             if (aplicarEmTodos == true) {
-              // 3. Aplica a todas as disponibilidades daquele tipo
               setState(() {
-                for (final disp in widget.disponibilidades.where(
-                        (d) => d.tipo == disponibilidade.tipo)) {
+                for (final disp in widget.disponibilidades.where((d) => d.tipo == disponibilidade.tipo)) {
                   if (isInicio) {
-                    // Se não existir ainda, cria
                     if (disp.horarios.isEmpty) {
                       disp.horarios.add(horario);
                     } else {
                       disp.horarios[0] = horario;
                     }
                   } else {
-                    // se está definindo horário fim
                     if (disp.horarios.isEmpty) {
-                      // Cria placeholder pra início e fim
                       disp.horarios = ['', horario];
                     } else if (disp.horarios.length == 1) {
                       disp.horarios.add(horario);
@@ -215,14 +211,11 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final int crossAxisCount = (constraints.maxWidth / 200).floor();
-
         return GridView.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
@@ -250,8 +243,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
               margin: const EdgeInsets.all(8),
               color: _determinarCorDoCartao(disponibilidade),
               child: Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -262,10 +254,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '${disponibilidade.data.day}'
-                                '/${disponibilidade.data.month}'
-                                '/${disponibilidade.data.year} '
-                                '($diaSemana)',
+                            '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year} ($diaSemana)',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,

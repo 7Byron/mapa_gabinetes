@@ -1,4 +1,3 @@
-// date_picker_section.dart
 import 'package:flutter/material.dart';
 
 class DatePickerSection extends StatelessWidget {

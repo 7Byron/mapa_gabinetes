@@ -3,20 +3,16 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-import '../class/medico.dart';
-import '../class/disponibilidade.dart';
-import '../banco_dados/database_helper.dart';
+import '../models/medico.dart';
+import '../models/disponibilidade.dart';
+import '../database/database_helper.dart';
 
 Future<void> salvarMedicoCompleto(Medico medico) async {
-
-  final db = await DatabaseHelper
-      .database; // Usar o DatabaseHelper para obter a base de dados
+  final db = await DatabaseHelper.database;
   try {
-    if (kDebugMode) {
-      print('Tentando salvar o médico: ${medico.toMap()}');
-    }
+    if (kDebugMode) print('Tentando salvar médico: ${medico.toMap()}');
 
-    // 1) Salva/atualiza o médico na tabela "medicos"
+    // 1) Salva/atualiza o médico
     await db.insert(
       'medicos',
       {
@@ -28,15 +24,15 @@ Future<void> salvarMedicoCompleto(Medico medico) async {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
 
-    // 2) Remove as disponibilidades antigas deste médico
+    // 2) Remove disponibilidades antigas
     await db.delete(
       'disponibilidades',
       where: 'medicoId = ?',
       whereArgs: [medico.id],
     );
 
-    // 3) Insere as novas disponibilidades da lista "medico.disponibilidades"
-    for (Disponibilidade disp in medico.disponibilidades) {
+    // 3) Insere as novas
+    for (final disp in medico.disponibilidades) {
       await db.insert(
         'disponibilidades',
         {
@@ -50,13 +46,9 @@ Future<void> salvarMedicoCompleto(Medico medico) async {
       );
     }
 
-    if (kDebugMode) {
-      print('Médico salvo com sucesso: ${medico.id}');
-    }
+    if (kDebugMode) print('Médico salvo com sucesso: ${medico.id}');
   } catch (e) {
-    if (kDebugMode) {
-      print('Erro ao salvar médico: $e');
-    }
+    if (kDebugMode) print('Erro ao salvar médico: $e');
     rethrow;
   }
 }

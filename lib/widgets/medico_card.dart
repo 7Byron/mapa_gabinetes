@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../class/medico.dart';
+import '../models/medico.dart';
 
 class MedicoCard {
   /// Cartão compacto principal, permitindo personalizar cor e "validez".

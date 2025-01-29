@@ -1,6 +1,6 @@
-import 'dart:ui';
-import 'package:flutter/material.dart';
-import '../class/alocacao.dart';   // aqui está sua classe Alocacao oficial
+// lib/utils/conflict_utils.dart
+
+import '../models/alocacao.dart';
 import 'time_utils.dart';
 
 class ConflictUtils {

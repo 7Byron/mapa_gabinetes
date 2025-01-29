@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
-import '../banco_dados/database_helper.dart';
 
 class FormularioMedico extends StatelessWidget {
   final TextEditingController nomeController;

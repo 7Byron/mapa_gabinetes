@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../class/disponibilidade.dart';
+import '../models/disponibilidade.dart';
 
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;

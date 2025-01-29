@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
-import '../banco_dados/init_banco_dados.dart';
-import '../class/alocacao.dart';
-import '../class/disponibilidade.dart';
-import '../class/gabinete.dart';
-import '../class/medico.dart';
+import 'init_banco_dados.dart';
+import '../models/alocacao.dart';
+import '../models/disponibilidade.dart';
+import '../models/gabinete.dart';
+import '../models/medico.dart';
 
 class DatabaseHelper {
   static Database? _database;
@@ -32,7 +32,7 @@ class DatabaseHelper {
         nome: maps[i]['nome'].toString(),
         setor: maps[i]['setor'].toString(),
         especialidadesPermitidas:
-        maps[i]['especialidades'].toString().split(',').toList(),
+            maps[i]['especialidades'].toString().split(',').toList(),
       );
     });
   }
@@ -40,13 +40,13 @@ class DatabaseHelper {
   static Future<Gabinete> buscarGabinetePorId(String id) async {
     final db = await database;
     final List<Map<String, dynamic>> maps =
-    await db.query('gabinetes', where: 'id = ?', whereArgs: [id]);
+        await db.query('gabinetes', where: 'id = ?', whereArgs: [id]);
     return Gabinete(
       id: maps.first['id'],
       nome: maps.first['nome'],
       setor: maps.first['setor'],
       especialidadesPermitidas:
-      maps.first['especialidades'].toString().split(',').toList(),
+          maps.first['especialidades'].toString().split(',').toList(),
     );
   }
 
@@ -110,7 +110,7 @@ class DatabaseHelper {
   static Future<Medico> buscarMedicoPorId(String id) async {
     final db = await database;
     final List<Map<String, dynamic>> maps =
-    await db.query('medicos', where: 'id = ?', whereArgs: [id]);
+        await db.query('medicos', where: 'id = ?', whereArgs: [id]);
     return Medico(
       id: maps.first['id'],
       nome: maps.first['nome'],
@@ -208,7 +208,8 @@ class DatabaseHelper {
   // -------------------------------------------------------
   // DISPONIBILIDADES
   // -------------------------------------------------------
-  static Future<void> salvarDisponibilidade(String medicoId, Disponibilidade disponibilidade) async {
+  static Future<void> salvarDisponibilidade(
+      String medicoId, Disponibilidade disponibilidade) async {
     final db = await database;
     await db.insert(
       'disponibilidades',
@@ -223,7 +224,8 @@ class DatabaseHelper {
     );
   }
 
-  static Future<List<Disponibilidade>> buscarDisponibilidades(String medicoId) async {
+  static Future<List<Disponibilidade>> buscarDisponibilidades(
+      String medicoId) async {
     final db = await database;
     final maps = await db.query(
       'disponibilidades',
@@ -233,7 +235,8 @@ class DatabaseHelper {
     return maps.map((map) => Disponibilidade.fromMap(map)).toList();
   }
 
-  static Future<List<Disponibilidade>> buscarDisponibilidadesPorMedico(String medicoId) async {
+  static Future<List<Disponibilidade>> buscarDisponibilidadesPorMedico(
+      String medicoId) async {
     final db = await database;
     final maps = await db.query(
       'disponibilidades',
@@ -252,7 +255,8 @@ class DatabaseHelper {
     );
   }
 
-  static Future<void> deletarDisponibilidadesPorTipo(String medicoId, String tipo) async {
+  static Future<void> deletarDisponibilidadesPorTipo(
+      String medicoId, String tipo) async {
     final db = await database;
     await db.delete(
       'disponibilidades',
@@ -270,7 +274,8 @@ class DatabaseHelper {
     return maps.map((map) => Disponibilidade.fromMap(map)).toList();
   }
 
-  static Future<void> atualizarDisponibilidade(Disponibilidade disponibilidade) async {
+  static Future<void> atualizarDisponibilidade(
+      Disponibilidade disponibilidade) async {
     final db = await database;
     await db.update(
       'disponibilidades',
@@ -349,4 +354,83 @@ class DatabaseHelper {
       whereArgs: [alocacaoId],
     );
   }
+
+  // -------------------------------------------------------
+// HORARIOS_CLINICA
+// -------------------------------------------------------
+  static Future<void> salvarHorarioClinica(
+      int diaSemana, String abertura, String fecho) async {
+    final db = await database;
+    await db.insert(
+      'horarios_clinica',
+      {
+        'diaSemana': diaSemana,
+        'horaAbertura': abertura,
+        'horaFecho': fecho,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> buscarHorariosClinica() async {
+    final db = await database;
+    final result = await db.query('horarios_clinica');
+    return result.isNotEmpty ? result : [];
+  }
+
+  static Future<void> deletarHorarioClinica(int diaSemana) async {
+    final db = await database;
+    await db.delete(
+      'horarios_clinica',
+      where: 'diaSemana = ?',
+      whereArgs: [diaSemana],
+    );
+  }
+
+// -------------------------------------------------------
+// FERIADOS
+// -------------------------------------------------------
+
+  static Future<void> salvarFeriado(DateTime data, String descricao) async {
+    final db = await database;
+    try {
+      await db.insert(
+        'feriados',
+        {
+          'data': data
+              .toIso8601String(), // Sempre salve como String no formato ISO-8601
+          'descricao': descricao.isNotEmpty ? descricao : '',
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      debugPrint('Erro ao salvar feriado: $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> buscarFeriados() async {
+    final db = await database;
+    final result = await db.query('feriados');
+    return result.map((row) {
+      return {
+        'data': row['data'] as String, // Deixa a data como String
+        'descricao': row['descricao'] as String? ?? '', // Garante String válida
+      };
+    }).toList();
+  }
+
+  static Future<void> deletarFeriado(String data) async {
+    final db = await initDatabase();
+    try {
+      await db.delete(
+        'feriados',
+        where: 'data = ?', // Certifique-se de que a consulta use String
+        whereArgs: [data],
+      );
+    } catch (e) {
+      throw Exception('Erro ao deletar feriado: $e');
+    }
+  }
+
 }

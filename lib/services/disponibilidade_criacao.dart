@@ -1,8 +1,7 @@
-import '../class/disponibilidade.dart';
+import '../models/disponibilidade.dart';
 
 /// Cria uma lista de disponibilidades, podendo ser únicas, semanais,
 /// quinzenais ou mensais. Todas associadas ao [medicoId].
-///
 /// [dataInicial] é a primeira data escolhida,
 /// [tipo] pode ser: 'Única', 'Semanal', 'Quinzenal', 'Mensal',
 /// [limitarAoAno] define se vamos criar apenas até o final do mesmo ano ou não.

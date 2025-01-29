@@ -1,11 +1,11 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../banco_dados/database_helper.dart';
-import '../class/disponibilidade.dart';
-import '../class/medico.dart';
+
 
 // Services
+import '../database/database_helper.dart';
+import '../models/disponibilidade.dart';
+import '../models/medico.dart';
 import '../services/medico_salvar_service.dart';
 import '../services/disponibilidade_criacao.dart';
 import '../services/disponibilidade_remocao.dart';
@@ -27,13 +27,12 @@ class CadastroMedico extends StatefulWidget {
 class CadastroMedicoState extends State<CadastroMedico> {
   final _formKey = GlobalKey<FormState>();
 
-  // Vamos manter o ID do médico numa variável interna
+  // Mantém o ID do médico numa variável interna
   late String _medicoId;
 
   // Disponibilidades e datas selecionadas
   List<Disponibilidade> disponibilidades = [];
   List<DateTime> diasSelecionados = [];
-
 
   // Controllers de texto
   TextEditingController especialidadeController = TextEditingController();
@@ -43,40 +42,47 @@ class CadastroMedicoState extends State<CadastroMedico> {
   @override
   void initState() {
     super.initState();
-    // Se vier "medico" no construtor, usamos o ID dele
-    // Senão, geramos um novo ID
-    _medicoId = widget.medico?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    // Se vier "medico" no construtor, usamos o ID dele; senão, criamos um novo
+    _medicoId =
+        widget.medico?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     if (widget.medico != null) {
-      // Estamos editando um médico existente
+      // Editando um médico existente
       nomeController.text = widget.medico!.nome;
       especialidadeController.text = widget.medico!.especialidade;
       observacoesController.text = widget.medico!.observacoes ?? '';
+
       // Carregamos as disponibilidades deste médico do banco
       _carregarDisponibilidadesSalvas(_medicoId);
     }
   }
 
+  /// Lê as disponibilidades no banco para este médico e ordena por data
   Future<void> _carregarDisponibilidadesSalvas(String medicoId) async {
-    final dbDisponibilidades = await DatabaseHelper.buscarDisponibilidades(medicoId);
+    final dbDisponibilidades =
+    await DatabaseHelper.buscarDisponibilidades(medicoId);
     setState(() {
       disponibilidades = dbDisponibilidades;
+      // **Ordena** por data para ficar sempre cronológico
+      disponibilidades.sort((a, b) => a.data.compareTo(b.data));
     });
     _atualizarDiasSelecionados();
   }
 
+  /// Atualiza o array de [diasSelecionados] com base na lista de [disponibilidades]
   void _atualizarDiasSelecionados() {
     diasSelecionados = disponibilidades.map((d) => d.data).toList();
     setState(() {});
   }
 
-  /// Adiciona um dia no calendário, com um [tipo] (Única, Semanal, etc.).
-  /// Agora passamos `medicoId: _medicoId` para criar as disponibilidades.
+  /// Adiciona data(s) no calendário (única, semanal, quinzenal, mensal), depois **ordena**.
   void _adicionarData(DateTime date, String tipo) {
+    // Usa o serviço que gera a série
     final geradas = criarDisponibilidadesSerie(
       date,
       tipo,
-      medicoId: _medicoId,       // <-- IMPORTANTE
+      medicoId: _medicoId,
       limitarAoAno: true,
     );
 
@@ -89,8 +95,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
         });
       }
     }
+
+    // Após inserir todas, **ordenamos** por data
+    setState(() {
+      disponibilidades.sort((a, b) => a.data.compareTo(b.data));
+    });
   }
 
+  /// Remove data(s) do calendário, depois ordena a lista
   void _removerData(DateTime date, {bool removeSerie = false}) {
     setState(() {
       disponibilidades = removerDisponibilidade(
@@ -98,17 +110,20 @@ class CadastroMedicoState extends State<CadastroMedico> {
         date,
         removeSerie: removeSerie,
       );
+      // Re-atualiza a lista de dias
       diasSelecionados = disponibilidades.map((d) => d.data).toList();
+
+      // **Ordena** novamente, só para garantir
+      disponibilidades.sort((a, b) => a.data.compareTo(b.data));
     });
   }
 
-  /// Salva o médico atual (novo ou já existente).
-  /// Ao salvar, passamos as disponibilidades que já possuem o `medicoId`.
+  /// Salva o médico (novo ou existente) com as disponibilidades
   Future<void> _salvarMedico() async {
     // if (!_formKey.currentState!.validate()) return; // se quiser validar
 
     final medico = Medico(
-      id: _medicoId, // <-- Usamos o ID definido no initState
+      id: _medicoId,
       nome: nomeController.text,
       especialidade: especialidadeController.text,
       observacoes: observacoesController.text,
@@ -133,10 +148,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     return WillPopScope(
       onWillPop: () async {
-        // 1) Chama salvar antes de sair
+        // Salva antes de sair
         await _salvarMedico();
-        // 2) Retorna true para concluir o pop
-        return true;
+        return true; // permite pop
       },
       child: Scaffold(
         appBar: AppBar(

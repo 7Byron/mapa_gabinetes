@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:mapa_gabinetes/ecrans/alocacao_medicos_screen.dart';
+import 'package:mapa_gabinetes/screens/relatorios_screen.dart';
+import 'alocacao_medicos_screen.dart';
 import 'banco_dados_screen.dart';
+import 'config_clinica_screen.dart';
 import 'lista_gabinetes.dart';
 import 'lista_medicos.dart';
+import 'relatorio_especialidades_screen.dart';
 
 class TelaPrincipal extends StatelessWidget {
   const TelaPrincipal({super.key});
@@ -11,7 +14,7 @@ class TelaPrincipal extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Gestão de Clínica Médica'),
+        title: Text('Alocação de Gabinetes'),
       ),
       drawer: Drawer(
         child: ListView(
@@ -32,11 +35,11 @@ class TelaPrincipal extends StatelessWidget {
             ),
             ListTile(
               leading: Icon(Icons.calendar_month),
-              title: Text('Gerir Alocações'),
+              title: Text('Alocação Gabinetes'),
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => AlocacaoMedicos()),
+                  MaterialPageRoute(builder: (context) => TelaPrincipal()),
                 );
               },
             ),
@@ -73,15 +76,43 @@ class TelaPrincipal extends StatelessWidget {
                 );
               },
             ),
+            ListTile(
+              leading: Icon(Icons.settings),
+              title: Text('Configurar Horários'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ConfigClinicaScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.bar_chart),
+              title: Text('Relatórios de Ocupação'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => RelatoriosScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.analytics),
+              title: Text('Relatório Especialidades'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RelatorioEspecialidadesScreen()),
+                );
+              },
+            ),
+
           ],
         ),
       ),
-      body: Center(
-        child: Text(
-          'Bem-vindo ao Mapa de Gabinetes',
-          style: TextStyle(fontSize: 18),
-        ),
-      ),
+      body: const AlocacaoMedicos(),
     );
   }
 }

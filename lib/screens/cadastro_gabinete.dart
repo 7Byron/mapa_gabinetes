@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import '../class/gabinete.dart';
-import '../banco_dados/database_helper.dart';
+import '../models/gabinete.dart';
+import '../database/database_helper.dart';
 
 class CadastroGabinete extends StatefulWidget {
   final Gabinete? gabinete;

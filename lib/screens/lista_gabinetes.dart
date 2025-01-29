@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../class/gabinete.dart';
-import '../banco_dados/database_helper.dart';
+import '../models/gabinete.dart';
+import '../database/database_helper.dart';
 import 'cadastro_gabinete.dart';
 
 class ListaGabinetes extends StatefulWidget {

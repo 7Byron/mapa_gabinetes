@@ -1,10 +1,12 @@
+// lib/models/disponibilidade.dart
+
 import 'dart:convert';
 
 class Disponibilidade {
-  late final String id;
-  late final String medicoId;
+  String id;
+  String medicoId;
   final DateTime data;
-  final String tipo; // Novo campo para armazenar o tipo de marcação
+  final String tipo; // "Única", "Semanal", etc.
   List<String> horarios;
 
   Disponibilidade({
@@ -21,7 +23,7 @@ class Disponibilidade {
       'medicoId': medicoId,
       'data': data.toIso8601String(),
       'horarios': jsonEncode(horarios),
-      'tipo': tipo, // Inclui o tipo no banco
+      'tipo': tipo,
     };
   }
 
@@ -30,8 +32,8 @@ class Disponibilidade {
       id: map['id'],
       medicoId: map['medicoId'],
       data: DateTime.parse(map['data']),
-      horarios: (jsonDecode(map['horarios']) as List<dynamic>).cast<String>(),
-      tipo: map['tipo'] ?? 'Única', // Padrão: única
+      horarios: (jsonDecode(map['horarios']) as List).cast<String>(),
+      tipo: map['tipo'] ?? 'Única',
     );
   }
 }

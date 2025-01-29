@@ -1,3 +1,5 @@
+// lib/models/alocacao.dart
+
 class Alocacao {
   String id;
   String medicoId;

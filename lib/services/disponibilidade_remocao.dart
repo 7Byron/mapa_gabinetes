@@ -1,4 +1,4 @@
-import '../class/disponibilidade.dart';
+import '../models/disponibilidade.dart';
 
 /// Remove uma ou mais disponibilidades de acordo com [date].
 ///

@@ -114,15 +114,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
       return disp.medicoId == medicoId && dd == dataAlvo;
     }).toList();
-    final horarios = dispDoDia.expand((d) => d.horarios).join(', ');
+    final horarioInicio = dispDoDia.isNotEmpty ? dispDoDia.first.horarios[0] : '00:00';
+    final horarioFim = dispDoDia.isNotEmpty ? dispDoDia.first.horarios[1] : '00:00';
 
     final novaAloc = Alocacao(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       medicoId: medicoId,
       gabineteId: gabineteId,
       data: dataAlvo,
-      horarioInicio: horarios,
-      horarioFim: '',
+      horarioInicio: horarioInicio,
+      horarioFim: horarioFim,
     );
     // Persiste no banco
     await DatabaseHelper.salvarAlocacao(novaAloc);

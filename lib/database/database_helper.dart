@@ -433,4 +433,39 @@ class DatabaseHelper {
     }
   }
 
+  //Apagar os dados do banco de dados:
+
+  static Future<void> deleteAllFeriados() async {
+    final db = await DatabaseHelper.database;
+    await db.delete('feriados');
+  }
+
+  static Future<void> deleteAllHorariosClinica() async {
+    final db = await DatabaseHelper.database;
+    await db.delete('horarios_clinica');
+  }
+
+  static Future<void> deleteAllAlocacoes() async {
+    final db = await DatabaseHelper.database;
+    await db.delete('alocacoes');
+  }
+
+  static Future<void> deleteAllMedicos() async {
+    final db = await DatabaseHelper.database;
+    await db.delete('medicos');
+  }
+
+  static Future<void> deleteAllGabinetes() async {
+    final db = await DatabaseHelper.database;
+    await db.delete('gabinetes');
+  }
+
+  static Future<void> deleteAllDisponibilidades() async {
+    final db = await DatabaseHelper.database;
+    await db.delete('disponibilidades');
+  }
+
+
+
+
 }

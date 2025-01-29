@@ -45,58 +45,78 @@ class MedicosDisponiveisSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Aqui não somos mais um DragTarget
-    // Apenas exibimos os médicos disponíveis em "chips" ou "cards" arrastáveis
     return Container(
       padding: const EdgeInsets.all(8),
-      // Podemos dar um fundo, mas agora esse fundo é gerenciado no drag do pai
-      color: Colors.white,
       child: SingleChildScrollView(
         child: Wrap(
-          alignment: WrapAlignment.start,
-          runSpacing: 8,
           spacing: 8,
+          runSpacing: 8,
           children: medicosDisponiveis.map((medico) {
-            // Descobre as disponibilidades desse médico no dia
-            final dispDoMedico = disponibilidades.where((d) {
-              return d.medicoId == medico.id &&
-                  d.data.year == selectedDate.year &&
-                  d.data.month == selectedDate.month &&
-                  d.data.day == selectedDate.day;
-            }).toList();
+            // Corrigir a query de disponibilidades
+            final dispDoMedico = disponibilidades.where((d) =>
+            d.medicoId == medico.id &&
+                d.data.year == selectedDate.year &&
+                d.data.month == selectedDate.month &&
+                d.data.day == selectedDate.day
+            ).toList(); // Corrigido: sintaxe do where e toList()
 
-            // Junta todos os horários numa string
+            // Corrigir o join e formatação dos horários
             final horariosStr = dispDoMedico
                 .expand((d) => d.horarios)
-                .join(', ');
+                .join(', '); // Corrigido: sintaxe do expand e join
 
-            // Se ao menos uma disponibilidade for válida -> isValido = true
-            final bool isValido =
-            dispDoMedico.any((d) => _validarDisponibilidade(d));
-            final Color corFundo =
-            isValido ? Colors.grey[200]! : Colors.red[200]!;
-
-            return Draggable<String>(
-              data: medico.id,
-              feedback: MedicoCard.dragFeedback(medico, horariosStr),
-              childWhenDragging: Opacity(
-                opacity: 0.5,
-                child: MedicoCard.buildSmallMedicoCard(
-                  medico,
-                  horariosStr,
-                  corFundo,
-                  isValido,
-                ),
+            // Validação correta
+            final isValido = dispDoMedico.any((d) =>
+                _validarDisponibilidade(d)
+            );
+            return Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: MedicoCard.buildSmallMedicoCard(
-                medico,
-                horariosStr,
-                corFundo,
-                isValido,
+              child: Draggable<String>(
+                data: medico.id,
+                feedback: MedicoCard.dragFeedback(medico, horariosStr),
+                childWhenDragging: Opacity(
+                  opacity: 0.5,
+                  child: _buildMedicoCardContent(medico, horariosStr, isValido),
+                ),
+                child: _buildMedicoCardContent(medico, horariosStr, isValido),
               ),
             );
           }).toList(),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMedicoCardContent(Medico medico, String horarios, bool isValid) {
+    return Container(
+      width: 160, // Largura fixa para consistência
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: isValid ? Colors.grey[200]! : Colors.red[200]!,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            medico.nome,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            medico.especialidade,
+            style: TextStyle(fontSize: 10, color: Colors.grey[700]),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            horarios,
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
+          ),
+        ],
       ),
     );
   }

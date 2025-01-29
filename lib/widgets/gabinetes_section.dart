@@ -67,6 +67,9 @@ class _GabinetesSectionState extends State<GabinetesSection> {
     }
 
     return ListView.builder(
+      shrinkWrap: true,
+      padding: const EdgeInsets.all(8),
+      physics: const ClampingScrollPhysics(),
       itemCount: gabinetesPorSetor.keys.length,
       itemBuilder: (context, index) {
         final setor = gabinetesPorSetor.keys.elementAt(index);
@@ -92,10 +95,10 @@ class _GabinetesSectionState extends State<GabinetesSection> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 150, // Largura máxima
+                maxCrossAxisExtent: 200, // Aumente a largura máxima
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
-                childAspectRatio: 1.5,
+                childAspectRatio: 0.8, // Reduza a aspect ratio para mais altura
               ),
               itemCount: listaGabinetes.length,
               itemBuilder: (ctx, idx) {
@@ -290,6 +293,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                     return Card(
                       elevation: 4,
+                      color: corFundo,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -300,59 +304,76 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           borderRadius: BorderRadius.circular(12),
                           color: corFundo, // Baseado no estado do gabinete
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            // Nome do gabinete
-                            Text(
-                              gabinete.nome,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minHeight: 100, // Altura mínima
+                            maxHeight: 300, // Altura máxima para evitar overflow excessivo
+                          ),
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // Nome do gabinete
+                                Text(
+                                  gabinete.nome,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  gabinete.especialidadesPermitidas.join(", "),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                            
+                                // Lista de médicos alocados
+                                if (alocacoesDoGabinete.isNotEmpty)
+                                  ...alocacoesDoGabinete.map((a) {
+                                    final medico = widget.medicos.firstWhere(
+                                          (m) => m.id == a.medicoId,
+                                      orElse: () => Medico(
+                                        id: '',
+                                        nome: 'Desconhecido',
+                                        especialidade: '',
+                                        disponibilidades: [],
+                                      ),
+                                    );
+                            
+                                    final horariosAlocacao = (a.horarioFim.isNotEmpty)
+                                        ? '${a.horarioInicio} - ${a.horarioFim}'
+                                        : a.horarioInicio;
+                            
+                                    return Draggable<String>(
+                                      data: medico.id,
+                                      feedback: MedicoCard.dragFeedback(
+                                        medico,
+                                        horariosAlocacao,
+                                      ),
+                                      childWhenDragging: Opacity(
+                                        opacity: 0.5,
+                                        child: MedicoCard.buildSmallMedicoCard(
+                                          medico,
+                                          horariosAlocacao,
+                                          Colors.white,
+                                          true,
+                                        ),
+                                      ),
+                                      child: MedicoCard.buildSmallMedicoCard(
+                                        medico,
+                                        horariosAlocacao,
+                                        Colors.white,
+                                        true,
+                                      ),
+                                    );
+                                  }),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-
-                            // Lista de médicos alocados
-                            if (alocacoesDoGabinete.isNotEmpty)
-                              ...alocacoesDoGabinete.map((a) {
-                                final medico = widget.medicos.firstWhere(
-                                      (m) => m.id == a.medicoId,
-                                  orElse: () => Medico(
-                                    id: '',
-                                    nome: 'Desconhecido',
-                                    especialidade: '',
-                                    disponibilidades: [],
-                                  ),
-                                );
-
-                                final horariosAlocacao = (a.horarioFim.isNotEmpty)
-                                    ? '${a.horarioInicio} - ${a.horarioFim}'
-                                    : a.horarioInicio;
-
-                                return Draggable<String>(
-                                  data: medico.id,
-                                  feedback: MedicoCard.dragFeedback(
-                                    medico,
-                                    horariosAlocacao,
-                                  ),
-                                  childWhenDragging: Opacity(
-                                    opacity: 0.5,
-                                    child: MedicoCard.buildSmallMedicoCard(
-                                      medico,
-                                      horariosAlocacao,
-                                      Colors.white,
-                                      true,
-                                    ),
-                                  ),
-                                  child: MedicoCard.buildSmallMedicoCard(
-                                    medico,
-                                    horariosAlocacao,
-                                    Colors.white,
-                                    true,
-                                  ),
-                                );
-                              }),
-                          ],
+                          ),
                         ),
                       ),
                     );

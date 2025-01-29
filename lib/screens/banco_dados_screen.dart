@@ -465,18 +465,25 @@ class BancoDadosScreenState extends State<BancoDadosScreen> {
   // AQUI ESTÃO OS MÉTODOS _buildSectionTitle, _buildMedicoList, etc.
   // ------------------------------------------------------------------------
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(String title, VoidCallback onDelete) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: onDelete,
+          ),
+        ],
       ),
     );
   }
+
 
   Widget _buildMedicoList() {
     if (medicos.isEmpty) {
@@ -636,6 +643,49 @@ class BancoDadosScreenState extends State<BancoDadosScreen> {
     );
   }
 
+  Future<void> _deleteAllMedicos() async {
+    await DatabaseHelper.deleteAllMedicos();
+    setState(() {
+      medicos.clear();
+    });
+  }
+
+  Future<void> _deleteAllGabinetes() async {
+    await DatabaseHelper.deleteAllGabinetes();
+    setState(() {
+      gabinetes.clear();
+    });
+  }
+
+  Future<void> _deleteAllDisponibilidades() async {
+    await DatabaseHelper.deleteAllDisponibilidades();
+    setState(() {
+      disponibilidades.clear();
+    });
+  }
+
+  Future<void> _deleteAllAlocacoes() async {
+    await DatabaseHelper.deleteAllAlocacoes();
+    setState(() {
+      alocacoes.clear();
+    });
+  }
+
+  Future<void> _deleteAllFeriados() async {
+    await DatabaseHelper.deleteAllFeriados();
+    setState(() {
+      feriados.clear();
+    });
+  }
+
+  Future<void> _deleteAllHorariosClinica() async {
+    await DatabaseHelper.deleteAllHorariosClinica();
+    setState(() {
+      horariosClinica.clear();
+    });
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -658,17 +708,17 @@ class BancoDadosScreenState extends State<BancoDadosScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionTitle('Médicos'),
+            _buildSectionTitle('Médicos', _deleteAllMedicos),
             _buildMedicoList(),
-            _buildSectionTitle('Gabinetes'),
+            _buildSectionTitle('Gabinetes', _deleteAllGabinetes),
             _buildGabineteList(),
-            _buildSectionTitle('Disponibilidades'),
+            _buildSectionTitle('Disponibilidades', _deleteAllDisponibilidades),
             _buildDisponibilidadeList(),
-            _buildSectionTitle('Alocações'),
+            _buildSectionTitle('Alocações', _deleteAllAlocacoes),
             _buildAlocacaoList(),
-            _buildSectionTitle('Horários da Clínica'),
+            _buildSectionTitle('Horários da Clínica', _deleteAllHorariosClinica),
             _buildHorariosClinicaList(),
-            _buildSectionTitle('Feriados'),
+            _buildSectionTitle('Feriados', _deleteAllFeriados),
             _buildFeriadosList(),
           ],
         ),

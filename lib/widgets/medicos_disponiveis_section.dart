@@ -48,9 +48,10 @@ class MedicosDisponiveisSection extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8),
       child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
         child: Wrap(
           spacing: 8,
-          runSpacing: 8,
+          //runSpacing: 8,
           children: medicosDisponiveis.map((medico) {
             // Corrigir a query de disponibilidades
             final dispDoMedico = disponibilidades.where((d) =>
@@ -108,14 +109,14 @@ class MedicosDisponiveisSection extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            medico.especialidade,
+            "$horarios ${medico.especialidade}",
             style: TextStyle(fontSize: 10, color: Colors.grey[700]),
           ),
-          const SizedBox(height: 4),
-          Text(
-            horarios,
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
-          ),
+          // const SizedBox(height: 4),
+          // Text(
+          //   horarios,
+          //   style: const TextStyle(fontSize: 10, color: Colors.grey),
+          // ),
         ],
       ),
     );

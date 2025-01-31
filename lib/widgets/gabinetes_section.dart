@@ -57,6 +57,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
     }
   }
 
+  int _horarioParaMinutos(String horario) {
+    final partes = horario.split(':');
+    return int.parse(partes[0]) * 60 + int.parse(partes[1]);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Agrupa gabinetes por setor
@@ -284,12 +289,16 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                   builder: (context, candidateData, rejectedData) {
                     // Filtra as alocações para o gabinete atual e a data selecionada
-                    final alocacoesDoGabinete = widget.alocacoes.where((a) {
+                    final alocacoesDoGabinete = widget.alocacoes
+                        .where((a) {
                       return a.gabineteId == gabinete.id &&
                           a.data.year == widget.selectedDate.year &&
                           a.data.month == widget.selectedDate.month &&
                           a.data.day == widget.selectedDate.day;
-                    }).toList();
+                    })
+                        .toList()
+                      ..sort((a, b) => _horarioParaMinutos(a.horarioInicio)
+                          .compareTo(_horarioParaMinutos(b.horarioInicio)));
 
                     return Card(
                       elevation: 4,

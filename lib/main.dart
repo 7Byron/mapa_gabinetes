@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mapa_gabinetes/screens/alocacao_medicos_screen.dart';
 import 'database/init_banco_dados.dart';
 import 'screens/tela_principal.dart';
 
@@ -22,7 +23,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: TelaPrincipal(),
+      home: AlocacaoMedicos(),
     );
   }
 }

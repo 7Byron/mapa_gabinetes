@@ -26,6 +26,10 @@ class ListaMedicosState extends State<ListaMedicos> {
 
     try {
       final medicosCarregados = await DatabaseHelper.buscarMedicos(); // Busca os médicos
+
+      // Ordena a lista de médicos pelo nome
+      medicosCarregados.sort((a, b) => a.nome.compareTo(b.nome));
+
       setState(() {
         medicos = medicosCarregados;
         isLoading = false;

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart'; // Adicione esta linha
+import 'package:mapa_gabinetes/screens/relatorio_especialidades_screen.dart';
+import 'package:mapa_gabinetes/screens/relatorios_screen.dart';
 
 // Imports locais
 import '../widgets/date_picker_section.dart';
@@ -12,6 +15,10 @@ import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 
 import '../database/database_helper.dart';
+import 'banco_dados_screen.dart';
+import 'config_clinica_screen.dart';
+import 'lista_gabinetes.dart';
+import 'lista_medicos.dart';
 // Importa a classe separada
 
 
@@ -391,9 +398,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   //                           LAYOUT PRINCIPAL
   // ==========================================================================
   @override
+  @override
   Widget build(BuildContext context) {
     if (isCarregando) {
       return Scaffold(
+        appBar: AppBar( // Mantenha o AppBar mesmo durante o carregamento
+          title: Text(
+            'Alocação de Gabinetes do dia ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
+          ),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -401,6 +414,107 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     final gabinetesFiltrados = _filtrarGabinetesPorUI();
 
     return Scaffold(
+      appBar: AppBar( // AppBar com a data dinâmica
+        title: Text(
+          'Alocação de Gabinetes do dia ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
+        ),
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Colors.blue,
+              ),
+              child: Text(
+                'Gestão Mapa Gabinetes',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            // ListTile(
+            //   leading: Icon(Icons.calendar_month),
+            //   title: Text('Alocação Gabinetes'),
+            //   onTap: () {
+            //     Navigator.push(
+            //       context,
+            //       MaterialPageRoute(builder: (context) => TelaPrincipal()),
+            //     );
+            //   },
+            // ),
+            ListTile(
+              leading: Icon(Icons.medical_services),
+              title: Text('Gerir Médicos'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ListaMedicos()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.business),
+              title: Text('Gerir Gabinetes'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ListaGabinetes()),
+                );
+              },
+            ),
+            // New ListTile for Settings
+            ListTile(
+              leading: Icon(Icons.dataset_outlined), // Icon for settings
+              title: Text('Base de Dados'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) =>
+                          BancoDadosScreen()), // Navigate to the settings screen
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.settings),
+              title: Text('Configurar Horários'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ConfigClinicaScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.bar_chart),
+              title: Text('Relatórios de Ocupação'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => RelatoriosScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.analytics),
+              title: Text('Relatório Especialidades'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RelatorioEspecialidadesScreen()),
+                );
+              },
+            ),
+
+          ],
+        ),
+      ),
       body: Row(
         children: [
           // ----------------------------------------------------------
@@ -447,7 +561,19 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                     builder: (context, candidateData, rejectedData) {
                       final isHovering = candidateData.isNotEmpty;
                       return Container(
-                        color: isHovering ? Colors.blue[50] : Colors.white,
+                        decoration: BoxDecoration(
+                          color: isHovering ? Colors.blue[50] : Colors.white,
+                          border: Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.2),
+                              spreadRadius: 2,
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        margin: EdgeInsets.all(8), // Margem externa
                         child: MedicosDisponiveisSection(
                           medicosDisponiveis: medicosDisponiveis,
                           disponibilidades: disponibilidades,

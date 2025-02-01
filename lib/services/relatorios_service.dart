@@ -1,9 +1,6 @@
 // lib/services/relatorios_service.dart
 
-import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
-import '../models/alocacao.dart';
-import '../models/gabinete.dart';
 
 class RelatoriosService {
   /// Gera todas as datas de [inicio] até [fim] (incluso).

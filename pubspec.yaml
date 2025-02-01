@@ -16,9 +16,10 @@ dependencies:
   path: ^1.9.0 #Nao atualizar este!
   path_provider: ^2.1.5
   json_annotation: ^4.9.0
-  syncfusion_flutter_calendar: ^28.1.41
+  syncfusion_flutter_calendar: ^28.2.3
   flutter_typeahead: ^5.2.0
   sqflite_common_ffi: ^2.3.4+4
+
 
 dev_dependencies:
   flutter_test:

@@ -1,7 +1,4 @@
 import '../database/database_helper.dart';
-import '../models/medico.dart';
-import '../models/disponibilidade.dart';
-import 'package:flutter/foundation.dart';
 
 class RelatoriosEspecialidadesService {
   /// Retorna um Map: {especialidade -> totalHoras}

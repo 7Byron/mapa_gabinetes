@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/medico.dart';
-import '../models/disponibilidade.dart';
 import '../database/database_helper.dart';
 
 Future<void> salvarMedicoCompleto(Medico medico) async {

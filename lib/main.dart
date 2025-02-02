@@ -19,8 +19,20 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Mapa de Gabinetes',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
+        primarySwatch: Colors.blue,
+        fontFamily: 'Montserrat', // Fonte local configurada
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.blue.shade300,
+          elevation: 2,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            fontFamily: 'Montserrat',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
       ),
       home: AlocacaoMedicos(),
     );

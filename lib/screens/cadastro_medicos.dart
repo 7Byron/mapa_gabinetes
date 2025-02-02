@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-
-
 // Services
 import '../database/database_helper.dart';
 import '../models/disponibilidade.dart';
@@ -61,7 +59,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
   /// Lê as disponibilidades no banco para este médico e ordena por data
   Future<void> _carregarDisponibilidadesSalvas(String medicoId) async {
     final dbDisponibilidades =
-    await DatabaseHelper.buscarDisponibilidades(medicoId);
+        await DatabaseHelper.buscarDisponibilidades(medicoId);
     setState(() {
       disponibilidades = dbDisponibilidades;
       // **Ordena** por data para ficar sempre cronológico
@@ -118,16 +116,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
     });
   }
 
-  /// Salva o médico (novo ou existente) com as disponibilidades
   Future<void> _salvarMedico() async {
-    // if (!_formKey.currentState!.validate()) return; // se quiser validar
+    if (!_formKey.currentState!.validate()) {
+      return; // Não salva se o formulário for inválido
+    }
 
     final medico = Medico(
       id: _medicoId,
-      nome: nomeController.text,
-      especialidade: especialidadeController.text,
-      observacoes: observacoesController.text,
-      disponibilidades: disponibilidades,
+      nome: nomeController.text, // Captura o nome
+      especialidade: especialidadeController.text, // Captura a especialidade
+      observacoes: observacoesController.text, // Captura observações
+      disponibilidades: disponibilidades, // Adiciona as disponibilidades
     );
 
     try {
@@ -141,6 +140,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -162,12 +162,52 @@ class CadastroMedicoState extends State<CadastroMedico> {
             key: _formKey,
             child: isLargeScreen
                 ? Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Coluna esquerda (dados do médico + calendário)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 300),
-                  child: SingleChildScrollView(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Coluna esquerda (dados do médico + calendário)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 300),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              FormularioMedico(
+                                nomeController: nomeController,
+                                especialidadeController:
+                                    especialidadeController,
+                                observacoesController: observacoesController,
+                              ),
+                              const SizedBox(height: 16),
+                              CalendarioDisponibilidades(
+                                diasSelecionados: diasSelecionados,
+                                onAdicionarData: _adicionarData,
+                                onRemoverData: (date, removeSerie) {
+                                  _removerData(date, removeSerie: removeSerie);
+                                },
+                              ),
+                              const SizedBox(height: 24),
+                              // Botão de Salvar removido, pois salvamos ao sair
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+
+                      // Coluna direita (grid das disponibilidades)
+                      Expanded(
+                        flex: 1,
+                        child: SingleChildScrollView(
+                          child: DisponibilidadesGrid(
+                            disponibilidades: disponibilidades,
+                            onRemoverData: (date, removeSerie) {
+                              _removerData(date, removeSerie: removeSerie);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -185,59 +225,20 @@ class CadastroMedicoState extends State<CadastroMedico> {
                           },
                         ),
                         const SizedBox(height: 24),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 300),
+                          child: DisponibilidadesGrid(
+                            disponibilidades: disponibilidades,
+                            onRemoverData: (date, removeSerie) {
+                              _removerData(date, removeSerie: removeSerie);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 24),
                         // Botão de Salvar removido, pois salvamos ao sair
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-
-                // Coluna direita (grid das disponibilidades)
-                Expanded(
-                  flex: 1,
-                  child: SingleChildScrollView(
-                    child: DisponibilidadesGrid(
-                      disponibilidades: disponibilidades,
-                      onRemoverData: (date, removeSerie) {
-                        _removerData(date, removeSerie: removeSerie);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            )
-                : SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FormularioMedico(
-                    nomeController: nomeController,
-                    especialidadeController: especialidadeController,
-                    observacoesController: observacoesController,
-                  ),
-                  const SizedBox(height: 16),
-                  CalendarioDisponibilidades(
-                    diasSelecionados: diasSelecionados,
-                    onAdicionarData: _adicionarData,
-                    onRemoverData: (date, removeSerie) {
-                      _removerData(date, removeSerie: removeSerie);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 300),
-                    child: DisponibilidadesGrid(
-                      disponibilidades: disponibilidades,
-                      onRemoverData: (date, removeSerie) {
-                        _removerData(date, removeSerie: removeSerie);
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Botão de Salvar removido, pois salvamos ao sair
-                ],
-              ),
-            ),
           ),
         ),
       ),

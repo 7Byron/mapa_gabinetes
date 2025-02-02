@@ -1,5 +1,3 @@
-// lib/screens/alocacao_medicos.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -15,21 +13,21 @@ import '../widgets/filtros_section.dart';
 // Lógica separada
 import '../utils/alocacao_medicos_logic.dart';
 
-// Models, Database, etc.
+// Models
 import '../models/gabinete.dart';
 import '../models/medico.dart';
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
-
+import '../database/database_helper.dart';
 
 class AlocacaoMedicos extends StatefulWidget {
-  const AlocacaoMedicos({super.key});
+  const AlocacaoMedicos({Key? key}) : super(key: key);
 
   @override
-  State<AlocacaoMedicos> createState() => _AlocacaoMedicosState();
+  State<AlocacaoMedicos> createState() => AlocacaoMedicosState();
 }
 
-class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
+class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   bool isCarregando = true;
   DateTime selectedDate = DateTime.now();
 
@@ -39,6 +37,12 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
   List<Disponibilidade> disponibilidades = [];
   List<Alocacao> alocacoes = [];
   List<Medico> medicosDisponiveis = [];
+
+  // Dados da clínica
+  List<Map<String, dynamic>> feriados = [];
+  Map<int, List<String>> horariosClinica = {};
+  bool clinicaFechada = false;
+  String mensagemClinicaFechada = '';
 
   // Filtros
   List<String> pisosSelecionados = [];
@@ -52,51 +56,96 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
   }
 
   Future<void> _carregarDadosIniciais() async {
-    // Carrega do banco via logic
-    await AlocacaoMedicosLogic.carregarDadosIniciais(
-      gabinetes: gabinetes,
-      medicos: medicos,
-      disponibilidades: disponibilidades,
-      alocacoes: alocacoes,
-      onGabinetes: (g) => gabinetes = g,
-      onMedicos: (m) => medicos = m,
-      onDisponibilidades: (d) => disponibilidades = d,
-      onAlocacoes: (a) => alocacoes = a,
-    );
+    try {
+      // Carrega do banco via logic
+      await AlocacaoMedicosLogic.carregarDadosIniciais(
+        gabinetes: gabinetes,
+        medicos: medicos,
+        disponibilidades: disponibilidades,
+        alocacoes: alocacoes,
+        onGabinetes: (g) => gabinetes = g,
+        onMedicos: (m) => medicos = m,
+        onDisponibilidades: (d) => disponibilidades = d,
+        onAlocacoes: (a) => alocacoes = a,
+      );
 
-    // Filtra médicos do dia
-    medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
-      dataSelecionada: selectedDate,
-      disponibilidades: disponibilidades,
-      alocacoes: alocacoes,
-      medicos: medicos,
-    );
+      // Carregar feriados da base de dados
+      feriados = await DatabaseHelper.buscarFeriados();
 
-    // Inicializa pisos
-    pisosSelecionados = gabinetes.map((g) => g.setor).toSet().toList();
+      // Carregar horários da clínica da base de dados
+      final horariosRows = await DatabaseHelper.buscarHorariosClinica();
+      for (final row in horariosRows) {
+        final diaSemana = row['diaSemana'] as int;
+        final horaAbertura = (row['horaAbertura'] ?? "") as String;
+        final horaFecho = (row['horaFecho'] ?? "") as String;
+        horariosClinica[diaSemana] = [horaAbertura, horaFecho];
+      }
 
-    setState(() => isCarregando = false);
-  }
-
-  void _onDateChanged(DateTime newDate) {
-    setState(() {
-      selectedDate = newDate;
+      // Filtra médicos do dia
       medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
-        dataSelecionada: newDate,
+        dataSelecionada: selectedDate,
         disponibilidades: disponibilidades,
         alocacoes: alocacoes,
         medicos: medicos,
       );
+
+      // Inicializa pisos
+      pisosSelecionados = gabinetes.map((g) => g.setor).toSet().toList();
+
+      setState(() => isCarregando = false);
+    } catch (e) {
+      debugPrint('Erro ao carregar dados do banco: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erro ao carregar dados do banco.')),
+      );
+    }
+  }
+
+  bool _verificarClinicaFechada(DateTime data) {
+    // Verificar se é feriado
+    final ehFeriado = feriados.any((feriado) {
+      final dataFeriado = DateTime.parse(feriado['data']);
+      return data.year == dataFeriado.year &&
+          data.month == dataFeriado.month &&
+          data.day == dataFeriado.day;
+    });
+
+    // Verificar horários da clínica
+    final diaSemana = data.weekday; // 1 para segunda-feira, 7 para domingo
+    final horarios = horariosClinica[diaSemana];
+    final horarioIndisponivel =
+        horarios == null || (horarios[0].isEmpty && horarios[1].isEmpty);
+
+    return ehFeriado || horarioIndisponivel;
+  }
+
+  void _onDateChanged(DateTime newDate) {
+    final clinicaEncerrada = _verificarClinicaFechada(newDate);
+
+    setState(() {
+      selectedDate = newDate;
+      clinicaFechada = clinicaEncerrada;
+      mensagemClinicaFechada =
+          clinicaEncerrada ? 'A clínica está encerrada neste dia!' : '';
+
+      if (!clinicaEncerrada) {
+        medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
+          dataSelecionada: newDate,
+          disponibilidades: disponibilidades,
+          alocacoes: alocacoes,
+          medicos: medicos,
+        );
+      }
     });
   }
 
   Future<void> _alocarMedico(
-      String medicoId,
-      String gabineteId, {
-        DateTime? dataEspecifica,
-      }) async {
+    String medicoId,
+    String gabineteId, {
+    DateTime? dataEspecifica,
+  }) async {
     await AlocacaoMedicosLogic.alocarMedico(
-      selectedDate: selectedDate,
+      selectedDate: dataEspecifica ?? selectedDate,
       medicoId: medicoId,
       gabineteId: gabineteId,
       alocacoes: alocacoes,
@@ -108,11 +157,7 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
         });
       },
     );
-
-    // Opcional colocar um "return;" explícito aqui
-    // return;
   }
-
 
   Future<void> _desalocarMedicoDiaUnico(String medicoId) async {
     await AlocacaoMedicosLogic.desalocarMedicoDiaUnico(
@@ -201,7 +246,7 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
       return Scaffold(
         appBar: AppBar(
           title: Text(
-            'Alocação de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
+            'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
           ),
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -218,126 +263,178 @@ class _AlocacaoMedicosState extends State<AlocacaoMedicos> {
     );
 
     return Scaffold(
+      // AppBar já vem estilizado pelo theme
       appBar: AppBar(
         title: Text(
-          'Alocação de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
+          'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
         ),
       ),
-      drawer: const CustomDrawer(), // Se estiver usando o Drawer separado
-      body: Row(
-        children: [
-          // COLUNA ESQUERDA: DatePicker + Filtros
-          SizedBox(
-            width: 280,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    color: Colors.grey[200],
-                    padding: const EdgeInsets.all(8.0),
-                    child: DatePickerSection(
-                      selectedDate: selectedDate,
-                      onDateChanged: _onDateChanged,
+      drawer: CustomDrawer(
+        onRefresh: _carregarDadosIniciais, // Passa o callback para o drawer
+      ),
+      // Corpo com cor de fundo suave e layout mais espaçoso
+      body: Container(
+        color: const Color(0xFFF8F9FB),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Coluna Esquerda: DatePicker + Filtros
+            Container(
+              width: 280,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // DatePicker
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 4,
+                            offset: Offset(2, 2),
+                          ),
+                        ],
+                      ),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: DatePickerSection(
+                        selectedDate: selectedDate,
+                        onDateChanged: _onDateChanged,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Widget de Filtros que extraímos
-                  FiltrosSection(
-                    todosSetores:
-                        gabinetes.map((g) => g.setor).toSet().toList(),
-                    pisosSelecionados: pisosSelecionados,
-                    onTogglePiso: (setor, isSelected) {
-                      setState(() {
-                        if (isSelected) {
-                          pisosSelecionados.add(setor);
-                        } else {
-                          pisosSelecionados.remove(setor);
-                        }
-                      });
-                    },
-                    filtroOcupacao: filtroOcupacao,
-                    onFiltroOcupacaoChanged: (novo) {
-                      setState(() => filtroOcupacao = novo);
-                    },
-                    mostrarConflitos: mostrarConflitos,
-                    onMostrarConflitosChanged: (val) {
-                      setState(() => mostrarConflitos = val);
-                    },
-                  ),
-                ],
+
+                    // Filtros
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 4,
+                            offset: Offset(2, 2),
+                          ),
+                        ],
+                      ),
+                      child: FiltrosSection(
+                        todosSetores:
+                            gabinetes.map((g) => g.setor).toSet().toList(),
+                        pisosSelecionados: pisosSelecionados,
+                        onTogglePiso: (setor, isSelected) {
+                          setState(() {
+                            if (isSelected) {
+                              pisosSelecionados.add(setor);
+                            } else {
+                              pisosSelecionados.remove(setor);
+                            }
+                          });
+                        },
+                        filtroOcupacao: filtroOcupacao,
+                        onFiltroOcupacaoChanged: (novo) {
+                          setState(() => filtroOcupacao = novo);
+                        },
+                        mostrarConflitos: mostrarConflitos,
+                        onMostrarConflitosChanged: (val) {
+                          setState(() => mostrarConflitos = val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          // COLUNA DIREITA: Medicos Disponíveis (DragTarget p/ desalocar) + Gabinetes
-          Expanded(
-            child: Column(
-              children: [
-                // DragTarget para desalocar
-                Container(
-                  constraints: const BoxConstraints(minHeight: 85),
-                  width: double.infinity,
-                  child: DragTarget<String>(
-                    onWillAccept: (_) => true,
-                    onAccept: (medicoId) async {
-                      await _desalocarMedicoComPergunta(medicoId);
-                    },
-                    builder: (context, candidateData, rejectedData) {
-                      final isHovering = candidateData.isNotEmpty;
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: isHovering ? Colors.blue[50] : Colors.white,
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.2),
-                              spreadRadius: 2,
-                              blurRadius: 4,
+            // Coluna Direita: Médicos Disponíveis (dragTarget) e Gabinetes
+            Expanded(
+              child: clinicaFechada
+                  ? Center(
+                      child: Text(
+                        mensagemClinicaFechada,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        const SizedBox(height: 12),
+
+                        // DragTarget: área para desalocar médico
+                        Container(
+                          constraints: const BoxConstraints(minHeight: 85),
+                          width: double.infinity,
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 4,
+                                offset: Offset(2, 2),
+                              ),
+                            ],
+                          ),
+                          child: DragTarget<String>(
+                            onWillAccept: (_) => true,
+                            onAccept: (medicoId) async {
+                              await _desalocarMedicoComPergunta(medicoId);
+                            },
+                            builder: (context, candidateData, rejectedData) {
+                              final isHovering = candidateData.isNotEmpty;
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: isHovering
+                                      ? Colors.purple.shade50
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: MedicosDisponiveisSection(
+                                  medicosDisponiveis: medicosDisponiveis,
+                                  disponibilidades: disponibilidades,
+                                  selectedDate: selectedDate,
+                                  onDesalocarMedico: (mId) =>
+                                      _desalocarMedicoDiaUnico(mId),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // Lista / Grade de Gabinetes
+                        Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            child: GabinetesSection(
+                              gabinetes: gabinetesFiltrados,
+                              alocacoes: alocacoes,
+                              medicos: medicos,
+                              disponibilidades: disponibilidades,
+                              selectedDate: selectedDate,
+                              onAlocarMedico: (
+                                String medicoId,
+                                String gabineteId, {
+                                DateTime? dataEspecifica,
+                              }) async {
+                                await _alocarMedico(
+                                  medicoId,
+                                  gabineteId,
+                                  dataEspecifica: dataEspecifica,
+                                );
+                              },
+                              onAtualizarEstado: () => setState(() {}),
                             ),
-                          ],
+                          ),
                         ),
-                        margin: const EdgeInsets.all(8),
-                        child: MedicosDisponiveisSection(
-                          medicosDisponiveis: medicosDisponiveis,
-                          disponibilidades: disponibilidades,
-                          selectedDate: selectedDate,
-                          onDesalocarMedico: (mId) =>
-                              _desalocarMedicoDiaUnico(mId),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // Gabinetes: DragTarget para alocar
-                Expanded(
-                    child: GabinetesSection(
-                  gabinetes: gabinetesFiltrados,
-                  alocacoes: alocacoes,
-                  medicos: medicos,
-                  disponibilidades: disponibilidades,
-                  selectedDate: selectedDate,
-
-                  // Troque para a mesma assinatura:
-                  onAlocarMedico: (String medicoId, String gabineteId,
-                      {DateTime? dataEspecifica}) async {
-                    // Aqui você chama seu método de alocar
-                    await _alocarMedico(medicoId, gabineteId,
-                        dataEspecifica: dataEspecifica);
-                  },
-
-                  onAtualizarEstado: () {
-                    setState(() {
-                      // ...
-                    });
-                  },
-                )),
-              ],
+                      ],
+                    ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

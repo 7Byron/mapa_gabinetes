@@ -7,10 +7,6 @@ class MedicosDisponiveisSection extends StatelessWidget {
   final List<Medico> medicosDisponiveis;
   final List<Disponibilidade> disponibilidades;
   final DateTime selectedDate;
-
-  /// Em geral não precisamos mais chamar onDesalocarMedico aqui,
-  /// pois a desalocação está sendo tratada no `DragTarget` externo.
-  /// Mas podemos manter se você usa de outra forma.
   final Function(String) onDesalocarMedico;
 
   const MedicosDisponiveisSection({
@@ -34,7 +30,6 @@ class MedicosDisponiveisSection extends StatelessWidget {
         hour: int.parse(fimParts[0]),
         minute: int.parse(fimParts[1]),
       );
-      // Horário de início deve ser antes do fim
       if (inicio.hour < fim.hour) return true;
       if (inicio.hour == fim.hour && inicio.minute < fim.minute) return true;
       return false;
@@ -47,56 +42,50 @@ class MedicosDisponiveisSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Wrap(
-          spacing: 8,
-          //runSpacing: 8,
-          children: medicosDisponiveis.map((medico) {
-            // Corrigir a query de disponibilidades
-            final dispDoMedico = disponibilidades.where((d) =>
-            d.medicoId == medico.id &&
-                d.data.year == selectedDate.year &&
-                d.data.month == selectedDate.month &&
-                d.data.day == selectedDate.day
-            ).toList(); // Corrigido: sintaxe do where e toList()
+      child: Wrap(
+        spacing: 8, // Espaçamento horizontal entre os cartões
+        runSpacing: 8, // Espaçamento vertical entre as linhas
+        children: medicosDisponiveis.map((medico) {
+          final dispDoMedico = disponibilidades.where((d) {
+            final dd = DateTime(d.data.year, d.data.month, d.data.day);
+            return d.medicoId == medico.id &&
+                dd == DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+          }).toList();
 
-            // Corrigir o join e formatação dos horários
-            final horariosStr = dispDoMedico
-                .expand((d) => d.horarios)
-                .join(', '); // Corrigido: sintaxe do expand e join
+          final horariosStr = dispDoMedico
+              .expand((d) => d.horarios)
+              .join(', ');
 
-            // Validação correta
-            final isValido = dispDoMedico.any((d) =>
-                _validarDisponibilidade(d)
-            );
-            return Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Draggable<String>(
-                data: medico.id,
-                feedback: MedicoCard.dragFeedback(medico, horariosStr),
-                childWhenDragging: Opacity(
-                  opacity: 0.5,
-                  child: _buildMedicoCardContent(medico, horariosStr, isValido),
-                ),
+          final isValido = dispDoMedico.any((d) => _validarDisponibilidade(d));
+
+          return Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Draggable<String>(
+              data: medico.id,
+              feedback: MedicoCard.dragFeedback(medico, horariosStr),
+              childWhenDragging: Opacity(
+                opacity: 0.5,
                 child: _buildMedicoCardContent(medico, horariosStr, isValido),
               ),
-            );
-          }).toList(),
-        ),
+              child: _buildMedicoCardContent(medico, horariosStr, isValido),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
+
+
   Widget _buildMedicoCardContent(Medico medico, String horarios, bool isValid) {
     return Container(
-      width: 160, // Largura fixa para consistência
+      width: 160,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: isValid ? Colors.grey[200]! : Colors.red[200]!,
+        color: isValid ? Colors.grey[200] : Colors.red[200],
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -110,13 +99,8 @@ class MedicosDisponiveisSection extends StatelessWidget {
           ),
           Text(
             "$horarios ${medico.especialidade}",
-            style: TextStyle(fontSize: 10, color: Colors.grey[700]),
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
-          // const SizedBox(height: 4),
-          // Text(
-          //   horarios,
-          //   style: const TextStyle(fontSize: 10, color: Colors.grey),
-          // ),
         ],
       ),
     );

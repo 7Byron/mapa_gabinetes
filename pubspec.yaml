@@ -32,3 +32,11 @@ flutter:
   assets:
     - banco_dados/mapa_gabinetes.db
 
+fonts:
+  - family: Montserrat
+    fonts:
+      - asset: fonts/Montserrat-Regular.ttf
+      - asset: fonts/Montserrat-SemiBold.ttf
+        weight: 600
+      - asset: fonts/Montserrat-Bold.ttf
+        weight: 700

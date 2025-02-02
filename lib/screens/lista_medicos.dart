@@ -25,7 +25,8 @@ class ListaMedicosState extends State<ListaMedicos> {
     setState(() => isLoading = true);
 
     try {
-      final medicosCarregados = await DatabaseHelper.buscarMedicos(); // Busca os médicos
+      final medicosCarregados =
+          await DatabaseHelper.buscarMedicos(); // Busca os médicos
 
       // Ordena a lista de médicos pelo nome
       medicosCarregados.sort((a, b) => a.nome.compareTo(b.nome));
@@ -106,51 +107,49 @@ class ListaMedicosState extends State<ListaMedicos> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : medicos.isEmpty
-          ? const Center(child: Text('Nenhum médico encontrado'))
-          : Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: ListView.builder(
-            itemCount: medicos.length,
-            itemBuilder: (context, index) {
-              final medico = medicos[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(
-                  vertical: 8,
-                  horizontal: 16,
-                ),
-                child: ListTile(
-                  title: Text(medico.nome),
-                  subtitle: Text(
-                      'Especialidade: ${medico.especialidade}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit,
-                            color: Colors.blue),
-                        onPressed: () => _adicionarOuEditarMedico(
-                            medico: medico),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete,
-                            color: Colors.red),
-                        onPressed: () =>
-                            _confirmarDelecao(context, medico.id),
-                      ),
-                    ],
+              ? const Center(child: Text('Nenhum médico encontrado'))
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: ListView.builder(
+                      itemCount: medicos.length,
+                      itemBuilder: (context, index) {
+                        final medico = medicos[index];
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 8,
+                            horizontal: 16,
+                          ),
+                          child: ListTile(
+                            title: Text(medico.nome),
+                            subtitle: Text(medico.especialidade),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit,
+                                      color: Colors.blue),
+                                  onPressed: () =>
+                                      _adicionarOuEditarMedico(medico: medico),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete,
+                                      color: Colors.red),
+                                  onPressed: () =>
+                                      _confirmarDelecao(context, medico.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarOuEditarMedico(),
         child: const Icon(Icons.add),
       ),
     );
   }
-
 }

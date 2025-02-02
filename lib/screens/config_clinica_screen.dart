@@ -248,7 +248,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Configuração Horário da Clínica'),
-          backgroundColor: Colors.teal,
+          backgroundColor: Colors.blue,
         ),
         body: Padding(
           padding: const EdgeInsets.all(16),
@@ -260,7 +260,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
               /// Card para Horários de Início/Fim
 
               Card(
-                color: Colors.teal.shade50,
+                color: Colors.blue.shade50,
                 margin: const EdgeInsets.all(8.0),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -329,7 +329,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
               SizedBox(
                 width: 300,
                 child: Card(
-                  color: Colors.teal.shade50,
+                  color: Colors.blue.shade50,
                   margin: const EdgeInsets.all(8.0),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),

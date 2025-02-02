@@ -1,5 +1,4 @@
-// lib/utils/alocacao_medicos_logic.dart
-
+import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
@@ -8,7 +7,6 @@ import '../models/medico.dart';
 import '../utils/conflict_utils.dart';
 
 class AlocacaoMedicosLogic {
-  /// Carrega os dados iniciais do banco.
   static Future<void> carregarDadosIniciais({
     required List<Gabinete> gabinetes,
     required List<Medico> medicos,
@@ -24,14 +22,12 @@ class AlocacaoMedicosLogic {
     final disps = await DatabaseHelper.buscarTodasDisponibilidades();
     final alocs = await DatabaseHelper.buscarAlocacoes();
 
-    // Ao final, chamamos as funções "set" passadas
     onGabinetes(gabs);
     onMedicos(meds);
     onDisponibilidades(disps);
     onAlocacoes(alocs);
   }
 
-  /// Filtra médicos disponíveis no dia.
   static List<Medico> filtrarMedicosPorData({
     required DateTime dataSelecionada,
     required List<Disponibilidade> disponibilidades,
@@ -56,18 +52,16 @@ class AlocacaoMedicosLogic {
         .toList();
   }
 
-  /// Filtra gabinetes pelo UI (pisos, ocupação, conflitos).
   static List<Gabinete> filtrarGabinetesPorUI({
     required List<Gabinete> gabinetes,
     required List<Alocacao> alocacoes,
     required DateTime selectedDate,
     required List<String> pisosSelecionados,
-    required String filtroOcupacao, // 'Todos' | 'Livres' | 'Ocupados'
+    required String filtroOcupacao,
     required bool mostrarConflitos,
   }) {
     final filtrados = gabinetes.where((g) => pisosSelecionados.contains(g.setor)).toList();
 
-    // Filtro de ocupação
     List<Gabinete> filtradosOcupacao = [];
     for (final gab in filtrados) {
       final alocacoesDoGab = alocacoes.where((a) {
@@ -88,7 +82,6 @@ class AlocacaoMedicosLogic {
       }
     }
 
-    // Filtro de conflitos
     if (mostrarConflitos) {
       return filtradosOcupacao.where((gab) {
         final alocacoesDoGab = alocacoes.where((a) {
@@ -104,18 +97,16 @@ class AlocacaoMedicosLogic {
     }
   }
 
-  /// Aloca um médico em um gabinete para um dia específico.
   static Future<void> alocarMedico({
     required DateTime selectedDate,
     required String medicoId,
     required String gabineteId,
     required List<Alocacao> alocacoes,
     required List<Disponibilidade> disponibilidades,
-    required Function() onAlocacoesChanged, // Função para chamar setState
+    required Function() onAlocacoesChanged,
   }) async {
     final dataAlvo = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
 
-    // Remove alocação prévia desse médico nesse dia (se existir)
     final indexAloc = alocacoes.indexWhere((a) {
       final alocDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId && alocDate == dataAlvo;
@@ -126,7 +117,6 @@ class AlocacaoMedicosLogic {
       await DatabaseHelper.deletarAlocacao(alocAntiga.id);
     }
 
-    // Descobre horários para esse dia
     final dispDoDia = disponibilidades.where((disp) {
       final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
       return disp.medicoId == medicoId && dd == dataAlvo;
@@ -149,11 +139,9 @@ class AlocacaoMedicosLogic {
     await DatabaseHelper.salvarAlocacao(novaAloc);
     alocacoes.add(novaAloc);
 
-    // Chama setState na tela
     onAlocacoesChanged();
   }
 
-  /// Desaloca o médico de UM dia
   static Future<void> desalocarMedicoDiaUnico({
     required DateTime selectedDate,
     required String medicoId,
@@ -175,7 +163,6 @@ class AlocacaoMedicosLogic {
     alocacoes.removeAt(indexAloc);
     await DatabaseHelper.deletarAlocacao(alocRemovida.id);
 
-    // Se ainda tem disponibilidade nesse dia, volta para "medicosDisponiveis"
     final temDisp = disponibilidades.any((disp) {
       final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
       return disp.medicoId == medicoId && dd == dataAlvo;
@@ -198,7 +185,6 @@ class AlocacaoMedicosLogic {
     onAlocacoesChanged();
   }
 
-  /// Desaloca o médico de toda a série
   static Future<void> desalocarMedicoSerie({
     required String medicoId,
     required DateTime dataRef,
@@ -228,7 +214,6 @@ class AlocacaoMedicosLogic {
         await DatabaseHelper.deletarAlocacao(alocRemovida.id);
       }
 
-      // Reintroduz na lista de médicosDisponiveis
       final temDisp = disponibilidades.any((disp2) {
         final dd = DateTime(disp2.data.year, disp2.data.month, disp2.data.day);
         return disp2.medicoId == medicoId && dd == dataAlvo;

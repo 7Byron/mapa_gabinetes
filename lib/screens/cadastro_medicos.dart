@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:mapa_gabinetes/main.dart';
+import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 
 // Services
 import '../database/database_helper.dart';
@@ -153,9 +155,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
         return true; // permite pop
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
-        ),
+        appBar: CustomAppBar(title: widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
+        backgroundColor: MyAppTheme.cinzento,
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(

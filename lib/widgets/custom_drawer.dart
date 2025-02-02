@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 // Suas telas de referência
+import '../main.dart';
 import '../screens/lista_medicos.dart';
 import '../screens/lista_gabinetes.dart';
 import '../screens/banco_dados_screen.dart';
@@ -19,19 +20,32 @@ class CustomDrawer extends StatelessWidget {
         children: [
           DrawerHeader(
             decoration: const BoxDecoration(
-              color: Colors.blue,
+              color: MyAppTheme.darkBlue,
             ),
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: Text(
-                'Gestão Mapa Gabinetes',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  flex: 8,
+                  child: Image.asset(
+                    'images/icon2.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Text(
+                    'Gestão Mapa Gabinetes',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
                     ),
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
+
           ListTile(
             leading: const Icon(Icons.medical_services),
             title: const Text('Gerir Médicos'),

@@ -92,63 +92,68 @@ class CalendarioDisponibilidades extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SfCalendar(
-      view: CalendarView.month,
-      onTap: (details) {
-        final date = details.date;
-        if (date != null) {
-          final isSelected = diasSelecionados.any(
-                (d) =>
-            d.year == date.year &&
-                d.month == date.month &&
-                d.day == date.day,
-          );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: SfCalendar(
+          view: CalendarView.month,
+          onTap: (details) {
+            final date = details.date;
+            if (date != null) {
+              final isSelected = diasSelecionados.any(
+                    (d) =>
+                d.year == date.year &&
+                    d.month == date.month &&
+                    d.day == date.day,
+              );
 
-          if (isSelected) {
-            // Se já está selecionado (vermelho), pergunta se remove só esse ou toda a série
-            _mostrarDialogoRemocaoSeries(context, date);
-          } else {
-            // Se não está selecionado, perguntar qual tipo de marcação (Única, Semanal etc.)
-            _mostrarDialogoTipoMarcacao(context, date);
-          }
-        }
-      },
-      monthCellBuilder: (context, details) {
-        final isSelected = diasSelecionados.any(
-              (d) =>
-          d.year == details.date.year &&
-              d.month == details.date.month &&
-              d.day == details.date.day,
-        );
+              if (isSelected) {
+                // Se já está selecionado (vermelho), pergunta se remove só esse ou toda a série
+                _mostrarDialogoRemocaoSeries(context, date);
+              } else {
+                // Se não está selecionado, perguntar qual tipo de marcação (Única, Semanal etc.)
+                _mostrarDialogoTipoMarcacao(context, date);
+              }
+            }
+          },
+          monthCellBuilder: (context, details) {
+            final isSelected = diasSelecionados.any(
+                  (d) =>
+              d.year == details.date.year &&
+                  d.month == details.date.month &&
+                  d.day == details.date.day,
+            );
 
-        // Verifica se a célula pertence ao mês atual
-        final isCurrentMonth =
-            details.visibleDates[10].month == details.date.month;
+            // Verifica se a célula pertence ao mês atual
+            final isCurrentMonth =
+                details.visibleDates[10].month == details.date.month;
 
-        return Center(
-          child: Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey, width: 0.5),
-              color: isSelected ? Colors.red : Colors.transparent,
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '${details.date.day}',
-              style: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : isCurrentMonth
-                    ? Colors.black
-                    : Colors.grey,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            return Center(
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey, width: 0.5),
+                  color: isSelected ? Colors.purple : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${details.date.day}',
+                  style: TextStyle(
+                    color: isSelected
+                        ? Colors.white
+                        : isCurrentMonth
+                        ? Colors.black
+                        : Colors.grey,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
               ),
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }

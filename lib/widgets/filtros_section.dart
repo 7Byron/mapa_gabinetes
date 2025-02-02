@@ -39,9 +39,20 @@ class FiltrosSection extends StatelessWidget {
             runSpacing: 6,
             children: todosSetores.map((setor) {
               return FilterChip(
-                label: Text(setor),
+                label: Text(
+                  setor,
+                  style: TextStyle(
+                    color: pisosSelecionados.contains(setor) ? Colors.white : Colors.black,
+                  ),
+                ),
                 selected: pisosSelecionados.contains(setor),
                 onSelected: (selected) => onTogglePiso(setor, selected),
+                selectedColor: Colors.blue.shade300, // Cor do chip quando selecionado
+                backgroundColor: Colors.grey.shade200, // Cor do chip quando não selecionado
+                checkmarkColor: Colors.white, // Cor da marca de seleção
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8), // Bordas arredondadas
+                ),
               );
             }).toList(),
           ),

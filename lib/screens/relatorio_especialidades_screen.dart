@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../services/relatorios_especialidades_service.dart';
+import '../widgets/custom_appbar.dart';
 
 class RelatorioEspecialidadesScreen extends StatefulWidget {
   const RelatorioEspecialidadesScreen({super.key});
@@ -21,9 +22,7 @@ class _RelatorioEspecialidadesScreenState extends State<RelatorioEspecialidadesS
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Relatório de Especialidades'),
-      ),
+      appBar: CustomAppBar(title: 'Relatório de Especialidades'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

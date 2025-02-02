@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 
 // Importe seu RelatoriosService, DatabaseHelper, etc.
 import '../services/relatorios_service.dart';
@@ -104,9 +105,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Relatórios de Ocupação'),
-      ),
+      appBar: CustomAppBar(title: 'Relatórios de Ocupação'),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ListView(
@@ -325,7 +324,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           child: LinearProgressIndicator(
             value: perc,
             backgroundColor: Colors.grey[300],
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.purple),
           ),
         ),
         const SizedBox(height: 16),

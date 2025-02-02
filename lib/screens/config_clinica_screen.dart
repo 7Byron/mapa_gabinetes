@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../database/database_helper.dart';
+import '../main.dart';
 
 class ConfigClinicaScreen extends StatefulWidget {
   const ConfigClinicaScreen({super.key});
@@ -246,10 +248,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         return true; // Permite que o usuário navegue para trás
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Configuração Horário da Clínica'),
-          backgroundColor: Colors.blue,
-        ),
+        appBar: CustomAppBar(title: 'Configuração Horário da Clínica'),
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -344,7 +343,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.add, color: Colors.green),
+                              icon: const Icon(Icons.add, color: MyAppTheme.darkBlue),
                               onPressed: _adicionarFeriado, // Método para adicionar feriado
                             ),
                           ],

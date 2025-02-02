@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:mapa_gabinetes/main.dart';
+import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../database/database_helper.dart';
 import '../models/medico.dart';
 import 'cadastro_medicos.dart';
@@ -101,9 +103,8 @@ class ListaMedicosState extends State<ListaMedicos> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lista de Médicos'),
-      ),
+      appBar: CustomAppBar(title: 'Lista de Médicos'),
+      backgroundColor: MyAppTheme.cinzento,
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : medicos.isEmpty
@@ -128,7 +129,7 @@ class ListaMedicosState extends State<ListaMedicos> {
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.edit,
-                                      color: Colors.blue),
+                                      color: MyAppTheme.darkBlue),
                                   onPressed: () =>
                                       _adicionarOuEditarMedico(medico: medico),
                                 ),

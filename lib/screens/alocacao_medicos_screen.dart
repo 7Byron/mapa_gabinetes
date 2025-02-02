@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mapa_gabinetes/main.dart';
+import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 
 // Se criou o custom_drawer.dart
 import '../widgets/custom_drawer.dart';
@@ -244,11 +246,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   Widget build(BuildContext context) {
     if (isCarregando) {
       return Scaffold(
-        appBar: AppBar(
-          title: Text(
-            'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
-          ),
-        ),
+        appBar: CustomAppBar(
+            title:
+                'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}'),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -264,17 +264,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
 
     return Scaffold(
       // AppBar já vem estilizado pelo theme
-      appBar: AppBar(
-        title: Text(
-          'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
-        ),
+      appBar: CustomAppBar(
+        title:
+            'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
       ),
       drawer: CustomDrawer(
         onRefresh: _carregarDadosIniciais, // Passa o callback para o drawer
       ),
       // Corpo com cor de fundo suave e layout mais espaçoso
       body: Container(
-        color: const Color(0xFFF8F9FB),
+        color: Colors.grey.shade200,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -387,7 +386,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                               return Container(
                                 decoration: BoxDecoration(
                                   color: isHovering
-                                      ? Colors.purple.shade50
+                                      ? MyAppTheme.lightBlue
                                       : Colors.white,
                                   borderRadius: BorderRadius.circular(8),
                                 ),

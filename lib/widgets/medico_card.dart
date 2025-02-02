@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mapa_gabinetes/main.dart';
 import '../models/medico.dart';
 
 class MedicoCard {
@@ -57,7 +58,7 @@ class MedicoCard {
     return buildSmallMedicoCard(
       medico,
       horariosStr,
-      Colors.green[100]!,
+      Colors.blue[100]!,
       true,
     );
   }
@@ -70,7 +71,7 @@ class MedicoCard {
         width: 160,
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.blueAccent,
+          color: MyAppTheme.lightBlue,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Column(

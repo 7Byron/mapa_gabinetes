@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:mapa_gabinetes/main.dart';
+import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/gabinete.dart';
 import '../database/database_helper.dart';
 import 'cadastro_gabinete.dart';
@@ -97,9 +99,8 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Lista de Gabinetes'),
-      ),
+      appBar: CustomAppBar(title: 'Lista de Gabinetes'),
+      backgroundColor: MyAppTheme.cinzento,
       body: isLoading
           ? Center(child: CircularProgressIndicator())
           : gabinetes.isEmpty
@@ -160,7 +161,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
                           children: [
                             IconButton(
                               icon: Icon(Icons.edit,
-                                  color: Colors.blue),
+                                  color: MyAppTheme.darkBlue),
                               onPressed: () {
                                 _adicionarOuEditarGabinete(
                                     gabineteExistente: gabinete);

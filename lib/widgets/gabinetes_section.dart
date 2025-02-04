@@ -208,6 +208,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                         gabinete.id,
                         dataEspecifica: widget.selectedDate,
                       );
+                      widget.onAtualizarEstado();
                     } else {
                       // Pergunta se alocar série
                       final escolha = await showDialog<String>(

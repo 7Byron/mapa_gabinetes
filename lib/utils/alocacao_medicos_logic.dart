@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
@@ -138,7 +137,6 @@ class AlocacaoMedicosLogic {
 
     await DatabaseHelper.salvarAlocacao(novaAloc);
     alocacoes.add(novaAloc);
-
     onAlocacoesChanged();
   }
 

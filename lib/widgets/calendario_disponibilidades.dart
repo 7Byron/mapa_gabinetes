@@ -96,6 +96,7 @@ class CalendarioDisponibilidades extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: SfCalendar(
+          showNavigationArrow: true,
           view: CalendarView.month,
           onTap: (details) {
             final date = details.date;

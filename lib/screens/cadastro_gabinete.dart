@@ -47,6 +47,13 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   }
 
   Future<void> _salvarGabinete() async {
+    // Verifica se o campo de setor está preenchido
+    if (_setorController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não introduziu  Setor/Piso')),
+      );
+      return;
+    }
     if (_formKey.currentState!.validate()) {
       final gabinete = Gabinete(
         id: widget.gabinete?.id ??
@@ -87,22 +94,20 @@ class CadastroGabineteState extends State<CadastroGabinete> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        await _salvarGabinete(); // Chama o método para salvar ao voltar
-        return true; // Permite a navegação para trás
-      },
-      child: Scaffold(
-        appBar: CustomAppBar(
-            title:
-                widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete'),
-        backgroundColor: MyAppTheme.cinzento,
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600, maxHeight: 300),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Card(
+    return Scaffold(
+      appBar: CustomAppBar(
+          title:
+              widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete'),
+      backgroundColor: MyAppTheme.cinzento,
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 300),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
                 child: Form(
                   key: _formKey,
                   child: ListView(
@@ -219,32 +224,35 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                         itemSeparatorBuilder: (context, index) =>
                             const Divider(height: 1),
                         debounceDuration: const Duration(
-                            milliseconds: 300), // Evita chamadas rápidas
+                            milliseconds: 350), // Evita chamadas rápidas
                         hideOnEmpty:
                             true, // Esconde as sugestões quando o texto está vazio
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          IconButton(
-                            onPressed: () => _salvarGabinete(),
-                            icon: const Icon(Icons.save, color: Colors.green),
-                            tooltip: 'Salvar',
-                          ),
-                          IconButton(
-                            onPressed: () async {
-                              await _salvarGabinete();
-                              _criarNovo();
-                            },
-                            icon: const Icon(Icons.add, color: Colors.blue),
-                            tooltip: 'Salvar e Criar Novo',
-                          ),
-                          IconButton(
-                            onPressed: _cancelar,
-                            icon: const Icon(Icons.cancel, color: Colors.red),
-                            tooltip: 'Cancelar',
-                          ),
-                        ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              onPressed: () => _salvarGabinete(),
+                              icon: const Icon(Icons.save, color: Colors.blue),
+                              tooltip: 'Salvar',
+                            ),
+                            IconButton(
+                              onPressed: () async {
+                                await _salvarGabinete();
+                                _criarNovo();
+                              },
+                              icon: const Icon(Icons.add, color: Colors.green),
+                              tooltip: 'Salvar e Adicionar Novo',
+                            ),
+                            IconButton(
+                              onPressed: _cancelar,
+                              icon: const Icon(Icons.cancel, color: Colors.red),
+                              tooltip: 'Cancelar',
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

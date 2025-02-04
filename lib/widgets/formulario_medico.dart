@@ -65,10 +65,10 @@ class _FormularioMedicoState extends State<FormularioMedico> {
               decoration: const InputDecoration(
                 labelText: 'Nome do Médico',
                 border: OutlineInputBorder(),
-                labelStyle: TextStyle(color: MyAppTheme.purpleAccent), // Cor do rótulo
-                floatingLabelStyle: TextStyle(color: Colors.black), // Cor ao focar
+                labelStyle: TextStyle(color: MyAppTheme.roxo), // Cor do rótulo
+                floatingLabelStyle: TextStyle(color: MyAppTheme.roxo), // Cor ao focar
                 focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: MyAppTheme.purpleAccent, width: 2), // Roxo
+                  borderSide: BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                 ),
               ),
             ),
@@ -107,12 +107,11 @@ class _FormularioMedicoState extends State<FormularioMedico> {
                   },
                   decoration: const InputDecoration(
                     labelText: 'Especialidade',
-                    hintText: 'Digite ou selecione a especialidade',
                     border: OutlineInputBorder(),
-                    labelStyle: TextStyle(color: MyAppTheme.purpleAccent), // Cor do rótulo
-                    floatingLabelStyle: TextStyle(color: Colors.black), // Cor ao focar
+                    labelStyle: TextStyle(color: MyAppTheme.roxo), // Cor do rótulo
+                    floatingLabelStyle: TextStyle(color: MyAppTheme.roxo), // Cor ao focar
                     focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: MyAppTheme.purpleAccent, width: 2), // Roxo
+                      borderSide: BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                     ),
                   ),
                 );
@@ -137,12 +136,11 @@ class _FormularioMedicoState extends State<FormularioMedico> {
               maxLines: 3, // Permitir múltiplas linhas para observações
               decoration: const InputDecoration(
                 labelText: 'Observações',
-                hintText: 'Adicione informações adicionais sobre o médico',
                 border: OutlineInputBorder(),
-                labelStyle: TextStyle(color: MyAppTheme.purpleAccent), // Cor do rótulo
+                labelStyle: TextStyle(color: MyAppTheme.roxo), // Cor do rótulo
                 floatingLabelStyle: TextStyle(color: Colors.black), // Cor ao focar
                 focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: MyAppTheme.purpleAccent, width: 2), // Roxo
+                  borderSide: BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                 ),
               ),
             ),

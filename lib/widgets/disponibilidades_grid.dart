@@ -20,10 +20,10 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   // Determina cor do cartão baseado na validação dos horários
   Color _determinarCorDoCartao(Disponibilidade disponibilidade) {
     if (disponibilidade.horarios.isEmpty) {
-      return Colors.orange; // Nenhum horário definido
+      return Colors.orange.shade200; // Nenhum horário definido
     }
     if (disponibilidade.horarios.length == 1) {
-      return Colors.orange; // Apenas um horário definido
+      return Colors.orange.shade200; // Apenas um horário definido
     }
 
     try {
@@ -38,12 +38,12 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 
       if (inicio.hour < fim.hour ||
           (inicio.hour == fim.hour && inicio.minute < fim.minute)) {
-        return Colors.lightGreen; // Válido
+        return Colors.lightGreen.shade100; // Válido
       } else {
-        return Colors.red; // Início depois do fim
+        return Colors.red.shade100; // Início depois do fim
       }
     } catch (e) {
-      return Colors.red; // Erro de formatação
+      return Colors.red.shade300; // Erro de formatação
     }
   }
 
@@ -280,6 +280,10 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                       children: [
                         Flexible(
                           child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade100,
+                              foregroundColor: Colors.black87,
+                            ),
                             onPressed: () => _selecionarHorario(
                               context,
                               disponibilidade.data,
@@ -297,6 +301,10 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                         const SizedBox(width: 8),
                         Flexible(
                           child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade100,
+                              foregroundColor: Colors.black87,
+                            ),
                             onPressed: () => _selecionarHorario(
                               context,
                               disponibilidade.data,

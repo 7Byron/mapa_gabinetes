@@ -161,7 +161,8 @@ class ListaGabinetesState extends State<ListaGabinetes> {
                           children: [
                             IconButton(
                               icon: Icon(Icons.edit,
-                                  color: MyAppTheme.darkBlue),
+                                  color: MyAppTheme.azulEscuro),
+                              tooltip: 'Editar',
                               onPressed: () {
                                 _adicionarOuEditarGabinete(
                                     gabineteExistente: gabinete);
@@ -170,6 +171,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
                             IconButton(
                               icon: Icon(Icons.delete,
                                   color: Colors.red),
+                              tooltip: 'Eliminar',
                               onPressed: () => _confirmarDelecao(
                                   context, gabinete.id),
                             ),
@@ -185,6 +187,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarOuEditarGabinete(),
+        tooltip: 'Adicionar Gabinete',
         child: Icon(Icons.add),
       ),
     );

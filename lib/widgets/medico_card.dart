@@ -71,7 +71,7 @@ class MedicoCard {
         width: 160,
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: MyAppTheme.lightBlue,
+          color: MyAppTheme.azulClaro,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Column(

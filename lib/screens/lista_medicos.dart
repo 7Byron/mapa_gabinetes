@@ -129,13 +129,15 @@ class ListaMedicosState extends State<ListaMedicos> {
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.edit,
-                                      color: MyAppTheme.darkBlue),
+                                      color: MyAppTheme.azulEscuro),
+                                  tooltip: 'Editar',
                                   onPressed: () =>
                                       _adicionarOuEditarMedico(medico: medico),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete,
                                       color: Colors.red),
+                                  tooltip: 'Eliminar',
                                   onPressed: () =>
                                       _confirmarDelecao(context, medico.id),
                                 ),
@@ -149,6 +151,7 @@ class ListaMedicosState extends State<ListaMedicos> {
                 ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarOuEditarMedico(),
+        tooltip: 'Adicionar Médico',
         child: const Icon(Icons.add),
       ),
     );

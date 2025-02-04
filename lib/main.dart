@@ -25,18 +25,18 @@ class MyApp extends StatelessWidget {
 }
 
 class MyAppTheme {
-  static const Color darkBlue = Color(0xFF1565C0); // Azul Escuro; // Azul Escuro
-  static const Color lightBlue = Color(0xFF42A5F5); // Azul Claro
-  static const Color purpleAccent = Color(0xFF7E57C2); // Roxo
+  static const Color azulEscuro = Color(0xFF1565C0); // Azul Escuro; // Azul Escuro
+  static const Color azulClaro = Color(0xFF42A5F5); // Azul Claro
+  static const Color roxo = Color(0xFF7E57C2); // Roxo
   static Color cinzento = Colors.grey.shade200;// Roxo
 
 
   static final ThemeData themeData = ThemeData(
     useMaterial3: true,
-    primaryColor: darkBlue,
+    primaryColor: azulEscuro,
     fontFamily: 'Montserrat',
     appBarTheme: AppBarTheme(
-      backgroundColor: darkBlue,
+      backgroundColor: azulEscuro,
       foregroundColor: cinzento,
       elevation: 2,
       centerTitle: true,
@@ -48,8 +48,8 @@ class MyAppTheme {
       ),
     ),
     colorScheme: ColorScheme.fromSwatch().copyWith(
-      primary: lightBlue, // Azul Claro
-      secondary: purpleAccent, // Roxo
+      primary: azulClaro, // Azul Claro
+      secondary: roxo, // Roxo
     ),
     inputDecorationTheme: InputDecorationTheme(
       focusedBorder: OutlineInputBorder(
@@ -57,11 +57,11 @@ class MyAppTheme {
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
-      backgroundColor: purpleAccent,
+      backgroundColor: roxo,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: lightBlue,
+        backgroundColor: azulClaro,
         foregroundColor: cinzento,
       ),
     ),

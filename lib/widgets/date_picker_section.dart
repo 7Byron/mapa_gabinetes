@@ -16,9 +16,9 @@ class DatePickerSection extends StatelessWidget {
     return Theme(
       data: Theme.of(context).copyWith(
         colorScheme: Theme.of(context).colorScheme.copyWith(
-          primary: MyAppTheme.darkBlue, // Cor principal (seleção e destaque)
+          primary: MyAppTheme.roxo, // Cor principal (seleção e destaque)
           onPrimary: Colors.white, // Cor do texto sobre a seleção
-          surface: MyAppTheme.lightBlue, // Fundo dos dias selecionáveis
+          surface: MyAppTheme.roxo, // Fundo dos dias selecionáveis
         ),
       ),
       child: CalendarDatePicker(

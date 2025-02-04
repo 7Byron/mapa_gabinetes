@@ -68,7 +68,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         onGabinetes: (g) => gabinetes = g,
         onMedicos: (m) => medicos = m,
         onDisponibilidades: (d) => disponibilidades = d,
-        onAlocacoes: (a) => alocacoes = a,
+        onAlocacoes: (a) {
+          alocacoes = a;
+          setState(() {});
+        },
       );
 
       // Carregar feriados da base de dados
@@ -156,6 +159,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         setState(() {
           // Se o médico foi alocado, removemos da lista de “disponíveis”
           medicosDisponiveis.removeWhere((m) => m.id == medicoId);
+          _carregarDadosIniciais();
         });
       },
     );
@@ -386,7 +390,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                               return Container(
                                 decoration: BoxDecoration(
                                   color: isHovering
-                                      ? MyAppTheme.lightBlue
+                                      ? Colors.blue.shade50
                                       : Colors.white,
                                   borderRadius: BorderRadius.circular(8),
                                 ),

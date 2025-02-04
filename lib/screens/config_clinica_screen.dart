@@ -272,7 +272,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                           style: TextStyle(
                               fontSize: 16, fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 26),
                         for (int ds = 1; ds <= 7; ds++) ...[
                           Row(
                             children: [
@@ -309,6 +309,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                 ),
                               ),
                               IconButton(
+                                tooltip: "Eliminar",
                                 icon: const Icon(Icons.delete, color: Colors.red),
                                 onPressed: () => _apagarHorarios(ds),
                               ),
@@ -343,12 +344,13 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.add, color: MyAppTheme.darkBlue),
+                              tooltip: "Novo",
+                              icon: const Icon(Icons.add, color: Colors.green),
                               onPressed: _adicionarFeriado, // Método para adicionar feriado
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const Divider(color: Colors.black26, thickness: 2,),
                         feriados.isEmpty
                             ? const Text('Sem dias assinalados')
                             : Expanded( // Garante que a lista ocupe o espaço disponível no layout pai
@@ -379,6 +381,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                       ],
                                     ),
                                     IconButton(
+                                      tooltip: "Eliminar",
                                       icon: const Icon(Icons.delete, color: Colors.red),
                                       onPressed: () => _removerFeriado(f), // Método para remover o feriado
                                     ),

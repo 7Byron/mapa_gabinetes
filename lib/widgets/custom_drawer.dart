@@ -20,7 +20,7 @@ class CustomDrawer extends StatelessWidget {
         children: [
           DrawerHeader(
             decoration: const BoxDecoration(
-              color: MyAppTheme.darkBlue,
+              color: MyAppTheme.azulEscuro,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,

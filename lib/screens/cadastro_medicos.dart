@@ -123,6 +123,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
       return; // Não salva se o formulário for inválido
     }
 
+    // Verifica se o nome foi preenchido
+    if (nomeController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Introduza o nome do médico')),
+      );
+      return; // Interrompe o processo de salvar
+    }
+
     final medico = Medico(
       id: _medicoId,
       nome: nomeController.text, // Captura o nome
@@ -134,113 +142,151 @@ class CadastroMedicoState extends State<CadastroMedico> {
     try {
       await salvarMedicoCompleto(medico);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Médico salvo com sucesso!')),
+        const SnackBar(content: Text('Registo salvo com sucesso!')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar médico: $e')),
+        SnackBar(content: Text('Erro ao salvar registo: $e')),
       );
     }
   }
 
+  void _cancelar() {
+    // Retorna para a tela anterior sem salvar
+    Navigator.pop(context);
+  }
+
+  /// Reseta campos para criação de um novo registo
+  void _criarNovo() {
+    setState(() {
+      _medicoId = DateTime.now().millisecondsSinceEpoch.toString();
+      nomeController.clear();
+      especialidadeController.clear();
+      observacoesController.clear();
+      disponibilidades.clear();
+      diasSelecionados.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final isLargeScreen = MediaQuery.of(context).size.width > 600;
 
-    return WillPopScope(
-      onWillPop: () async {
-        // Salva antes de sair
-        await _salvarMedico();
-        return true; // permite pop
-      },
-      child: Scaffold(
-        appBar: CustomAppBar(title: widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
-        backgroundColor: MyAppTheme.cinzento,
-        body: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
-            child: isLargeScreen
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Coluna esquerda (dados do médico + calendário)
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 300),
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              FormularioMedico(
-                                nomeController: nomeController,
-                                especialidadeController:
-                                    especialidadeController,
-                                observacoesController: observacoesController,
+    return Scaffold(
+      appBar: CustomAppBar(title: widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
+      backgroundColor: MyAppTheme.cinzento,
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: isLargeScreen
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Coluna esquerda (dados do médico + calendário)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FormularioMedico(
+                              nomeController: nomeController,
+                              especialidadeController:
+                                  especialidadeController,
+                              observacoesController: observacoesController,
+                            ),
+                            const SizedBox(height: 16),
+                            CalendarioDisponibilidades(
+                              diasSelecionados: diasSelecionados,
+                              onAdicionarData: _adicionarData,
+                              onRemoverData: (date, removeSerie) {
+                                _removerData(date, removeSerie: removeSerie);
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => _salvarMedico(),
+                                      icon: const Icon(Icons.save, color: Colors.blue),
+                                      tooltip: 'Salvar',
+                                    ),
+                                    IconButton(
+                                      onPressed: () async {
+                                        await _salvarMedico();
+                                        _criarNovo();
+                                      },
+                                      icon: const Icon(Icons.add, color: Colors.green),
+                                      tooltip: 'Salvar e Adicionar Novo',
+                                    ),
+                                    IconButton(
+                                      onPressed: _cancelar,
+                                      icon: const Icon(Icons.cancel, color: Colors.red),
+                                      tooltip: 'Cancelar',
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(height: 16),
-                              CalendarioDisponibilidades(
-                                diasSelecionados: diasSelecionados,
-                                onAdicionarData: _adicionarData,
-                                onRemoverData: (date, removeSerie) {
-                                  _removerData(date, removeSerie: removeSerie);
-                                },
-                              ),
-                              const SizedBox(height: 24),
-                              // Botão de Salvar removido, pois salvamos ao sair
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                            )
 
-                      // Coluna direita (grid das disponibilidades)
-                      Expanded(
-                        flex: 1,
-                        child: SingleChildScrollView(
-                          child: DisponibilidadesGrid(
-                            disponibilidades: disponibilidades,
-                            onRemoverData: (date, removeSerie) {
-                              _removerData(date, removeSerie: removeSerie);
-                            },
-                          ),
+
+                          ],
                         ),
                       ),
-                    ],
-                  )
-                : SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        FormularioMedico(
-                          nomeController: nomeController,
-                          especialidadeController: especialidadeController,
-                          observacoesController: observacoesController,
-                        ),
-                        const SizedBox(height: 16),
-                        CalendarioDisponibilidades(
-                          diasSelecionados: diasSelecionados,
-                          onAdicionarData: _adicionarData,
+                    ),
+                    const SizedBox(width: 16),
+
+                    // Coluna direita (grid das disponibilidades)
+                    Expanded(
+                      flex: 1,
+                      child: SingleChildScrollView(
+                        child: DisponibilidadesGrid(
+                          disponibilidades: disponibilidades,
                           onRemoverData: (date, removeSerie) {
                             _removerData(date, removeSerie: removeSerie);
                           },
                         ),
-                        const SizedBox(height: 24),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 300),
-                          child: DisponibilidadesGrid(
-                            disponibilidades: disponibilidades,
-                            onRemoverData: (date, removeSerie) {
-                              _removerData(date, removeSerie: removeSerie);
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        // Botão de Salvar removido, pois salvamos ao sair
-                      ],
+                      ),
                     ),
+                  ],
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FormularioMedico(
+                        nomeController: nomeController,
+                        especialidadeController: especialidadeController,
+                        observacoesController: observacoesController,
+                      ),
+                      const SizedBox(height: 16),
+                      CalendarioDisponibilidades(
+                        diasSelecionados: diasSelecionados,
+                        onAdicionarData: _adicionarData,
+                        onRemoverData: (date, removeSerie) {
+                          _removerData(date, removeSerie: removeSerie);
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 300),
+                        child: DisponibilidadesGrid(
+                          disponibilidades: disponibilidades,
+                          onRemoverData: (date, removeSerie) {
+                            _removerData(date, removeSerie: removeSerie);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Botão de Salvar removido, pois salvamos ao sair
+                    ],
                   ),
-          ),
+                ),
         ),
       ),
     );

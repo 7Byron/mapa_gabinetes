@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../main.dart';
+
 class FiltrosSection extends StatelessWidget {
   final List<String> pisosSelecionados;
   final void Function(String setor, bool isSelected) onTogglePiso;
@@ -47,7 +49,7 @@ class FiltrosSection extends StatelessWidget {
                 ),
                 selected: pisosSelecionados.contains(setor),
                 onSelected: (selected) => onTogglePiso(setor, selected),
-                selectedColor: Colors.blue.shade300, // Cor do chip quando selecionado
+                selectedColor: MyAppTheme.roxo, // Cor do chip quando selecionado
                 backgroundColor: Colors.grey.shade200, // Cor do chip quando não selecionado
                 checkmarkColor: Colors.white, // Cor da marca de seleção
                 shape: RoundedRectangleBorder(

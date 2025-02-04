@@ -381,26 +381,27 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                             ],
                           ),
                           child: DragTarget<String>(
-                            onWillAccept: (_) => true,
+                            onWillAccept: (medicoId) {
+                              // Verifica se o médico realmente está alocado antes de aceitar o cartão
+                              final estaAlocado = alocacoes.any((a) => a.medicoId == medicoId);
+                              if (!estaAlocado) {
+                                debugPrint('Médico $medicoId NÃO está alocado, ignorando desalocação.');
+                                return false; // Bloqueia ação indevida
+                              }
+
+                              debugPrint('Médico $medicoId está alocado, aceitando para desalocar.');
+                              return true;
+                            },
                             onAccept: (medicoId) async {
+                              // Agora só será chamado para médicos alocados
                               await _desalocarMedicoComPergunta(medicoId);
                             },
                             builder: (context, candidateData, rejectedData) {
-                              final isHovering = candidateData.isNotEmpty;
-                              return Container(
-                                decoration: BoxDecoration(
-                                  color: isHovering
-                                      ? Colors.blue.shade50
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: MedicosDisponiveisSection(
-                                  medicosDisponiveis: medicosDisponiveis,
-                                  disponibilidades: disponibilidades,
-                                  selectedDate: selectedDate,
-                                  onDesalocarMedico: (mId) =>
-                                      _desalocarMedicoDiaUnico(mId),
-                                ),
+                              return MedicosDisponiveisSection(
+                                medicosDisponiveis: medicosDisponiveis,
+                                disponibilidades: disponibilidades,
+                                selectedDate: selectedDate,
+                                onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
                               );
                             },
                           ),

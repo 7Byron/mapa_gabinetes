@@ -17,10 +17,10 @@ class GabinetesSection extends StatefulWidget {
 
   /// Função que aloca UM médico em UM gabinete em UM dia específico
   final Future<void> Function(
-      String medicoId,
-      String gabineteId, {
-      DateTime? dataEspecifica,
-      }) onAlocarMedico;
+    String medicoId,
+    String gabineteId, {
+    DateTime? dataEspecifica,
+  }) onAlocarMedico;
 
   const GabinetesSection({
     super.key,
@@ -119,7 +119,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                       a.data.day == widget.selectedDate.day;
                 }).toList();
 
-                final temConflito = ConflictUtils.temConflitoGabinete(alocacoesDoGab);
+                final temConflito =
+                    ConflictUtils.temConflitoGabinete(alocacoesDoGab);
 
                 Color corFundo;
                 if (alocacoesDoGab.isEmpty) {
@@ -134,7 +135,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                   onWillAccept: (medicoId) {
                     // 1) Ache o médico
                     final medico = widget.medicos.firstWhere(
-                          (m) => m.id == medicoId,
+                      (m) => m.id == medicoId,
                       orElse: () => Medico(
                         id: '',
                         nome: '',
@@ -146,8 +147,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                     // 2) Disponibilidade do médico no dia
                     final disponibilidade = widget.disponibilidades.firstWhere(
-                          (d) =>
-                      d.medicoId == medico.id &&
+                      (d) =>
+                          d.medicoId == medico.id &&
                           d.data.year == widget.selectedDate.year &&
                           d.data.month == widget.selectedDate.month &&
                           d.data.day == widget.selectedDate.day,
@@ -178,8 +179,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                   onAccept: (medicoId) async {
                     // 1) Localiza disponibilidade
                     final disponibilidade = widget.disponibilidades.firstWhere(
-                          (d) =>
-                      d.medicoId == medicoId &&
+                      (d) =>
+                          d.medicoId == medicoId &&
                           d.data.year == widget.selectedDate.year &&
                           d.data.month == widget.selectedDate.month &&
                           d.data.day == widget.selectedDate.day,
@@ -195,7 +196,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                     if (disponibilidade.medicoId.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                            content: Text('Disponibilidade inválida para o médico.')),
+                            content: Text(
+                                'Disponibilidade inválida para o médico.')),
                       );
                       return;
                     }
@@ -218,20 +220,23 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             title: const Text('Alocar série?'),
                             content: Text(
                               'Esta disponibilidade é do tipo "$tipoDisponibilidade".\n'
-                                  'Deseja alocar apenas este dia (${widget.selectedDate.day}/${widget.selectedDate.month}) '
-                                  'ou todos os dias da série a partir deste?',
+                              'Deseja alocar apenas este dia (${widget.selectedDate.day}/${widget.selectedDate.month}) '
+                              'ou todos os dias da série a partir deste?',
                             ),
                             actions: [
                               TextButton(
-                                onPressed: () => Navigator.of(ctxDialog).pop('1dia'),
+                                onPressed: () =>
+                                    Navigator.of(ctxDialog).pop('1dia'),
                                 child: const Text('Apenas este dia'),
                               ),
                               TextButton(
-                                onPressed: () => Navigator.of(ctxDialog).pop('serie'),
+                                onPressed: () =>
+                                    Navigator.of(ctxDialog).pop('serie'),
                                 child: const Text('Toda a série'),
                               ),
                               TextButton(
-                                onPressed: () => Navigator.of(ctxDialog).pop(null),
+                                onPressed: () =>
+                                    Navigator.of(ctxDialog).pop(null),
                                 child: const Text('Cancelar'),
                               ),
                             ],
@@ -247,7 +252,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                         );
                       } else if (escolha == 'serie') {
                         final dataRef = widget.selectedDate;
-                        final listaMesmaSerie = widget.disponibilidades.where((d2) {
+                        final listaMesmaSerie =
+                            widget.disponibilidades.where((d2) {
                           return d2.medicoId == medicoId &&
                               d2.tipo == tipoDisponibilidade &&
                               !d2.data.isBefore(dataRef);
@@ -267,7 +273,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                     // Atualiza localmente
                     setState(() {
-                      widget.alocacoes.removeWhere((a) => a.medicoId == medicoId);
+                      widget.alocacoes
+                          .removeWhere((a) => a.medicoId == medicoId);
                       widget.alocacoes.add(
                         Alocacao(
                           id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -332,7 +339,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               if (alocacoesDoGabinete.isNotEmpty)
                                 ...alocacoesDoGabinete.map((a) {
                                   final medico = widget.medicos.firstWhere(
-                                        (m) => m.id == a.medicoId,
+                                    (m) => m.id == a.medicoId,
                                     orElse: () => Medico(
                                       id: '',
                                       nome: 'Desconhecido',
@@ -341,8 +348,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                     ),
                                   );
 
-                                  final horariosAlocacao =
-                                  a.horarioFim.isNotEmpty
+                                  final horariosAlocacao = a
+                                          .horarioFim.isNotEmpty
                                       ? '${a.horarioInicio} - ${a.horarioFim}'
                                       : a.horarioInicio;
 
@@ -367,6 +374,14 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                       Colors.white,
                                       true,
                                     ),
+                                      // Adicionando evento para quando o arrasto termina
+                                    onDragEnd: (details) {
+                                      // Verifica se o cartão foi solto fora de um DragTarget
+                                      if (details.wasAccepted == false) {
+                                        debugPrint(
+                                            'Cartão foi solto fora de qualquer DragTarget. Nenhuma ação será disparada.');
+                                      }
+                                    },
                                   );
                                 }),
                             ],

@@ -18,35 +18,55 @@ class MedicoCard {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Linha com Hora e Especialidade
-          Row(
-            children: [
-              Text(
-                horarios,
+          // Nome do Médico (centralizado e ajustável)
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                medico.nome,
                 style: const TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                medico.especialidade,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ],
-          ),
-          // Nome do Médico
-          Text(
-            medico.nome,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
+          ),
+          const SizedBox(height: 4),
+
+          // Linha para horários e especialidade
+          SizedBox(
+            width: double.infinity,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Horários
+                Text(
+                  horarios,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.purple,
+                  ),
+                ),
+                const SizedBox(width: 4),
+
+                // Especialidade (ajustável)
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      medico.especialidade,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

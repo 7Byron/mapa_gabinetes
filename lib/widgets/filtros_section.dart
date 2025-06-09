@@ -12,7 +12,7 @@ class FiltrosSection extends StatelessWidget {
   final List<String> todosSetores;
 
   const FiltrosSection({
-    Key? key,
+    super.key,
     required this.pisosSelecionados,
     required this.onTogglePiso,
     required this.filtroOcupacao,
@@ -20,7 +20,7 @@ class FiltrosSection extends StatelessWidget {
     required this.mostrarConflitos,
     required this.onMostrarConflitosChanged,
     required this.todosSetores,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

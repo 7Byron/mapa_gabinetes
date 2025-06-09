@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 
 // Se criou o custom_drawer.dart
@@ -23,7 +22,7 @@ import '../models/alocacao.dart';
 import '../database/database_helper.dart';
 
 class AlocacaoMedicos extends StatefulWidget {
-  const AlocacaoMedicos({Key? key}) : super(key: key);
+  const AlocacaoMedicos({super.key});
 
   @override
   State<AlocacaoMedicos> createState() => AlocacaoMedicosState();

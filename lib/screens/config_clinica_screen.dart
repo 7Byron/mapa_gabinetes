@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../database/database_helper.dart';
-import '../main.dart';
 
 class ConfigClinicaScreen extends StatefulWidget {
   const ConfigClinicaScreen({super.key});

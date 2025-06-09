@@ -11,7 +11,7 @@ import '../screens/relatorio_especialidades_screen.dart';
 
 class CustomDrawer extends StatelessWidget {
   final VoidCallback onRefresh; // Callback para recarregar dados
-  const CustomDrawer({Key? key, required this.onRefresh}) : super(key: key);
+  const CustomDrawer({super.key, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {

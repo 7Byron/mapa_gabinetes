@@ -6,7 +6,6 @@ import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 
 // Importe seu RelatoriosService, DatabaseHelper, etc.
 import '../services/relatorios_service.dart';
-import '../database/database_helper.dart';
 import '../models/gabinete.dart';
 
 class RelatoriosScreen extends StatefulWidget {
@@ -45,16 +44,18 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   /// Carrega do DB: gabinetes, especialidades
   Future<void> _carregarDadosIniciais() async {
+    // TODO: Refatorar tela para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
     // Carrega gabinetes
-    todosGabinetes = await DatabaseHelper.buscarGabinetes();
+    // todosGabinetes = await DatabaseHelper.buscarGabinetes();
     // Extrai setores únicos
-    final setSetores = todosGabinetes.map((g) => g.setor).toSet();
-    setores = setSetores.toList()..sort();
+    // final setSetores = todosGabinetes.map((g) => g.setor).toSet();
+    // setores = setSetores.toList()..sort();
 
     // Carrega especialidades do DB (tabela "especialidades")
-    final listaEsp = await DatabaseHelper.buscarEspecialidades();
+    // final listaEsp = await DatabaseHelper.buscarEspecialidades();
     // Se tiver outra fonte, ajuste
-    especialidades = listaEsp..sort();
+    // especialidades = listaEsp..sort();
 
     setState(() {});
   }

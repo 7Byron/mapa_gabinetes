@@ -5,11 +5,13 @@ import '../models/disponibilidade.dart';
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
   final Function(DateTime, bool) onRemoverData;
+  final Function(Disponibilidade)? onEditarDisponibilidade;
 
   const DisponibilidadesGrid({
     super.key,
     required this.disponibilidades,
     required this.onRemoverData,
+    this.onEditarDisponibilidade,
   });
 
   @override
@@ -119,6 +121,12 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     final TimeOfDay? time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
     );
 
     if (time != null) {
@@ -160,6 +168,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         // Se for série, pergunta se quer aplicar em todos
         if (disponibilidade.tipo != 'Única') {
           Future.delayed(Duration.zero, () async {
+            if (!context.mounted) return;
             final aplicarEmTodos = await showDialog<bool>(
               context: context,
               builder: (context) {
@@ -211,6 +220,11 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
   }
 
+  void _verDisponibilidade(Disponibilidade disponibilidade) {
+    // Ao tocar no cartão, executa a mesma lógica que editar (abre o CadastroMedico)
+    widget.onEditarDisponibilidade?.call(disponibilidade);
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -238,90 +252,93 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 ? disponibilidade.horarios[1]
                 : 'Fim';
 
-            return Card(
-              elevation: 4,
-              margin: const EdgeInsets.all(8),
-              color: _determinarCorDoCartao(disponibilidade),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year} ($diaSemana)',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+            return InkWell(
+              onTap: () => _verDisponibilidade(disponibilidade),
+              child: Card(
+                elevation: 4,
+                margin: const EdgeInsets.all(8),
+                color: _determinarCorDoCartao(disponibilidade),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year} ($diaSemana)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _mostrarDialogoRemocaoSeries(
+                                context,
+                                disponibilidade,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        'Série: ${disponibilidade.tipo}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade100,
+                                foregroundColor: Colors.black87,
+                              ),
+                              onPressed: () => _selecionarHorario(
+                                context,
+                                disponibilidade.data,
+                                true,
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  horarioInicio,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _mostrarDialogoRemocaoSeries(
-                              context,
-                              disponibilidade,
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade100,
+                                foregroundColor: Colors.black87,
+                              ),
+                              onPressed: () => _selecionarHorario(
+                                context,
+                                disponibilidade.data,
+                                false,
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  horarioFim,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    Text(
-                      'Série: ${disponibilidade.tipo}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue.shade100,
-                              foregroundColor: Colors.black87,
-                            ),
-                            onPressed: () => _selecionarHorario(
-                              context,
-                              disponibilidade.data,
-                              true,
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                horarioInicio,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue.shade100,
-                              foregroundColor: Colors.black87,
-                            ),
-                            onPressed: () => _selecionarHorario(
-                              context,
-                              disponibilidade.data,
-                              false,
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                horarioFim,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );

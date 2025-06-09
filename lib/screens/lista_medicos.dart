@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
-import '../database/database_helper.dart';
 import '../models/medico.dart';
 import 'cadastro_medicos.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ListaMedicos extends StatefulWidget {
   const ListaMedicos({super.key});
@@ -20,19 +20,29 @@ class ListaMedicosState extends State<ListaMedicos> {
   void initState() {
     super.initState();
     _carregarMedicos();
+    // Adiciona observer para detectar retorno à tela
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ModalRoute.of(context)?.addScopedWillPopCallback(() async {
+        _carregarMedicos();
+        return true;
+      });
+    });
   }
 
-  /// Função para buscar médicos do banco de dados
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Sempre que a tela volta a ser exibida, recarrega a lista
+    _carregarMedicos();
+  }
+
+  /// Função para buscar médicos
   Future<void> _carregarMedicos() async {
     setState(() => isLoading = true);
-
     try {
-      final medicosCarregados =
-          await DatabaseHelper.buscarMedicos(); // Busca os médicos
-
-      // Ordena a lista de médicos pelo nome
+      final snapshot = await FirebaseFirestore.instance.collection('medicos').get();
+      final medicosCarregados = snapshot.docs.map((doc) => Medico.fromMap(doc.data())).toList();
       medicosCarregados.sort((a, b) => a.nome.compareTo(b.nome));
-
       setState(() {
         medicos = medicosCarregados;
         isLoading = false;
@@ -48,11 +58,21 @@ class ListaMedicosState extends State<ListaMedicos> {
     }
   }
 
-  /// Função para deletar um médico do banco de dados
+  /// Função para deletar um médico
   Future<void> _deletarMedico(String id) async {
     try {
-      await DatabaseHelper.deletarMedico(id);
-      _carregarMedicos(); // Recarrega a lista após exclusão
+      // Apaga todas as disponibilidades do médico
+      final disponSnapshot = await FirebaseFirestore.instance
+          .collection('medicos')
+          .doc(id)
+          .collection('disponibilidades')
+          .get();
+      for (final doc in disponSnapshot.docs) {
+        await doc.reference.delete();
+      }
+      // Agora apaga o médico
+      await FirebaseFirestore.instance.collection('medicos').doc(id).delete();
+      await _carregarMedicos(); // Recarrega a lista após exclusão
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -91,13 +111,15 @@ class ListaMedicosState extends State<ListaMedicos> {
 
   /// Navega para o cadastro de médicos e recarrega a lista ao voltar
   Future<void> _adicionarOuEditarMedico({Medico? medico}) async {
-    await Navigator.push(
+    final resultado = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => CadastroMedico(medico: medico),
       ),
     );
-    _carregarMedicos(); // Recarrega a lista ao retornar
+    if (resultado != null) {
+      await _carregarMedicos();
+    }
   }
 
   @override
@@ -116,32 +138,28 @@ class ListaMedicosState extends State<ListaMedicos> {
                       itemCount: medicos.length,
                       itemBuilder: (context, index) {
                         final medico = medicos[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 16,
-                          ),
-                          child: ListTile(
-                            title: Text(medico.nome),
-                            subtitle: Text(medico.especialidade),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit,
-                                      color: MyAppTheme.azulEscuro),
-                                  tooltip: 'Editar',
-                                  onPressed: () =>
-                                      _adicionarOuEditarMedico(medico: medico),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete,
-                                      color: Colors.red),
-                                  tooltip: 'Eliminar',
-                                  onPressed: () =>
-                                      _confirmarDelecao(context, medico.id),
-                                ),
-                              ],
+                        return GestureDetector(
+                          onTap: () => _adicionarOuEditarMedico(medico: medico),
+                          child: Card(
+                            margin: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 16,
+                            ),
+                            child: ListTile(
+                              title: Text(medico.nome),
+                              subtitle: Text(medico.especialidade),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        color: Colors.red),
+                                    tooltip: 'Eliminar',
+                                    onPressed: () =>
+                                        _confirmarDelecao(context, medico.id),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../main.dart';
 import '../screens/lista_medicos.dart';
 import '../screens/lista_gabinetes.dart';
-import '../screens/banco_dados_screen.dart';
 import '../screens/config_clinica_screen.dart';
 import '../screens/relatorios_screen.dart';
 import '../screens/relatorio_especialidades_screen.dart';
@@ -82,19 +81,6 @@ class CustomDrawer extends StatelessWidget {
                 context,
                 MaterialPageRoute(builder: (context) => const ConfigClinicaScreen()),
               ).then((_) => onRefresh());
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.dataset_outlined),
-            title: const Text('Base de Dados'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const BancoDadosScreen(),
-                ),
-              );
             },
           ),
           ListTile(

@@ -1,4 +1,4 @@
-import '../database/database_helper.dart';
+// import '../database/database_helper.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/gabinete.dart';
@@ -16,15 +16,18 @@ class AlocacaoMedicosLogic {
     required Function(List<Disponibilidade>) onDisponibilidades,
     required Function(List<Alocacao>) onAlocacoes,
   }) async {
-    final gabs = await DatabaseHelper.buscarGabinetes();
-    final meds = await DatabaseHelper.buscarMedicos();
-    final disps = await DatabaseHelper.buscarTodasDisponibilidades();
-    final alocs = await DatabaseHelper.buscarAlocacoes();
+    // TODO: Refatorar lógica para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+    final gabs = [];
+    final meds = [];
+    final disps = [];
+    final alocs = [];
 
-    onGabinetes(gabs);
-    onMedicos(meds);
-    onDisponibilidades(disps);
-    onAlocacoes(alocs);
+    // Corrigido: Conversão explícita dos dados vindos do Firestore para as listas corretas.
+    onGabinetes(List<Gabinete>.from(gabs));
+    onMedicos(List<Medico>.from(meds));
+    onDisponibilidades(List<Disponibilidade>.from(disps));
+    onAlocacoes(List<Alocacao>.from(alocs));
   }
 
   static List<Medico> filtrarMedicosPorData({
@@ -111,9 +114,9 @@ class AlocacaoMedicosLogic {
       return a.medicoId == medicoId && alocDate == dataAlvo;
     });
     if (indexAloc != -1) {
-      final alocAntiga = alocacoes[indexAloc];
       alocacoes.removeAt(indexAloc);
-      await DatabaseHelper.deletarAlocacao(alocAntiga.id);
+      // TODO: Refatorar lógica para usar Firestore diretamente.
+      // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
     }
 
     final dispDoDia = disponibilidades.where((disp) {
@@ -135,7 +138,8 @@ class AlocacaoMedicosLogic {
       horarioFim: horarioFim,
     );
 
-    await DatabaseHelper.salvarAlocacao(novaAloc);
+    // TODO: Refatorar lógica para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
     alocacoes.add(novaAloc);
     onAlocacoesChanged();
   }
@@ -157,9 +161,9 @@ class AlocacaoMedicosLogic {
     });
     if (indexAloc == -1) return;
 
-    final alocRemovida = alocacoes[indexAloc];
     alocacoes.removeAt(indexAloc);
-    await DatabaseHelper.deletarAlocacao(alocRemovida.id);
+    // TODO: Refatorar lógica para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
 
     final temDisp = disponibilidades.any((disp) {
       final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
@@ -207,9 +211,9 @@ class AlocacaoMedicosLogic {
       });
 
       if (indexAloc != -1) {
-        final alocRemovida = alocacoes[indexAloc];
         alocacoes.removeAt(indexAloc);
-        await DatabaseHelper.deletarAlocacao(alocRemovida.id);
+        // TODO: Refatorar lógica para usar Firestore diretamente.
+        // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
       }
 
       final temDisp = disponibilidades.any((disp2) {

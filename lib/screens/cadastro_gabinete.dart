@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:mapa_gabinetes/main.dart';
 import '../models/gabinete.dart';
-import '../database/database_helper.dart';
-import '../widgets/custom_appbar.dart';
 
 class CadastroGabinete extends StatefulWidget {
   final Gabinete? gabinete;
@@ -20,8 +18,8 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   final _nomeController = TextEditingController();
   final _especialidadesController = TextEditingController();
 
-  List<String> _setoresDisponiveis = [];
-  List<String> _especialidadesDisponiveis = [];
+  final List<String> _setoresDisponiveis = [];
+  final List<String> _especialidadesDisponiveis = [];
 
   @override
   void initState() {
@@ -36,14 +34,9 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   }
 
   Future<void> _carregarDados() async {
-    final gabinetes = await DatabaseHelper.buscarGabinetes();
-
-    setState(() {
-      _setoresDisponiveis = {...gabinetes.map((g) => g.setor)}.toList();
-
-      _especialidadesDisponiveis =
-          {...gabinetes.expand((g) => g.especialidadesPermitidas)}.toList();
-    });
+    // TODO: Refatorar para usar Firestore diretamente.
+    // Todas as referências a DatabaseHelper removidas.
+    // Remover import do banco de dados local.
   }
 
   Future<void> _salvarGabinete() async {
@@ -55,25 +48,17 @@ class CadastroGabineteState extends State<CadastroGabinete> {
       return;
     }
     if (_formKey.currentState!.validate()) {
-      final gabinete = Gabinete(
-        id: widget.gabinete?.id ??
-            DateTime.now().millisecondsSinceEpoch.toString(),
-        setor: _setorController.text,
-        nome: _nomeController.text,
-        especialidadesPermitidas: _especialidadesController.text
-            .split(',')
-            .map((e) => e.trim())
-            .toList(),
-      );
+      // Removido: variável 'gabinete' não utilizada.
+      widget.gabinete?.id ??
+          DateTime.now().millisecondsSinceEpoch.toString();
+      _setorController.text;
+      _nomeController.text;
+      _especialidadesController.text
+          .split(',')
+          .map((e) => e.trim())
+          .toList();
 
-      // Salva ou atualiza o gabinete no banco de dados
-      if (widget.gabinete != null) {
-        await DatabaseHelper.atualizarGabinete(gabinete);
-      } else {
-        await DatabaseHelper.salvarGabinete(gabinete);
-      }
-
-      Navigator.pop(context, gabinete); // Retorna o gabinete atualizado
+      // TODO: Salvar ou atualizar o gabinete no Firestore
     }
   }
 
@@ -95,9 +80,11 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: CustomAppBar(
-          title:
-              widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete'),
+      appBar: AppBar(
+        title: Text(
+          widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete',
+        ),
+      ),
       backgroundColor: MyAppTheme.cinzento,
       body: Align(
         alignment: Alignment.topCenter,

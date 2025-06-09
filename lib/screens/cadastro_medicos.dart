@@ -3,7 +3,6 @@ import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 
 // Services
-import '../database/database_helper.dart';
 import '../models/disponibilidade.dart';
 import '../models/medico.dart';
 import '../services/medico_salvar_service.dart';
@@ -14,6 +13,8 @@ import '../services/disponibilidade_remocao.dart';
 import '../widgets/disponibilidades_grid.dart';
 import '../widgets/calendario_disponibilidades.dart';
 import '../widgets/formulario_medico.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CadastroMedico extends StatefulWidget {
   final Medico? medico;
@@ -39,6 +40,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
   TextEditingController nomeController = TextEditingController();
   TextEditingController observacoesController = TextEditingController();
 
+  bool isLoadingDisponibilidades = false;
+
   @override
   void initState() {
     super.initState();
@@ -52,29 +55,37 @@ class CadastroMedicoState extends State<CadastroMedico> {
       nomeController.text = widget.medico!.nome;
       especialidadeController.text = widget.medico!.especialidade;
       observacoesController.text = widget.medico!.observacoes ?? '';
-
-      // Carregamos as disponibilidades deste médico do banco
-      _carregarDisponibilidadesSalvas(_medicoId);
+      _carregarDisponibilidadesFirestore(widget.medico!.id);
     }
   }
 
-  /// Lê as disponibilidades no banco para este médico e ordena por data
-  Future<void> _carregarDisponibilidadesSalvas(String medicoId) async {
-    final dbDisponibilidades =
-        await DatabaseHelper.buscarDisponibilidades(medicoId);
+  Future<void> _carregarDisponibilidadesFirestore(String medicoId) async {
     setState(() {
-      disponibilidades = dbDisponibilidades;
-      // **Ordena** por data para ficar sempre cronológico
-      disponibilidades.sort((a, b) => a.data.compareTo(b.data));
+      isLoadingDisponibilidades = true;
     });
-    _atualizarDiasSelecionados();
+    final snapshot = await FirebaseFirestore.instance
+        .collection('medicos')
+        .doc(medicoId)
+        .collection('disponibilidades')
+        .get();
+    setState(() {
+      disponibilidades =
+          snapshot.docs.map((doc) => Disponibilidade.fromMap(doc.data())).toList();
+      isLoadingDisponibilidades = false;
+    });
   }
 
-  /// Atualiza o array de [diasSelecionados] com base na lista de [disponibilidades]
-  void _atualizarDiasSelecionados() {
-    diasSelecionados = disponibilidades.map((d) => d.data).toList();
-    setState(() {});
-  }
+  /// Lê as disponibilidades no banco para este médico e ordena por data
+  // Future<void> _carregarDisponibilidadesSalvas(String medicoId) async {
+  //   final dbDisponibilidades =
+  //       await DatabaseHelper.buscarDisponibilidades(medicoId);
+  //   setState(() {
+  //     disponibilidades = dbDisponibilidades;
+  //     // **Ordena** por data para ficar sempre cronológico
+  //     disponibilidades.sort((a, b) => a.data.compareTo(b.data));
+  //   });
+  //   _atualizarDiasSelecionados();
+  // }
 
   /// Adiciona data(s) no calendário (única, semanal, quinzenal, mensal), depois **ordena**.
   void _adicionarData(DateTime date, String tipo) {
@@ -141,10 +152,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     try {
       await salvarMedicoCompleto(medico);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registo salvo com sucesso!')),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao salvar registo: $e')),
       );
@@ -175,25 +188,93 @@ class CadastroMedicoState extends State<CadastroMedico> {
     return Scaffold(
       appBar: CustomAppBar(title: widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
       backgroundColor: MyAppTheme.cinzento,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: isLargeScreen
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Coluna esquerda (dados do médico + calendário)
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 300),
-                      child: SingleChildScrollView(
+      body: isLoadingDisponibilidades
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: isLargeScreen
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Coluna esquerda (dados do médico + calendário)
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 300),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  FormularioMedico(
+                                    nomeController: nomeController,
+                                    especialidadeController:
+                                        especialidadeController,
+                                    observacoesController: observacoesController,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  CalendarioDisponibilidades(
+                                    diasSelecionados: diasSelecionados,
+                                    onAdicionarData: _adicionarData,
+                                    onRemoverData: (date, removeSerie) {
+                                      _removerData(date, removeSerie: removeSerie);
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Card(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                        children: [
+                                          IconButton(
+                                            onPressed: () => _salvarMedico(),
+                                            icon: const Icon(Icons.save, color: Colors.blue),
+                                            tooltip: 'Salvar',
+                                          ),
+                                          IconButton(
+                                            onPressed: () async {
+                                              await _salvarMedico();
+                                              _criarNovo();
+                                            },
+                                            icon: const Icon(Icons.add, color: Colors.green),
+                                            tooltip: 'Salvar e Adicionar Novo',
+                                          ),
+                                          IconButton(
+                                            onPressed: _cancelar,
+                                            icon: const Icon(Icons.cancel, color: Colors.red),
+                                            tooltip: 'Cancelar',
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+
+                          // Coluna direita (grid das disponibilidades)
+                          Expanded(
+                            flex: 1,
+                            child: SingleChildScrollView(
+                              child: DisponibilidadesGrid(
+                                disponibilidades: disponibilidades,
+                                onRemoverData: (date, removeSerie) {
+                                  _removerData(date, removeSerie: removeSerie);
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : SingleChildScrollView(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             FormularioMedico(
                               nomeController: nomeController,
-                              especialidadeController:
-                                  especialidadeController,
+                              especialidadeController: especialidadeController,
                               observacoesController: observacoesController,
                             ),
                             const SizedBox(height: 16),
@@ -204,91 +285,23 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                 _removerData(date, removeSerie: removeSerie);
                               },
                             ),
-                            const SizedBox(height: 16),
-                            Card(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                  children: [
-                                    IconButton(
-                                      onPressed: () => _salvarMedico(),
-                                      icon: const Icon(Icons.save, color: Colors.blue),
-                                      tooltip: 'Salvar',
-                                    ),
-                                    IconButton(
-                                      onPressed: () async {
-                                        await _salvarMedico();
-                                        _criarNovo();
-                                      },
-                                      icon: const Icon(Icons.add, color: Colors.green),
-                                      tooltip: 'Salvar e Adicionar Novo',
-                                    ),
-                                    IconButton(
-                                      onPressed: _cancelar,
-                                      icon: const Icon(Icons.cancel, color: Colors.red),
-                                      tooltip: 'Cancelar',
-                                    ),
-                                  ],
-                                ),
+                            const SizedBox(height: 24),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 300),
+                              child: DisponibilidadesGrid(
+                                disponibilidades: disponibilidades,
+                                onRemoverData: (date, removeSerie) {
+                                  _removerData(date, removeSerie: removeSerie);
+                                },
                               ),
-                            )
-
-
+                            ),
+                            const SizedBox(height: 24),
+                            // Botão de Salvar removido, pois salvamos ao sair
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-
-                    // Coluna direita (grid das disponibilidades)
-                    Expanded(
-                      flex: 1,
-                      child: SingleChildScrollView(
-                        child: DisponibilidadesGrid(
-                          disponibilidades: disponibilidades,
-                          onRemoverData: (date, removeSerie) {
-                            _removerData(date, removeSerie: removeSerie);
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FormularioMedico(
-                        nomeController: nomeController,
-                        especialidadeController: especialidadeController,
-                        observacoesController: observacoesController,
-                      ),
-                      const SizedBox(height: 16),
-                      CalendarioDisponibilidades(
-                        diasSelecionados: diasSelecionados,
-                        onAdicionarData: _adicionarData,
-                        onRemoverData: (date, removeSerie) {
-                          _removerData(date, removeSerie: removeSerie);
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 300),
-                        child: DisponibilidadesGrid(
-                          disponibilidades: disponibilidades,
-                          onRemoverData: (date, removeSerie) {
-                            _removerData(date, removeSerie: removeSerie);
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Botão de Salvar removido, pois salvamos ao sair
-                    ],
-                  ),
-                ),
-        ),
-      ),
+              ),
+            ),
     );
   }
 }

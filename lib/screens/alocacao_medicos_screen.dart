@@ -19,7 +19,6 @@ import '../models/gabinete.dart';
 import '../models/medico.dart';
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
-import '../database/database_helper.dart';
 
 class AlocacaoMedicos extends StatefulWidget {
   const AlocacaoMedicos({super.key});
@@ -73,17 +72,19 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         },
       );
 
-      // Carregar feriados da base de dados
-      feriados = await DatabaseHelper.buscarFeriados();
+      // TODO: Refatorar para usar Firestore diretamente.
+      // Todas as referências a DatabaseHelper removidas.
+      // feriados = await DatabaseHelper.buscarFeriados();
 
-      // Carregar horários da clínica da base de dados
-      final horariosRows = await DatabaseHelper.buscarHorariosClinica();
-      for (final row in horariosRows) {
-        final diaSemana = row['diaSemana'] as int;
-        final horaAbertura = (row['horaAbertura'] ?? "") as String;
-        final horaFecho = (row['horaFecho'] ?? "") as String;
-        horariosClinica[diaSemana] = [horaAbertura, horaFecho];
-      }
+      // TODO: Refatorar para usar Firestore diretamente.
+      // Todas as referências a DatabaseHelper removidas.
+      // final horariosRows = await DatabaseHelper.buscarHorariosClinica();
+      // for (final row in horariosRows) {
+      //   final diaSemana = row['diaSemana'] as int;
+      //   final horaAbertura = (row['horaAbertura'] ?? "") as String;
+      //   final horaFecho = (row['horaFecho'] ?? "") as String;
+      //   horariosClinica[diaSemana] = [horaAbertura, horaFecho];
+      // }
 
       // Filtra médicos do dia
       medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
@@ -99,6 +100,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       setState(() => isCarregando = false);
     } catch (e) {
       debugPrint('Erro ao carregar dados do banco: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Erro ao carregar dados do banco.')),
       );
@@ -380,19 +382,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                             ],
                           ),
                           child: DragTarget<String>(
-                            onWillAccept: (medicoId) {
-                              // Verifica se o médico realmente está alocado antes de aceitar o cartão
+                            onWillAcceptWithDetails: (details) {
+                              final medicoId = details.data;
                               final estaAlocado = alocacoes.any((a) => a.medicoId == medicoId);
                               if (!estaAlocado) {
                                 debugPrint('Médico $medicoId NÃO está alocado, ignorando desalocação.');
-                                return false; // Bloqueia ação indevida
+                                return false;
                               }
-
                               debugPrint('Médico $medicoId está alocado, aceitando para desalocar.');
                               return true;
                             },
-                            onAccept: (medicoId) async {
-                              // Agora só será chamado para médicos alocados
+                            onAcceptWithDetails: (details) async {
+                              final medicoId = details.data;
                               await _desalocarMedicoComPergunta(medicoId);
                             },
                             builder: (context, candidateData, rejectedData) {
@@ -418,18 +419,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                               medicos: medicos,
                               disponibilidades: disponibilidades,
                               selectedDate: selectedDate,
-                              onAlocarMedico: (
-                                String medicoId,
-                                String gabineteId, {
-                                DateTime? dataEspecifica,
-                              }) async {
-                                await _alocarMedico(
-                                  medicoId,
-                                  gabineteId,
-                                  dataEspecifica: dataEspecifica,
-                                );
-                              },
-                              onAtualizarEstado: () => setState(() {}),
+                              onAlocarMedico: _alocarMedico,
+                              onAtualizarEstado: _carregarDadosIniciais,
+                              onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
                             ),
                           ),
                         ),

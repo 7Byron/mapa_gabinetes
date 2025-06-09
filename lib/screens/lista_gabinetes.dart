@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/gabinete.dart';
-import '../database/database_helper.dart';
 import 'cadastro_gabinete.dart';
 
 class ListaGabinetes extends StatefulWidget {
@@ -25,7 +24,9 @@ class ListaGabinetesState extends State<ListaGabinetes> {
 
   Future<void> _carregarGabinetes() async {
     setState(() => isLoading = true);
-    gabinetes = await DatabaseHelper.buscarGabinetes();
+    // TODO: Refatorar tela para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+    gabinetes = []; // Adicione aqui a lógica para carregar os dados do Firestore
     gabinetesPorSetor = agruparPorSetor(gabinetes);
     setState(() => isLoading = false);
   }
@@ -57,17 +58,17 @@ class ListaGabinetesState extends State<ListaGabinetes> {
     );
 
     if (novoGabinete != null) {
-      if (gabineteExistente != null) {
-        await DatabaseHelper.atualizarGabinete(novoGabinete);
-      } else {
-        await DatabaseHelper.salvarGabinete(novoGabinete);
-      }
+      // TODO: Refatorar tela para usar Firestore diretamente.
+      // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+      // Adicione aqui a lógica para salvar ou atualizar os dados no Firestore
       _carregarGabinetes();
     }
   }
 
   Future<void> _deletarGabinete(String id) async {
-    await DatabaseHelper.deletarGabinete(id);
+    // TODO: Refatorar tela para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+    // Adicione aqui a lógica para deletar os dados no Firestore
     _carregarGabinetes();
   }
 

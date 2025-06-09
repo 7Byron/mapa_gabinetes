@@ -28,11 +28,20 @@ class Disponibilidade {
   }
 
   static Disponibilidade fromMap(Map<String, dynamic> map) {
+    final horariosRaw = map['horarios'];
+    List<String> horarios;
+    if (horariosRaw is String) {
+      horarios = (jsonDecode(horariosRaw) as List).cast<String>();
+    } else if (horariosRaw is List) {
+      horarios = (horariosRaw).cast<String>();
+    } else {
+      horarios = [];
+    }
     return Disponibilidade(
       id: map['id'],
       medicoId: map['medicoId'],
       data: DateTime.parse(map['data']),
-      horarios: (jsonDecode(map['horarios']) as List).cast<String>(),
+      horarios: horarios,
       tipo: map['tipo'] ?? 'Única',
     );
   }

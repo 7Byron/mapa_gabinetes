@@ -1,53 +1,63 @@
 // lib/services/medico_salvar_service.dart
 
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/medico.dart';
-import '../database/database_helper.dart';
+import '../models/disponibilidade.dart'; // Corrigido: Importação do modelo Disponibilidade para evitar erro de referência.
 
 Future<void> salvarMedicoCompleto(Medico medico) async {
-  final db = await DatabaseHelper.database;
-  try {
-    if (kDebugMode) print('Tentando salvar médico: ${medico.toMap()}');
+  final firestore = FirebaseFirestore.instance;
+  final medicoRef = firestore.collection('medicos').doc(medico.id);
 
-    // 1) Salva/atualiza o médico
-    await db.insert(
-      'medicos',
-      {
-        'id': medico.id,
-        'nome': medico.nome,
-        'especialidade': medico.especialidade,
-        'observacoes': medico.observacoes,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+  // Salva o médico (dados básicos)
+  await medicoRef.set({
+    'id': medico.id,
+    'nome': medico.nome,
+    'especialidade': medico.especialidade,
+    'observacoes': medico.observacoes,
+  });
 
-    // 2) Remove disponibilidades antigas
-    await db.delete(
-      'disponibilidades',
-      where: 'medicoId = ?',
-      whereArgs: [medico.id],
-    );
+  // Salva as disponibilidades como subcoleção
+  final dispRef = medicoRef.collection('disponibilidades');
 
-    // 3) Insere as novas
-    for (final disp in medico.disponibilidades) {
-      await db.insert(
-        'disponibilidades',
-        {
-          'id': disp.id,
-          'medicoId': medico.id,
-          'data': disp.data.toIso8601String(),
-          'horarios': jsonEncode(disp.horarios),
-          'tipo': disp.tipo,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-
-    if (kDebugMode) print('Médico salvo com sucesso: ${medico.id}');
-  } catch (e) {
-    if (kDebugMode) print('Erro ao salvar médico: $e');
-    rethrow;
+  // Remove todas as disponibilidades antigas
+  final batch = firestore.batch();
+  final antigas = await dispRef.get();
+  for (final doc in antigas.docs) {
+    batch.delete(doc.reference);
   }
+  await batch.commit();
+
+  // Adiciona as novas disponibilidades
+  for (final disp in medico.disponibilidades) {
+    await dispRef.doc(disp.id).set({
+      'id': disp.id,
+      'medicoId': medico.id,
+      'data': disp.data.toIso8601String(),
+      'horarios': disp.horarios,
+      'tipo': disp.tipo,
+    });
+  }
+}
+
+Future<List<Medico>> buscarMedicos() async {
+  final firestore = FirebaseFirestore.instance;
+  final medicosSnap = await firestore.collection('medicos').get();
+  List<Medico> medicos = [];
+  for (final doc in medicosSnap.docs) {
+    final dados = doc.data();
+    // Busca disponibilidades
+    final dispSnap = await doc.reference.collection('disponibilidades').get();
+    final disponibilidades = dispSnap.docs.map((d) => {
+      ...d.data(),
+      'horarios': d.data()['horarios'] is List ? d.data()['horarios'] : [],
+    }).toList();
+    medicos.add(Medico(
+      id: dados['id'],
+      nome: dados['nome'],
+      especialidade: dados['especialidade'],
+      observacoes: dados['observacoes'],
+      disponibilidades: disponibilidades.map((e) => Disponibilidade.fromMap(e)).toList(),
+    ));
+  }
+  return medicos;
 }

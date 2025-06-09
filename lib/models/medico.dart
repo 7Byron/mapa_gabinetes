@@ -28,14 +28,18 @@ class Medico {
   }
 
   factory Medico.fromMap(Map<String, dynamic> map) {
+    // Corrige: se disponibilidades vier null, usa lista vazia
+    final disponList = map['disponibilidades'];
     return Medico(
       id: map['id'],
       nome: map['nome'],
       especialidade: map['especialidade'],
       observacoes: map['observacoes'],
-      disponibilidades: (map['disponibilidades'] as List)
-          .map((e) => Disponibilidade.fromMap(e))
-          .toList(),
+      disponibilidades: (disponList != null)
+          ? (disponList as List)
+              .map((e) => Disponibilidade.fromMap(e))
+              .toList()
+          : [],
     );
   }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import '../database/database_helper.dart';
 import '../main.dart';
 
 class FormularioMedico extends StatefulWidget {
@@ -16,38 +15,30 @@ class FormularioMedico extends StatefulWidget {
   });
 
   @override
-  _FormularioMedicoState createState() => _FormularioMedicoState();
+  FormularioMedicoState createState() => FormularioMedicoState();
 }
 
-class _FormularioMedicoState extends State<FormularioMedico> {
-  List<String> _especialidadesDisponiveis = [];
-  late TextEditingController _typeAheadController; // Controller para TypeAheadField
+class FormularioMedicoState extends State<FormularioMedico> {
+  final List<String> especialidadesDisponiveis = [];
+  late TextEditingController typeAheadController; // Controller para TypeAheadField
 
   @override
   void initState() {
     super.initState();
-    _carregarEspecialidades();
+    carregarEspecialidades();
 
     // Inicializa o TypeAheadField com o valor atual do especialidadeController
-    _typeAheadController =
+    typeAheadController =
         TextEditingController(text: widget.especialidadeController.text);
   }
 
-  Future<void> _carregarEspecialidades() async {
-    try {
-      // Busca as especialidades dos médicos no banco de dados
-      final medicos = await DatabaseHelper.buscarMedicos();
-      setState(() {
-        _especialidadesDisponiveis = {
-          ...medicos.map((medico) => medico.especialidade).where((e) => e.isNotEmpty)
-        }.toList();
-      });
-    } catch (e) {
-      debugPrint('Erro ao carregar especialidades: $e');
-      setState(() {
-        _especialidadesDisponiveis = [];
-      });
-    }
+  Future<void> carregarEspecialidades() async {
+    // TODO: Refatorar formulário para usar Firestore diretamente.
+    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+    setState(() {
+      especialidadesDisponiveis.clear();
+      especialidadesDisponiveis.addAll([]); // Adapta conforme necessário
+    });
   }
 
   @override
@@ -78,7 +69,7 @@ class _FormularioMedicoState extends State<FormularioMedico> {
             TypeAheadField<String>(
               suggestionsCallback: (pattern) async {
                 // Filtra as especialidades disponíveis com base no texto digitado
-                return _especialidadesDisponiveis
+                return especialidadesDisponiveis
                     .where((especialidade) =>
                     especialidade.toLowerCase().contains(pattern.toLowerCase()))
                     .toList();
@@ -91,12 +82,12 @@ class _FormularioMedicoState extends State<FormularioMedico> {
               },
               onSelected: (suggestion) {
                 // Atualiza ambos os controllers ao selecionar uma sugestão
-                _typeAheadController.text = suggestion;
+                typeAheadController.text = suggestion;
                 widget.especialidadeController.text = suggestion;
               },
               builder: (context, controller, focusNode) {
-                // Sincroniza o _typeAheadController
-                controller.text = _typeAheadController.text;
+                // Sincroniza o typeAheadController
+                controller.text = typeAheadController.text;
 
                 return TextField(
                   controller: controller,
@@ -152,7 +143,7 @@ class _FormularioMedicoState extends State<FormularioMedico> {
 
   @override
   void dispose() {
-    _typeAheadController.dispose(); // Libera o controller
+    typeAheadController.dispose(); // Libera o controller
     super.dispose();
   }
 }

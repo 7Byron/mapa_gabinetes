@@ -1,6 +1,6 @@
 // lib/services/relatorios_service.dart
 
-import '../database/database_helper.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RelatoriosService {
   /// Gera todas as datas de [inicio] até [fim] (incluso).
@@ -50,25 +50,40 @@ class RelatoriosService {
     return (delta > 0) ? delta : 0.0;
   }
 
-  /// Busca do DB os horários e feriados, e retorna em estruturas de fácil uso
+  /// Busca horários da clínica no Firestore
   static Future<Map<int, List<String>>> _carregarHorariosMap() async {
-    final rows = await DatabaseHelper.buscarHorariosClinica();
-    // diaSemana -> ["08:00","20:00"]
+    final firestore = FirebaseFirestore.instance;
+    final snap = await firestore.collection('horarios_clinica').get();
     final map = <int, List<String>>{};
-    for (final row in rows) {
-      final ds = row['diaSemana'] as int;
-      final ab = row['horaAbertura'] as String;
-      final fe = row['horaFecho'] as String;
+    for (final doc in snap.docs) {
+      final ds = doc['diaSemana'] as int;
+      final ab = doc['horaAbertura'] as String;
+      final fe = doc['horaFecho'] as String;
       map[ds] = [ab, fe];
     }
     return map;
   }
 
-  static Future<Set<DateTime>> _carregarFeriados() async {
-    final feriadosList = await DatabaseHelper.buscarFeriados();
-    return feriadosList.map((e) => e['data'] as DateTime).toSet();
+  /// Busca feriados no Firestore
+  static Future<List<Map<String, dynamic>>> _carregarFeriados() async {
+    final firestore = FirebaseFirestore.instance;
+    final snap = await firestore.collection('feriados').get();
+    return snap.docs.map((d) => d.data()).toList();
   }
 
+  /// Busca alocações no Firestore
+  static Future<List<Map<String, dynamic>>> _carregarAlocacoes() async {
+    final firestore = FirebaseFirestore.instance;
+    final snap = await firestore.collection('alocacoes').get();
+    return snap.docs.map((d) => d.data()).toList();
+  }
+
+  /// Busca gabinetes no Firestore
+  static Future<List<Map<String, dynamic>>> _carregarGabinetes() async {
+    final firestore = FirebaseFirestore.instance;
+    final snap = await firestore.collection('gabinetes').get();
+    return snap.docs.map((d) => d.data()).toList();
+  }
 
   /// ========== 1) Taxa Geral de todos os gabinetes ============================
   static Future<double> taxaOcupacaoGeral({
@@ -76,14 +91,14 @@ class RelatoriosService {
     required DateTime fim,
   }) async {
     // Carrega alocações
-    final alocacoes = await DatabaseHelper.buscarAlocacoes();
-    // Carrega horários e feriados do DB
+    final alocacoes = await _carregarAlocacoes();
+    // Carrega horários e feriados do Firestore
     final horariosMap = await _carregarHorariosMap();
     final feriados = await _carregarFeriados();
 
     // Filtra as alocações no intervalo
     final alocFiltradas = alocacoes.where((a) {
-      return !a.data.isBefore(inicio) && !a.data.isAfter(fim);
+      return !DateTime.parse(a['data']).isBefore(inicio) && !DateTime.parse(a['data']).isAfter(fim);
     }).toList();
 
     double somaHorasTotais = 0.0;
@@ -91,7 +106,7 @@ class RelatoriosService {
 
     final dias = _gerarDatasNoIntervalo(inicio, fim);
     for (final dia in dias) {
-      if (feriados.contains(dia)) {
+      if (feriados.any((f) => DateTime.parse(f['data']).year == dia.year && DateTime.parse(f['data']).month == dia.month && DateTime.parse(f['data']).day == dia.day)) {
         // se é feriado, ignora (0h)
         continue;
       }
@@ -107,12 +122,12 @@ class RelatoriosService {
 
       // Soma as horas ocupadas
       final alocDoDia = alocFiltradas.where((a) =>
-      a.data.year == dia.year &&
-          a.data.month == dia.month &&
-          a.data.day == dia.day);
+      DateTime.parse(a['data']).year == dia.year &&
+          DateTime.parse(a['data']).month == dia.month &&
+          DateTime.parse(a['data']).day == dia.day);
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al.horarioInicio);
+        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
       }
       if (horasOcupDia > horasAbertas) {
         horasOcupDia = horasAbertas;
@@ -131,21 +146,21 @@ class RelatoriosService {
     required String setor,
   }) async {
     // Carrega gabinetes para saber quais IDs pertencem a esse setor
-    final gabinetes = await DatabaseHelper.buscarGabinetes();
+    final gabinetes = await _carregarGabinetes();
     final gabIds = gabinetes
-        .where((g) => g.setor == setor)
-        .map((g) => g.id)
+        .where((g) => g['setor'] == setor)
+        .map((g) => g['id'])
         .toSet();
 
     // Carrega alocações + horários + feriados
-    final alocacoes = await DatabaseHelper.buscarAlocacoes();
+    final alocacoes = await _carregarAlocacoes();
     final horariosMap = await _carregarHorariosMap();
     final feriados = await _carregarFeriados();
 
     // Filtra alocações do período E desses gabinetes
     final alocFiltradas = alocacoes.where((a) {
-      final dentroData = !a.data.isBefore(inicio) && !a.data.isAfter(fim);
-      final dentroSetor = gabIds.contains(a.gabineteId);
+      final dentroData = !DateTime.parse(a['data']).isBefore(inicio) && !DateTime.parse(a['data']).isAfter(fim);
+      final dentroSetor = gabIds.contains(a['gabineteId']);
       return dentroData && dentroSetor;
     }).toList();
 
@@ -154,7 +169,7 @@ class RelatoriosService {
     final dias = _gerarDatasNoIntervalo(inicio, fim);
 
     for (final dia in dias) {
-      if (feriados.contains(dia)) {
+      if (feriados.any((f) => DateTime.parse(f['data']).year == dia.year && DateTime.parse(f['data']).month == dia.month && DateTime.parse(f['data']).day == dia.day)) {
         continue; // feriado => 0h
       }
       final ds = dia.weekday;
@@ -169,12 +184,12 @@ class RelatoriosService {
 
       // Soma horas das alocações
       final alocDoDia = alocFiltradas.where((a) =>
-      a.data.year == dia.year &&
-          a.data.month == dia.month &&
-          a.data.day == dia.day);
+      DateTime.parse(a['data']).year == dia.year &&
+          DateTime.parse(a['data']).month == dia.month &&
+          DateTime.parse(a['data']).day == dia.day);
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al.horarioInicio);
+        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
       }
       if (horasOcupDia > horasAbertas) {
         horasOcupDia = horasAbertas;
@@ -193,14 +208,14 @@ class RelatoriosService {
     required String gabineteId,
   }) async {
     // Carrega alocações
-    final alocacoes = await DatabaseHelper.buscarAlocacoes();
+    final alocacoes = await _carregarAlocacoes();
     final horariosMap = await _carregarHorariosMap();
     final feriados = await _carregarFeriados();
 
     // Filtra só as do gabinete e do período
     final alocFiltradas = alocacoes.where((a) {
-      final dataOk = !a.data.isBefore(inicio) && !a.data.isAfter(fim);
-      final gabOk = (a.gabineteId == gabineteId);
+      final dataOk = !DateTime.parse(a['data']).isBefore(inicio) && !DateTime.parse(a['data']).isAfter(fim);
+      final gabOk = (a['gabineteId'] == gabineteId);
       return dataOk && gabOk;
     }).toList();
 
@@ -209,7 +224,7 @@ class RelatoriosService {
     final dias = _gerarDatasNoIntervalo(inicio, fim);
 
     for (final dia in dias) {
-      if (feriados.contains(dia)) {
+      if (feriados.any((f) => DateTime.parse(f['data']).year == dia.year && DateTime.parse(f['data']).month == dia.month && DateTime.parse(f['data']).day == dia.day)) {
         continue;
       }
       final ds = dia.weekday;
@@ -223,13 +238,13 @@ class RelatoriosService {
       somaHorasTotais += horasAbertas;
 
       final alocDoDia = alocFiltradas.where((a) =>
-      a.data.year == dia.year &&
-          a.data.month == dia.month &&
-          a.data.day == dia.day
+      DateTime.parse(a['data']).year == dia.year &&
+          DateTime.parse(a['data']).month == dia.month &&
+          DateTime.parse(a['data']).day == dia.day
       );
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al.horarioInicio);
+        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
       }
       if (horasOcupDia > horasAbertas) horasOcupDia = horasAbertas;
       somaHorasOcupadas += horasOcupDia;
@@ -246,19 +261,19 @@ class RelatoriosService {
     required String especialidadeProcurada,
   }) async {
     // Carrega gabinetes => filtra os que contêm essa especialidade
-    final gabinetes = await DatabaseHelper.buscarGabinetes();
+    final gabinetes = await _carregarGabinetes();
     final gabIds = gabinetes
-        .where((g) => g.especialidadesPermitidas.contains(especialidadeProcurada))
-        .map((g) => g.id)
+        .where((g) => (g['especialidadesPermitidas'] as List).contains(especialidadeProcurada))
+        .map((g) => g['id'])
         .toSet();
 
-    final alocacoes = await DatabaseHelper.buscarAlocacoes();
+    final alocacoes = await _carregarAlocacoes();
     final horariosMap = await _carregarHorariosMap();
     final feriados = await _carregarFeriados();
 
     final alocFiltradas = alocacoes.where((a) {
-      final dataOk = !a.data.isBefore(inicio) && !a.data.isAfter(fim);
-      final gabOk = gabIds.contains(a.gabineteId);
+      final dataOk = !DateTime.parse(a['data']).isBefore(inicio) && !DateTime.parse(a['data']).isAfter(fim);
+      final gabOk = gabIds.contains(a['gabineteId']);
       return dataOk && gabOk;
     }).toList();
 
@@ -267,7 +282,7 @@ class RelatoriosService {
     final dias = _gerarDatasNoIntervalo(inicio, fim);
 
     for (final dia in dias) {
-      if (feriados.contains(dia)) continue;
+      if (feriados.any((f) => DateTime.parse(f['data']).year == dia.year && DateTime.parse(f['data']).month == dia.month && DateTime.parse(f['data']).day == dia.day)) continue;
 
       final ds = dia.weekday;
       double horasAbertas = 0.0;
@@ -280,13 +295,13 @@ class RelatoriosService {
       somaHorasTotais += horasAbertas;
 
       final alocDoDia = alocFiltradas.where((a) =>
-      a.data.year == dia.year &&
-          a.data.month == dia.month &&
-          a.data.day == dia.day
+      DateTime.parse(a['data']).year == dia.year &&
+          DateTime.parse(a['data']).month == dia.month &&
+          DateTime.parse(a['data']).day == dia.day
       );
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al.horarioInicio);
+        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
       }
       if (horasOcupDia > horasAbertas) horasOcupDia = horasAbertas;
       somaHorasOcupadas += horasOcupDia;

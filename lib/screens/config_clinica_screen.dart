@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
-import '../database/database_helper.dart';
 
 class ConfigClinicaScreen extends StatefulWidget {
   const ConfigClinicaScreen({super.key});
@@ -46,54 +45,53 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
   Future<void> _carregarDoBD() async {
     try {
-      final db = await DatabaseHelper.database;
-
       // Verificar existência das tabelas
-      final tabelas = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('horarios_clinica', 'feriados')",
-      );
-      if (tabelas.isEmpty) {
-        throw Exception('Tabelas obrigatórias não encontradas no banco.');
-      }
+      // final tabelas = await DatabaseHelper.database.rawQuery(
+      //   "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('horarios_clinica', 'feriados')",
+      // );
+      // if (tabelas.isEmpty) {
+      //   throw Exception('Tabelas obrigatórias não encontradas no banco.');
+      // }
 
       // Verificar se as tabelas estão vazias
-      final horariosRows = await DatabaseHelper.buscarHorariosClinica();
-      if (horariosRows.isEmpty) {
-        debugPrint('Tabela horarios_clinica está vazia.');
-      }
+      // final horariosRows = await DatabaseHelper.buscarHorariosClinica();
+      // if (horariosRows.isEmpty) {
+      //   debugPrint('Tabela horarios_clinica está vazia.');
+      // }
 
-      final feriadosRows = await DatabaseHelper.buscarFeriados();
-      if (feriadosRows.isEmpty) {
-        debugPrint('Tabela feriados está vazia.');
-      }
+      // final feriadosRows = await DatabaseHelper.buscarFeriados();
+      // if (feriadosRows.isEmpty) {
+      //   debugPrint('Tabela feriados está vazia.');
+      // }
 
       // Carregar horários da clínica
-      for (final row in horariosRows) {
-        final ds = row['diaSemana'] as int;
-        final ab = (row['horaAbertura'] ?? "") as String;
-        final fe = (row['horaFecho'] ?? "") as String;
-        horarios[ds] = [ab, fe];
-      }
+      // for (final row in horariosRows) {
+      //   final ds = row['diaSemana'] as int;
+      //   final ab = (row['horaAbertura'] ?? "") as String;
+      //   final fe = (row['horaFecho'] ?? "") as String;
+      //   horarios[ds] = [ab, fe];
+      // }
 
       // Carregar feriados
-      feriados = feriadosRows.map((row) {
-        return {
-          'data': row['data'], // Mantém a data como String para trabalhar com o banco
-          'descricao': row['descricao'] ?? '', // Substitui por String vazia caso seja nulo
-        };
-      }).toList();
+      // feriados = feriadosRows.map((row) {
+      //   return {
+      //     'data': row['data'], // Mantém a data como String para trabalhar com o banco
+      //     'descricao': row['descricao'] ?? '', // Substitui por String vazia caso seja nulo
+      //   };
+      // }).toList();
 
       // Ordena feriados por data (convertendo para DateTime para comparação)
-      feriados.sort((a, b) {
-        final dateA = DateTime.tryParse(a['data']) ?? DateTime.now();
-        final dateB = DateTime.tryParse(b['data']) ?? DateTime.now();
-        return dateA.compareTo(dateB);
-      });
+      // feriados.sort((a, b) {
+      //   final dateA = DateTime.tryParse(a['data']) ?? DateTime.now();
+      //   final dateB = DateTime.tryParse(b['data']) ?? DateTime.now();
+      //   return dateA.compareTo(dateB);
+      // });
 
       // Atualiza o estado da tela
       setState(() {});
     } catch (e) {
       debugPrint('Erro ao carregar dados do banco: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Erro ao carregar dados do banco.')),
       );
@@ -104,13 +102,14 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
   Future<void> _gravarAlteracoes() async {
     try {
-      for (int ds = 1; ds <= 7; ds++) {
-        await DatabaseHelper.salvarHorarioClinica(
-          ds,
-          horarios[ds]![0],
-          horarios[ds]![1],
-        );
-      }
+      // for (int ds = 1; ds <= 7; ds++) {
+      //   await DatabaseHelper.salvarHorarioClinica(
+      //     ds,
+      //     horarios[ds]![0],
+      //     horarios[ds]![1],
+      //   );
+      // }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Alterações gravadas automaticamente.')),
       );
@@ -123,7 +122,8 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
     setState(() {
       horarios[diaSemana] = ["", ""];
     });
-    await DatabaseHelper.deletarHorarioClinica(diaSemana);
+    // await DatabaseHelper.deletarHorarioClinica(diaSemana);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Horários do Dia $diaSemana apagados.')),
     );
@@ -163,21 +163,20 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       );
 
       try {
-        await DatabaseHelper.salvarFeriado(pickedDate, descricao);
         setState(() {
           feriados.add({
-            'data': pickedDate.toIso8601String(), // Salva a data como String ISO 8601
+            'data': pickedDate.toIso8601String(),
             'descricao': descricao.isNotEmpty ? descricao : '',
           });
-
-          // Ordena a lista por data
           feriados.sort((a, b) => DateTime.parse(a['data']).compareTo(DateTime.parse(b['data'])));
         });
 
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Feriado adicionado com sucesso!')),
         );
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erro ao salvar feriado: $e')),
         );
@@ -189,20 +188,22 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
   Future<void> _removerFeriado(Map<String, dynamic> feriado) async {
     try {
       // Certifique-se de que 'data' seja convertida para o formato correto
-      final data = feriado['data'] is DateTime
-          ? (feriado['data'] as DateTime).toIso8601String()
-          : feriado['data'].toString();
+      // final data = feriado['data'] is DateTime
+      //     ? (feriado['data'] as DateTime).toIso8601String()
+      //     : feriado['data'].toString();
 
-      await DatabaseHelper.deletarFeriado(data); // Passe como String ao banco
+      // await DatabaseHelper.deletarFeriado(data); // Passe como String ao banco
       setState(() {
         feriados.remove(feriado);
       });
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Feriado removido com sucesso!')),
       );
     } catch (e) {
       debugPrint('Erro ao remover feriado: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Erro ao remover feriado.')),
       );
@@ -241,10 +242,9 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        await _gravarAlteracoes(); // Grava alterações antes de sair
-        return true; // Permite que o usuário navegue para trás
+    return PopScope(
+      onPopInvoked: (didPop) async {
+        await _gravarAlteracoes();
       },
       child: Scaffold(
         appBar: CustomAppBar(title: 'Configuração Horário da Clínica'),

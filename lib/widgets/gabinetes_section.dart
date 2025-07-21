@@ -45,6 +45,28 @@ class _GabinetesSectionState extends State<GabinetesSection> {
     return int.parse(partes[0]) * 60 + int.parse(partes[1]);
   }
 
+  bool _validarDisponibilidade(Disponibilidade disponibilidade) {
+    if (disponibilidade.horarios.isEmpty) return false;
+    
+    for (final horario in disponibilidade.horarios) {
+      if (horario.isEmpty || !horario.contains(':')) return false;
+      
+      final partes = horario.split(':');
+      if (partes.length != 2) return false;
+      
+      try {
+        final hora = int.parse(partes[0]);
+        final minuto = int.parse(partes[1]);
+        
+        if (hora < 0 || hora > 23 || minuto < 0 || minuto > 59) return false;
+      } catch (e) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Agrupa gabinetes por setor
@@ -115,9 +137,44 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                 return DragTarget<String>(
                   onWillAcceptWithDetails: (details) {
                     final medicoId = details.data;
-                    final estaAlocado = alocacoesDoGab.any((a) => a.medicoId == medicoId);
-                    if (!estaAlocado) {
-                      debugPrint('Médico $medicoId NÃO está alocado, ignorando desalocação.');
+                    // 1) Ache o médico
+                    final medico = widget.medicos.firstWhere(
+                      (m) => m.id == medicoId,
+                      orElse: () => Medico(
+                        id: '',
+                        nome: '',
+                        especialidade: '',
+                        disponibilidades: [],
+                      ),
+                    );
+                    if (medico.id.isEmpty) return false;
+
+                    // 2) Disponibilidade do médico no dia
+                    final disponibilidade = widget.disponibilidades.firstWhere(
+                      (d) =>
+                          d.medicoId == medico.id &&
+                          d.data.year == widget.selectedDate.year &&
+                          d.data.month == widget.selectedDate.month &&
+                          d.data.day == widget.selectedDate.day,
+                      orElse: () => Disponibilidade(
+                        id: '',
+                        medicoId: '',
+                        data: DateTime(1900, 1, 1),
+                        horarios: [],
+                        tipo: 'Única',
+                      ),
+                    );
+                    if (disponibilidade.medicoId.isEmpty) return false;
+
+                    // 3) Verifica se horários são válidos
+                    if (!_validarDisponibilidade(disponibilidade)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Cartão de disponibilidade mal configurado. Configure corretamente.',
+                          ),
+                        ),
+                      );
                       return false;
                     }
                     debugPrint('Médico $medicoId está alocado, aceitando para desalocar.');
@@ -125,7 +182,120 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                   },
                   onAcceptWithDetails: (details) async {
                     final medicoId = details.data;
-                    await widget.onDesalocarMedicoComPergunta(medicoId);
+                    // 1) Localiza disponibilidade
+                    final disponibilidade = widget.disponibilidades.firstWhere(
+                      (d) =>
+                          d.medicoId == medicoId &&
+                          d.data.year == widget.selectedDate.year &&
+                          d.data.month == widget.selectedDate.month &&
+                          d.data.day == widget.selectedDate.day,
+                      orElse: () => Disponibilidade(
+                        id: '',
+                        medicoId: '',
+                        data: DateTime(1900, 1, 1),
+                        horarios: [],
+                        tipo: '',
+                      ),
+                    );
+
+                    if (disponibilidade.medicoId.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text(
+                                'Disponibilidade inválida para o médico.')),
+                      );
+                      return;
+                    }
+
+                    final tipoDisponibilidade = disponibilidade.tipo;
+
+                    if (tipoDisponibilidade == 'Única') {
+                      await widget.onAlocarMedico(
+                        medicoId,
+                        gabinete.id,
+                        dataEspecifica: widget.selectedDate,
+                      );
+                      widget.onAtualizarEstado();
+                    } else {
+                      // Pergunta se alocar série
+                      final escolha = await showDialog<String>(
+                        context: context,
+                        builder: (ctxDialog) {
+                          return AlertDialog(
+                            title: const Text('Alocar série?'),
+                            content: Text(
+                              'Esta disponibilidade é do tipo "$tipoDisponibilidade".\n'
+                              'Deseja alocar apenas este dia (${widget.selectedDate.day}/${widget.selectedDate.month}) '
+                              'ou todos os dias da série a partir deste?',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(ctxDialog).pop('1dia'),
+                                child: const Text('Apenas este dia'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(ctxDialog).pop('serie'),
+                                child: const Text('Toda a série'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(ctxDialog).pop(null),
+                                child: const Text('Cancelar'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+
+                      if (escolha == '1dia') {
+                        await widget.onAlocarMedico(
+                          medicoId,
+                          gabinete.id,
+                          dataEspecifica: widget.selectedDate,
+                        );
+                      } else if (escolha == 'serie') {
+                        final dataRef = widget.selectedDate;
+                        final listaMesmaSerie =
+                            widget.disponibilidades.where((d2) {
+                          return d2.medicoId == medicoId &&
+                              d2.tipo == tipoDisponibilidade &&
+                              !d2.data.isBefore(dataRef);
+                        }).toList();
+
+                        for (final d2 in listaMesmaSerie) {
+                          if (_validarDisponibilidade(d2)) {
+                            await widget.onAlocarMedico(
+                              medicoId,
+                              gabinete.id,
+                              dataEspecifica: d2.data,
+                            );
+                          }
+                        }
+                      }
+                    }
+
+                    // Atualiza localmente
+                    setState(() {
+                      widget.alocacoes
+                          .removeWhere((a) => a.medicoId == medicoId);
+                      widget.alocacoes.add(
+                        Alocacao(
+                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          medicoId: medicoId,
+                          gabineteId: gabinete.id,
+                          data: widget.selectedDate,
+                          horarioInicio: disponibilidade.horarios.isNotEmpty
+                              ? disponibilidade.horarios.first
+                              : '',
+                          horarioFim: disponibilidade.horarios.length > 1
+                              ? disponibilidade.horarios.last
+                              : '',
+                        ),
+                      );
+                    });
+                    widget.onAtualizarEstado();
                   },
                   builder: (context, candidateData, rejectedData) {
                     final alocacoesDoGabinete = widget.alocacoes.where((a) {

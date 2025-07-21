@@ -384,6 +384,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                           child: DragTarget<String>(
                             onWillAcceptWithDetails: (details) {
                               final medicoId = details.data;
+                              // Verifica se o médico realmente está alocado antes de aceitar o cartão
                               final estaAlocado = alocacoes.any((a) => a.medicoId == medicoId);
                               if (!estaAlocado) {
                                 debugPrint('Médico $medicoId NÃO está alocado, ignorando desalocação.');
@@ -394,6 +395,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                             },
                             onAcceptWithDetails: (details) async {
                               final medicoId = details.data;
+                              // Agora só será chamado para médicos alocados
                               await _desalocarMedicoComPergunta(medicoId);
                             },
                             builder: (context, candidateData, rejectedData) {

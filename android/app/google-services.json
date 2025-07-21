@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "483456372206",
+    "project_id": "mapa-gabinetes-hlcamadora",
+    "storage_bucket": "mapa-gabinetes-hlcamadora.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:483456372206:android:e3db4645241df0562152ff",
+        "android_client_info": {
+          "package_name": "com.byronsd.mapa_gabinetes"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCiIJ8k1r8q8yA457ev_JS8Ui54QGToMzc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

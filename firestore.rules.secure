@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Função para validar dados de médico
+    function isValidMedico(data) {
+      return data.keys().hasAll(['id', 'nome', 'especialidade']) &&
+             data.id is string &&
+             data.nome is string &&
+             data.especialidade is string &&
+             data.nome.size() > 0 &&
+             data.especialidade.size() > 0;
+    }
+    
+    // Função para validar dados de gabinete
+    function isValidGabinete(data) {
+      return data.keys().hasAll(['id', 'setor', 'nome']) &&
+             data.id is string &&
+             data.setor is string &&
+             data.nome is string &&
+             data.setor.size() > 0 &&
+             data.nome.size() > 0;
+    }
+    
+    // Função para validar dados de alocação
+    function isValidAlocacao(data) {
+      return data.keys().hasAll(['id', 'medicoId', 'gabineteId', 'data', 'horarioInicio', 'horarioFim']) &&
+             data.id is string &&
+             data.medicoId is string &&
+             data.gabineteId is string &&
+             data.data is string &&
+             data.horarioInicio is string &&
+             data.horarioFim is string;
+    }
+    
+    // Regras para a coleção de médicos
+    match /medicos/{medicoId} {
+      allow read: if true;
+      allow create, update: if isValidMedico(resource.data);
+      allow delete: if true;
+      
+      // Regras para subcoleção de disponibilidades
+      match /disponibilidades/{disponibilidadeId} {
+        allow read, write: if true;
+      }
+    }
+    
+    // Regras para a coleção de gabinetes
+    match /gabinetes/{gabineteId} {
+      allow read: if true;
+      allow create, update: if isValidGabinete(resource.data);
+      allow delete: if true;
+    }
+    
+    // Regras para a coleção de alocações
+    match /alocacoes/{alocacaoId} {
+      allow read: if true;
+      allow create, update: if isValidAlocacao(resource.data);
+      allow delete: if true;
+    }
+    
+    // Regras para horários da clínica
+    match /horarios_clinica/{horarioId} {
+      allow read, write: if true;
+    }
+    
+    // Regras para feriados
+    match /feriados/{feriadoId} {
+      allow read, write: if true;
+    }
+    
+    // Regras para especialidades
+    match /especialidades/{especialidadeId} {
+      allow read, write: if true;
+    }
+    
+    // Regras para configurações da clínica
+    match /config_clinica/{configId} {
+      allow read, write: if true;
+    }
+    
+    // Regra padrão - nega acesso a qualquer outra coleção
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

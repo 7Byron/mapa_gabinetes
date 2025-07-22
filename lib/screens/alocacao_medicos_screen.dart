@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Se criou o custom_drawer.dart
 import '../widgets/custom_drawer.dart';
@@ -19,9 +20,12 @@ import '../models/gabinete.dart';
 import '../models/medico.dart';
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
+import '../models/unidade.dart';
 
 class AlocacaoMedicos extends StatefulWidget {
-  const AlocacaoMedicos({super.key});
+  final Unidade unidade;
+  
+  const AlocacaoMedicos({super.key, required this.unidade});
 
   @override
   State<AlocacaoMedicos> createState() => AlocacaoMedicosState();
@@ -72,19 +76,37 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         },
       );
 
-      // TODO: Refatorar para usar Firestore diretamente.
-      // Todas as referências a DatabaseHelper removidas.
-      // feriados = await DatabaseHelper.buscarFeriados();
+      // Carregar feriados do Firestore
+      debugPrint('Carregando feriados do Firestore...');
+      final feriadosSnapshot =
+          await FirebaseFirestore.instance.collection('feriados').get();
+      feriados = feriadosSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'data': data['data'] as String? ?? '',
+          'descricao': data['descricao'] as String? ?? '',
+        };
+      }).toList();
+      debugPrint('Feriados carregados: ${feriados.length}');
 
-      // TODO: Refatorar para usar Firestore diretamente.
-      // Todas as referências a DatabaseHelper removidas.
-      // final horariosRows = await DatabaseHelper.buscarHorariosClinica();
-      // for (final row in horariosRows) {
-      //   final diaSemana = row['diaSemana'] as int;
-      //   final horaAbertura = (row['horaAbertura'] ?? "") as String;
-      //   final horaFecho = (row['horaFecho'] ?? "") as String;
-      //   horariosClinica[diaSemana] = [horaAbertura, horaFecho];
-      // }
+      // Carregar horários da clínica do Firestore
+      debugPrint('Carregando horários da clínica do Firestore...');
+      final horariosSnapshot =
+          await FirebaseFirestore.instance.collection('horarios_clinica').get();
+      for (final doc in horariosSnapshot.docs) {
+        final data = doc.data();
+        final diaSemana = data['diaSemana'] as int?;
+        final horaAbertura = data['horaAbertura'] as String? ?? '';
+        final horaFecho = data['horaFecho'] as String? ?? '';
+
+        if (diaSemana != null && diaSemana >= 1 && diaSemana <= 7) {
+          horariosClinica[diaSemana] = [horaAbertura, horaFecho];
+          debugPrint(
+              'Horário carregado para dia $diaSemana: $horaAbertura - $horaFecho');
+        }
+      }
+      debugPrint('Horários da clínica carregados: ${horariosClinica.length}');
 
       // Filtra médicos do dia
       medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
@@ -108,21 +130,38 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   }
 
   bool _verificarClinicaFechada(DateTime data) {
+    debugPrint(
+        'Verificando se clínica está fechada para: ${DateFormat('dd/MM/yyyy').format(data)}');
+
     // Verificar se é feriado
     final ehFeriado = feriados.any((feriado) {
       final dataFeriado = DateTime.parse(feriado['data']);
-      return data.year == dataFeriado.year &&
+      final isFeriado = data.year == dataFeriado.year &&
           data.month == dataFeriado.month &&
           data.day == dataFeriado.day;
+
+      if (isFeriado) {
+        debugPrint(
+            'Data é feriado: ${feriado['descricao'] ?? 'Sem descrição'}');
+      }
+      return isFeriado;
     });
 
     // Verificar horários da clínica
     final diaSemana = data.weekday; // 1 para segunda-feira, 7 para domingo
     final horarios = horariosClinica[diaSemana];
+    debugPrint('Dia da semana: $diaSemana, Horários: $horarios');
+
     final horarioIndisponivel =
         horarios == null || (horarios[0].isEmpty && horarios[1].isEmpty);
 
-    return ehFeriado || horarioIndisponivel;
+    debugPrint(
+        'É feriado: $ehFeriado, Horário indisponível: $horarioIndisponivel');
+
+    final clinicaFechada = ehFeriado || horarioIndisponivel;
+    debugPrint('Clínica fechada: $clinicaFechada');
+
+    return clinicaFechada;
   }
 
   void _onDateChanged(DateTime newDate) {
@@ -385,12 +424,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                             onWillAcceptWithDetails: (details) {
                               final medicoId = details.data;
                               // Verifica se o médico realmente está alocado antes de aceitar o cartão
-                              final estaAlocado = alocacoes.any((a) => a.medicoId == medicoId);
+                              final estaAlocado =
+                                  alocacoes.any((a) => a.medicoId == medicoId);
                               if (!estaAlocado) {
-                                debugPrint('Médico $medicoId NÃO está alocado, ignorando desalocação.');
+                                debugPrint(
+                                    'Médico $medicoId NÃO está alocado, ignorando desalocação.');
                                 return false;
                               }
-                              debugPrint('Médico $medicoId está alocado, aceitando para desalocar.');
+                              debugPrint(
+                                  'Médico $medicoId está alocado, aceitando para desalocar.');
                               return true;
                             },
                             onAcceptWithDetails: (details) async {
@@ -403,7 +445,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                                 medicosDisponiveis: medicosDisponiveis,
                                 disponibilidades: disponibilidades,
                                 selectedDate: selectedDate,
-                                onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
+                                onDesalocarMedico: (mId) =>
+                                    _desalocarMedicoDiaUnico(mId),
                               );
                             },
                           ),
@@ -423,7 +466,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                               selectedDate: selectedDate,
                               onAlocarMedico: _alocarMedico,
                               onAtualizarEstado: _carregarDadosIniciais,
-                              onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
+                              onDesalocarMedicoComPergunta:
+                                  _desalocarMedicoComPergunta,
                             ),
                           ),
                         ),

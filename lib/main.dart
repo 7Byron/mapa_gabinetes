@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'package:mapa_gabinetes/screens/alocacao_medicos_screen.dart';
+import 'package:mapa_gabinetes/screens/selecao_unidade_screen.dart';
+import 'debug_firebase.dart'; // Debug temporário
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +11,10 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Debug temporário - remover depois
+  await debugFirebase();
+  
   runApp(const MyApp());
 }
 
@@ -22,7 +27,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Mapa de Gabinetes',
       theme: MyAppTheme.themeData, // Aplica o tema do MyAppTheme
-      home: AlocacaoMedicos(),
+      home: const SelecaoUnidadeScreen(),
     );
   }
 }

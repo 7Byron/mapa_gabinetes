@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:mapa_gabinetes/main.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
 
 class CadastroGabinete extends StatefulWidget {
@@ -34,31 +35,88 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   }
 
   Future<void> _carregarDados() async {
-    // TODO: Refatorar para usar Firestore diretamente.
-    // Todas as referências a DatabaseHelper removidas.
-    // Remover import do banco de dados local.
+    try {
+      // Carrega setores existentes dos gabinetes
+      final gabinetesSnapshot = await FirebaseFirestore.instance.collection('gabinetes').get();
+      final setores = gabinetesSnapshot.docs.map((doc) => doc.data()['setor'] as String).toSet().toList();
+      
+      // Carrega especialidades existentes
+      final medicosSnapshot = await FirebaseFirestore.instance.collection('medicos').get();
+      final especialidades = medicosSnapshot.docs.map((doc) => doc.data()['especialidade'] as String).toSet().toList();
+      
+      setState(() {
+        _setoresDisponiveis.clear();
+        _setoresDisponiveis.addAll(setores);
+        _especialidadesDisponiveis.clear();
+        _especialidadesDisponiveis.addAll(especialidades);
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar dados: $e');
+    }
   }
 
   Future<void> _salvarGabinete() async {
     // Verifica se o campo de setor está preenchido
     if (_setorController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não introduziu  Setor/Piso')),
+        const SnackBar(content: Text('Não introduziu Setor/Piso')),
       );
       return;
     }
+    
     if (_formKey.currentState!.validate()) {
-      // Removido: variável 'gabinete' não utilizada.
-      widget.gabinete?.id ??
-          DateTime.now().millisecondsSinceEpoch.toString();
-      _setorController.text;
-      _nomeController.text;
-      _especialidadesController.text
-          .split(',')
-          .map((e) => e.trim())
-          .toList();
+      try {
+        final gabineteId = widget.gabinete?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final setor = _setorController.text.trim();
+        final nome = _nomeController.text.trim();
+        final especialidades = _especialidadesController.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
 
-      // TODO: Salvar ou atualizar o gabinete no Firestore
+        debugPrint('Salvando gabinete: ID=$gabineteId, Setor=$setor, Nome=$nome, Especialidades=$especialidades');
+
+        // Cria o objeto Gabinete
+        final gabinete = Gabinete(
+          id: gabineteId,
+          setor: setor,
+          nome: nome,
+          especialidadesPermitidas: especialidades,
+        );
+
+        // Converte para Map
+        final gabineteMap = gabinete.toMap();
+        debugPrint('Dados a salvar: $gabineteMap');
+
+        // Salva no Firestore
+        await FirebaseFirestore.instance
+            .collection('gabinetes')
+            .doc(gabineteId)
+            .set(gabineteMap);
+
+        debugPrint('Gabinete salvo com sucesso no Firestore');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gabinete salvo com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Se for edição, volta para a tela anterior
+        if (widget.gabinete != null) {
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        debugPrint('Erro ao salvar gabinete: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao salvar gabinete: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -100,52 +158,19 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                   child: ListView(
                     children: [
                       // Campo para Setor / Piso com TypeAheadField estilizado
-                      TypeAheadField<String>(
-                        suggestionsCallback: (pattern) async {
-                          // Filtra os setores disponíveis com base no padrão digitado
-                          return _setoresDisponiveis
-                              .where((setor) => setor
-                                  .toLowerCase()
-                                  .contains(pattern.toLowerCase()))
-                              .toList();
+                      TextFormField(
+                        controller: _setorController,
+                        decoration: const InputDecoration(
+                          labelText: 'Setor / Piso',
+                          hintText: 'Exemplo: Piso 1, Andar Térreo',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Informe o setor/piso';
+                          }
+                          return null;
                         },
-                        itemBuilder: (context, suggestion) {
-                          // Renderiza cada sugestão como um ListTile
-                          return ListTile(
-                            title: Text(suggestion),
-                          );
-                        },
-                        onSelected: (suggestion) {
-                          // Atualiza o campo de texto ao selecionar uma sugestão
-                          _setorController.text = suggestion;
-                        },
-                        builder: (context, controller, focusNode) {
-                          // Define a aparência do campo de texto
-                          return TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              labelText: 'Setor / Piso',
-                              hintText: 'Exemplo: Piso 1, Andar Térreo',
-                              border:
-                                  OutlineInputBorder(), // Define a borda do campo
-                            ),
-                          );
-                        },
-                        decorationBuilder: (context, child) {
-                          // Define a aparência do popup de sugestões
-                          return Material(
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(8),
-                            child: child,
-                          );
-                        },
-                        itemSeparatorBuilder: (context, index) =>
-                            const Divider(height: 1),
-                        debounceDuration: const Duration(
-                            milliseconds: 300), // Evita chamadas rápidas
-                        hideOnEmpty:
-                            true, // Esconde as sugestões quando o texto está vazio
                       ),
 
                       const SizedBox(height: 16),
@@ -166,54 +191,19 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                       ),
                       const SizedBox(height: 16),
 
-                      TypeAheadField<String>(
+                      TextFormField(
                         controller: _especialidadesController,
-                        suggestionsCallback: (pattern) async {
-                          // Filtra as especialidades disponíveis com base no padrão digitado
-                          return _especialidadesDisponiveis
-                              .where((especialidade) => especialidade
-                                  .toLowerCase()
-                                  .contains(pattern.toLowerCase()))
-                              .toList();
+                        decoration: const InputDecoration(
+                          labelText: 'Especialidades Permitidas',
+                          hintText: 'Exemplo: Ortopedia, ORL, Medicina Dentária',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Informe as especialidades permitidas';
+                          }
+                          return null;
                         },
-                        itemBuilder: (context, suggestion) {
-                          // Renderiza cada sugestão como um ListTile
-                          return ListTile(
-                            title: Text(suggestion),
-                          );
-                        },
-                        onSelected: (suggestion) {
-                          // Atualiza o campo de texto ao selecionar uma sugestão
-                          _especialidadesController.text = suggestion;
-                        },
-                        builder: (context, controller, focusNode) {
-                          // Define a aparência do campo de texto
-                          return TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              labelText: 'Especialidades Permitidas',
-                              hintText:
-                                  'Exemplo: Ortopedia, ORL, Medicina Dentária',
-                              border:
-                                  OutlineInputBorder(), // Define a borda do campo
-                            ),
-                          );
-                        },
-                        decorationBuilder: (context, child) {
-                          // Define a aparência do popup de sugestões
-                          return Material(
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(8),
-                            child: child,
-                          );
-                        },
-                        itemSeparatorBuilder: (context, index) =>
-                            const Divider(height: 1),
-                        debounceDuration: const Duration(
-                            milliseconds: 350), // Evita chamadas rápidas
-                        hideOnEmpty:
-                            true, // Esconde as sugestões quando o texto está vazio
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 16),

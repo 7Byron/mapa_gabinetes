@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Unidades (clínicas, hospitais, etc.)
+    match /unidades/{unidadeId} {
+      allow read, write: if true;
+    }
+    
+    // Dados específicos de cada unidade
+    match /unidades/{unidadeId}/medicos/{medicoId} {
+      allow read, write: if true;
+      match /disponibilidades/{disponibilidadeId} {
+        allow read, write: if true;
+      }
+    }
+    
+    match /unidades/{unidadeId}/gabinetes/{gabineteId} {
+      allow read, write: if true;
+    }
+    
+    match /unidades/{unidadeId}/alocacoes/{alocacaoId} {
+      allow read, write: if true;
+    }
+    
+    match /unidades/{unidadeId}/horarios_clinica/{horarioId} {
+      allow read, write: if true;
+    }
+    
+    match /unidades/{unidadeId}/feriados/{feriadoId} {
+      allow read, write: if true;
+    }
+    
+    match /unidades/{unidadeId}/especialidades/{especialidadeId} {
+      allow read, write: if true;
+    }
+    
+    match /unidades/{unidadeId}/config_clinica/{configId} {
+      allow read, write: if true;
+    }
+    
+    // Regra padrão - nega acesso a qualquer outra coleção
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

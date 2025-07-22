@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
 import 'cadastro_gabinete.dart';
 
@@ -24,11 +25,48 @@ class ListaGabinetesState extends State<ListaGabinetes> {
 
   Future<void> _carregarGabinetes() async {
     setState(() => isLoading = true);
-    // TODO: Refatorar tela para usar Firestore diretamente.
-    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
-    gabinetes = []; // Adicione aqui a lógica para carregar os dados do Firestore
-    gabinetesPorSetor = agruparPorSetor(gabinetes);
-    setState(() => isLoading = false);
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('gabinetes').get();
+      debugPrint('Documentos encontrados: ${snapshot.docs.length}');
+      
+      final gabinetesCarregados = <Gabinete>[];
+      
+      for (final doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          debugPrint('Dados do documento ${doc.id}: $data');
+          
+          // Adiciona o ID do documento se não existir
+          if (!data.containsKey('id')) {
+            data['id'] = doc.id;
+          }
+          
+          final gabinete = Gabinete.fromMap(data);
+          gabinetesCarregados.add(gabinete);
+        } catch (e) {
+          debugPrint('Erro ao processar documento ${doc.id}: $e');
+          // Continua com o próximo documento
+        }
+      }
+      
+      gabinetesCarregados.sort((a, b) => a.nome.compareTo(b.nome));
+      debugPrint('Gabinetes carregados com sucesso: ${gabinetesCarregados.length}');
+      
+      setState(() {
+        gabinetes = gabinetesCarregados;
+        gabinetesPorSetor = agruparPorSetor(gabinetes);
+        isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Erro geral ao carregar gabinetes: $e');
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao carregar gabinetes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // Função para agrupar e ordenar os gabinetes por setor
@@ -50,26 +88,36 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   }
 
   Future<void> _adicionarOuEditarGabinete({Gabinete? gabineteExistente}) async {
-    final novoGabinete = await Navigator.push<Gabinete>(
+    final resultado = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => CadastroGabinete(gabinete: gabineteExistente),
       ),
     );
 
-    if (novoGabinete != null) {
-      // TODO: Refatorar tela para usar Firestore diretamente.
-      // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
-      // Adicione aqui a lógica para salvar ou atualizar os dados no Firestore
+    if (resultado == true) {
       _carregarGabinetes();
     }
   }
 
   Future<void> _deletarGabinete(String id) async {
-    // TODO: Refatorar tela para usar Firestore diretamente.
-    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
-    // Adicione aqui a lógica para deletar os dados no Firestore
-    _carregarGabinetes();
+    try {
+      await FirebaseFirestore.instance.collection('gabinetes').doc(id).delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gabinete eliminado com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _carregarGabinetes();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao eliminar gabinete: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _confirmarDelecao(BuildContext context, String id) {

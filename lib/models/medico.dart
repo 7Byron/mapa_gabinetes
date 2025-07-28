@@ -23,7 +23,7 @@ class Medico {
       'nome': nome,
       'especialidade': especialidade,
       'observacoes': observacoes,
-      'disponibilidades': disponibilidades.map((d) => d.toMap(id)).toList(),
+      'disponibilidades': disponibilidades.map((d) => d.toMap()).toList(),
     };
   }
 
@@ -31,14 +31,12 @@ class Medico {
     // Corrige: se disponibilidades vier null, usa lista vazia
     final disponList = map['disponibilidades'];
     return Medico(
-      id: map['id'],
-      nome: map['nome'],
-      especialidade: map['especialidade'],
-      observacoes: map['observacoes'],
+      id: map['id']?.toString() ?? '',
+      nome: map['nome']?.toString() ?? '',
+      especialidade: map['especialidade']?.toString() ?? '',
+      observacoes: map['observacoes']?.toString(),
       disponibilidades: (disponList != null)
-          ? (disponList as List)
-              .map((e) => Disponibilidade.fromMap(e))
-              .toList()
+          ? (disponList as List).map((e) => Disponibilidade.fromMap(e)).toList()
           : [],
     );
   }

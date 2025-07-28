@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 // Suas telas de referência
 import '../main.dart';
+import '../models/unidade.dart';
 import '../screens/lista_medicos.dart';
 import '../screens/lista_gabinetes.dart';
 import '../screens/config_clinica_screen.dart';
@@ -10,7 +11,13 @@ import '../screens/relatorio_especialidades_screen.dart';
 
 class CustomDrawer extends StatelessWidget {
   final VoidCallback onRefresh; // Callback para recarregar dados
-  const CustomDrawer({super.key, required this.onRefresh});
+  final Unidade? unidade; // Unidade atual para personalizar os nomes
+
+  const CustomDrawer({
+    super.key,
+    required this.onRefresh,
+    this.unidade,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -34,11 +41,11 @@ class CustomDrawer extends StatelessWidget {
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Text(
-                    'Gestão Mapa Gabinetes',
+                    'Gestão Mapa ${unidade?.nomeAlocacao ?? 'Gabinetes'}',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ),
               ],
@@ -47,27 +54,29 @@ class CustomDrawer extends StatelessWidget {
 
           ListTile(
             leading: const Icon(Icons.medical_services),
-            title: const Text('Gerir Médicos'),
+            title: Text('Gerir ${unidade?.nomeOcupantes ?? 'Ocupantes'}'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ListaMedicos()),
+                MaterialPageRoute(
+                    builder: (context) => ListaMedicos(unidade: unidade)),
               ).then((_) {
                 // Após retornar, chama o callback para recarregar os dados
                 onRefresh();
               });
             },
           ),
-          // "Gerir Gabinetes"
+          // "Gerir ${unidade?.nomeAlocacao ?? 'Gabinetes'}"
           ListTile(
             leading: const Icon(Icons.business),
-            title: const Text('Gerir Gabinetes'),
+            title: Text('Gerir ${unidade?.nomeAlocacao ?? 'Alocações'}'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ListaGabinetes()),
+                MaterialPageRoute(
+                    builder: (context) => ListaGabinetes(unidade: unidade)),
               ).then((_) => onRefresh());
             },
           ),
@@ -79,7 +88,8 @@ class CustomDrawer extends StatelessWidget {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ConfigClinicaScreen()),
+                MaterialPageRoute(
+                    builder: (context) => const ConfigClinicaScreen()),
               ).then((_) => onRefresh());
             },
           ),

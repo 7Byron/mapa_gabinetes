@@ -9,6 +9,8 @@ class Unidade {
   final String? email;
   final DateTime dataCriacao;
   final bool ativa;
+  final String nomeOcupantes; // 'Médicos', 'Convidados', 'Clientes', etc.
+  final String nomeAlocacao; // 'Gabinete', 'Quarto', 'Mesa', etc.
 
   Unidade({
     required this.id,
@@ -19,6 +21,8 @@ class Unidade {
     this.email,
     required this.dataCriacao,
     this.ativa = true,
+    required this.nomeOcupantes,
+    required this.nomeAlocacao,
   });
 
   Map<String, dynamic> toMap() {
@@ -31,21 +35,27 @@ class Unidade {
       'email': email,
       'dataCriacao': dataCriacao.toIso8601String(),
       'ativa': ativa,
+      'nomeOcupantes': nomeOcupantes,
+      'nomeAlocacao': nomeAlocacao,
     };
   }
 
   factory Unidade.fromMap(Map<String, dynamic> map) {
     return Unidade(
-      id: map['id'] as String? ?? '',
-      nome: map['nome'] as String? ?? '',
-      tipo: map['tipo'] as String? ?? 'Clínica',
-      endereco: map['endereco'] as String? ?? '',
-      telefone: map['telefone'] as String?,
-      email: map['email'] as String?,
+      id: map['id']?.toString() ?? '',
+      nome: map['nome']?.toString() ?? '',
+      tipo: map['tipo']?.toString() ?? 'Unidade', // Valor padrão mais genérico
+      endereco: map['endereco']?.toString() ?? '',
+      telefone: map['telefone']?.toString(),
+      email: map['email']?.toString(),
       dataCriacao: map['dataCriacao'] != null
-          ? DateTime.parse(map['dataCriacao'] as String)
+          ? DateTime.parse(map['dataCriacao'].toString())
           : DateTime.now(),
       ativa: map['ativa'] as bool? ?? true,
+      nomeOcupantes:
+          map['nomeOcupantes']?.toString() ?? 'Médicos', // Valor padrão
+      nomeAlocacao:
+          map['nomeAlocacao']?.toString() ?? 'Gabinete', // Valor padrão
     );
   }
 
@@ -58,6 +68,8 @@ class Unidade {
     String? email,
     DateTime? dataCriacao,
     bool? ativa,
+    String? nomeOcupantes,
+    String? nomeAlocacao,
   }) {
     return Unidade(
       id: id ?? this.id,
@@ -68,6 +80,8 @@ class Unidade {
       email: email ?? this.email,
       dataCriacao: dataCriacao ?? this.dataCriacao,
       ativa: ativa ?? this.ativa,
+      nomeOcupantes: nomeOcupantes ?? this.nomeOcupantes,
+      nomeAlocacao: nomeAlocacao ?? this.nomeAlocacao,
     );
   }
 

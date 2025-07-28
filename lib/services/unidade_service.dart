@@ -11,19 +11,46 @@ class UnidadeService {
     try {
       print('🔍 Buscando unidades no Firebase...');
 
-      final snapshot = await _firestore
-          .collection('unidades')
-          .where('ativa', isEqualTo: true)
-          .orderBy('nome')
-          .get();
+      // Primeiro, vamos buscar todas as unidades sem filtro para debug
+      final snapshotAll = await _firestore.collection('unidades').get();
 
-      print('📊 Total de documentos encontrados: ${snapshot.docs.length}');
+      print(
+          '📊 Total de documentos encontrados (sem filtro): ${snapshotAll.docs.length}');
 
-      final unidades = snapshot.docs.map((doc) {
+      for (final doc in snapshotAll.docs) {
         print('📄 Documento ID: ${doc.id}');
-        print('📄 Dados: ${doc.data()}');
-        return Unidade.fromMap({...doc.data(), 'id': doc.id});
-      }).toList();
+        print('📄 Dados completos: ${doc.data()}');
+      }
+
+      // Tentar buscar unidades ativas
+      List<Unidade> unidades = [];
+
+      try {
+        final snapshot = await _firestore
+            .collection('unidades')
+            .where('ativa', isEqualTo: true)
+            .orderBy('nome')
+            .get();
+
+        print(
+            '📊 Total de documentos ativos encontrados: ${snapshot.docs.length}');
+        unidades = snapshot.docs.map((doc) {
+          print('📄 Documento ativo ID: ${doc.id}');
+          print('📄 Dados ativo: ${doc.data()}');
+          return Unidade.fromMap({...doc.data(), 'id': doc.id});
+        }).toList();
+      } catch (e) {
+        print('⚠️ Erro na consulta com filtro, tentando sem filtro: $e');
+        // Se falhar, buscar todas as unidades
+        unidades = snapshotAll.docs.map((doc) {
+          final data = doc.data();
+          // Se não tiver campo 'ativa', considerar como ativa
+          if (data['ativa'] == null) {
+            data['ativa'] = true;
+          }
+          return Unidade.fromMap({...data, 'id': doc.id});
+        }).toList();
+      }
 
       print('✅ Unidades carregadas: ${unidades.length}');
       for (final unidade in unidades) {

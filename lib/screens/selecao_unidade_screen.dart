@@ -31,7 +31,8 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
       final unidadesCarregadas = await UnidadeService.buscarUnidades();
       print('📋 Unidades carregadas na tela: ${unidadesCarregadas.length}');
       for (final unidade in unidadesCarregadas) {
-        print('🏥 Unidade na tela: ${unidade.nome} (${unidade.tipo}) - Ativa: ${unidade.ativa}');
+        print(
+            '🏥 Unidade na tela: ${unidade.nome} (${unidade.tipo}) - Ativa: ${unidade.ativa}');
       }
       setState(() {
         unidades = unidadesCarregadas;
@@ -434,18 +435,21 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
   }
 
   Color _getTipoColor(String tipo) {
-    switch (tipo) {
-      case 'Clínica':
-        return Colors.blue;
-      case 'Hospital':
-        return Colors.red;
-      case 'Centro Médico':
-        return Colors.green;
-      case 'Hotel':
-        return Colors.orange;
-      default:
-        return Colors.grey;
-    }
+    // Usar hash do tipo para gerar uma cor consistente
+    final hash = tipo.hashCode;
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.indigo,
+      Colors.pink,
+      Colors.cyan,
+      Colors.amber,
+    ];
+    return colors[hash.abs() % colors.length];
   }
 
   String _formatarData(DateTime data) {

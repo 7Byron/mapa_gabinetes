@@ -24,7 +24,7 @@ import '../models/unidade.dart';
 
 class AlocacaoMedicos extends StatefulWidget {
   final Unidade unidade;
-  
+
   const AlocacaoMedicos({super.key, required this.unidade});
 
   @override
@@ -76,37 +76,57 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         },
       );
 
-      // Carregar feriados do Firestore
+      // Carregar feriados do Firestore (com tratamento de erro)
       debugPrint('Carregando feriados do Firestore...');
-      final feriadosSnapshot =
-          await FirebaseFirestore.instance.collection('feriados').get();
-      feriados = feriadosSnapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'id': doc.id,
-          'data': data['data'] as String? ?? '',
-          'descricao': data['descricao'] as String? ?? '',
-        };
-      }).toList();
-      debugPrint('Feriados carregados: ${feriados.length}');
-
-      // Carregar horários da clínica do Firestore
-      debugPrint('Carregando horários da clínica do Firestore...');
-      final horariosSnapshot =
-          await FirebaseFirestore.instance.collection('horarios_clinica').get();
-      for (final doc in horariosSnapshot.docs) {
-        final data = doc.data();
-        final diaSemana = data['diaSemana'] as int?;
-        final horaAbertura = data['horaAbertura'] as String? ?? '';
-        final horaFecho = data['horaFecho'] as String? ?? '';
-
-        if (diaSemana != null && diaSemana >= 1 && diaSemana <= 7) {
-          horariosClinica[diaSemana] = [horaAbertura, horaFecho];
-          debugPrint(
-              'Horário carregado para dia $diaSemana: $horaAbertura - $horaFecho');
-        }
+      try {
+        final feriadosSnapshot =
+            await FirebaseFirestore.instance.collection('feriados').get();
+        feriados = feriadosSnapshot.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'id': doc.id,
+            'data': data['data'] as String? ?? '',
+            'descricao': data['descricao'] as String? ?? '',
+          };
+        }).toList();
+        debugPrint('Feriados carregados: ${feriados.length}');
+      } catch (e) {
+        debugPrint('⚠️ Erro ao carregar feriados: $e');
+        feriados = []; // Lista vazia se não conseguir carregar
       }
-      debugPrint('Horários da clínica carregados: ${horariosClinica.length}');
+
+      // Carregar horários da clínica do Firestore (com tratamento de erro)
+      debugPrint('Carregando horários da clínica do Firestore...');
+      try {
+        final horariosSnapshot = await FirebaseFirestore.instance
+            .collection('horarios_clinica')
+            .get();
+        for (final doc in horariosSnapshot.docs) {
+          final data = doc.data();
+          final diaSemana = data['diaSemana'] as int?;
+          final horaAbertura = data['horaAbertura'] as String? ?? '';
+          final horaFecho = data['horaFecho'] as String? ?? '';
+
+          if (diaSemana != null && diaSemana >= 1 && diaSemana <= 7) {
+            horariosClinica[diaSemana] = [horaAbertura, horaFecho];
+            debugPrint(
+                'Horário carregado para dia $diaSemana: $horaAbertura - $horaFecho');
+          }
+        }
+        debugPrint('Horários da clínica carregados: ${horariosClinica.length}');
+      } catch (e) {
+        debugPrint('⚠️ Erro ao carregar horários da clínica: $e');
+        // Definir horários padrão se não conseguir carregar
+        horariosClinica = {
+          1: ['08:00', '18:00'], // Segunda
+          2: ['08:00', '18:00'], // Terça
+          3: ['08:00', '18:00'], // Quarta
+          4: ['08:00', '18:00'], // Quinta
+          5: ['08:00', '18:00'], // Sexta
+          6: ['08:00', '12:00'], // Sábado
+          7: ['', ''], // Domingo - fechado
+        };
+      }
 
       // Filtra médicos do dia
       medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
@@ -286,17 +306,93 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (isCarregando) {
-      return Scaffold(
-        appBar: CustomAppBar(
-            title:
-                'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}'),
-        body: const Center(child: CircularProgressIndicator()),
+  Widget _buildEmptyStateOrContent() {
+    // Se não há dados, mostrar estado vazio
+    if (gabinetes.isEmpty && medicos.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.medical_services,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Bem-vindo à ${widget.unidade.nome}!',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Esta unidade ainda não tem dados configurados.',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Text(
+                'Configurado para: ${widget.unidade.nomeOcupantes} e ${widget.unidade.nomeAlocacao}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.green[700],
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.menu,
+                        color: Colors.blue[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Use o menu lateral para configurar esta unidade',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       );
     }
 
+    // Se há dados, mostrar o conteúdo normal
     final gabinetesFiltrados = AlocacaoMedicosLogic.filtrarGabinetesPorUI(
       gabinetes: gabinetes,
       alocacoes: alocacoes,
@@ -306,14 +402,100 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       mostrarConflitos: mostrarConflitos,
     );
 
+    return Column(
+      children: [
+        const SizedBox(height: 12),
+
+        // DragTarget: área para desalocar médico
+        Container(
+          constraints: const BoxConstraints(minHeight: 85),
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 4,
+                offset: Offset(2, 2),
+              ),
+            ],
+          ),
+          child: DragTarget<String>(
+            onWillAcceptWithDetails: (details) {
+              final medicoId = details.data;
+              // Verifica se o médico realmente está alocado antes de aceitar o cartão
+              final estaAlocado = alocacoes.any((a) => a.medicoId == medicoId);
+              if (!estaAlocado) {
+                debugPrint(
+                    'Médico $medicoId NÃO está alocado, ignorando desalocação.');
+                return false;
+              }
+              debugPrint(
+                  'Médico $medicoId está alocado, aceitando para desalocar.');
+              return true;
+            },
+            onAcceptWithDetails: (details) async {
+              final medicoId = details.data;
+              // Agora só será chamado para médicos alocados
+              await _desalocarMedicoComPergunta(medicoId);
+            },
+            builder: (context, candidateData, rejectedData) {
+              return MedicosDisponiveisSection(
+                medicosDisponiveis: medicosDisponiveis,
+                disponibilidades: disponibilidades,
+                selectedDate: selectedDate,
+                onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
+              );
+            },
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Lista / Grade de Gabinetes
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: GabinetesSection(
+              gabinetes: gabinetesFiltrados,
+              alocacoes: alocacoes,
+              medicos: medicos,
+              disponibilidades: disponibilidades,
+              selectedDate: selectedDate,
+              onAlocarMedico: _alocarMedico,
+              onAtualizarEstado: _carregarDadosIniciais,
+              onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCarregando) {
+      return Scaffold(
+        appBar: CustomAppBar(
+            title:
+                'Mapa de ${widget.unidade.nomeAlocacao} - ${DateFormat('dd/MM/yyyy').format(selectedDate)}'),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       // AppBar já vem estilizado pelo theme
       appBar: CustomAppBar(
         title:
-            'Mapa de Gabinetes - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
+            'Mapa de ${widget.unidade.nomeAlocacao} - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
       ),
       drawer: CustomDrawer(
         onRefresh: _carregarDadosIniciais, // Passa o callback para o drawer
+        unidade: widget.unidade, // Passa a unidade para personalizar o drawer
       ),
       // Corpo com cor de fundo suave e layout mais espaçoso
       body: Container(
@@ -398,81 +580,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                         style: const TextStyle(fontSize: 18),
                       ),
                     )
-                  : Column(
-                      children: [
-                        const SizedBox(height: 12),
-
-                        // DragTarget: área para desalocar médico
-                        Container(
-                          constraints: const BoxConstraints(minHeight: 85),
-                          width: double.infinity,
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade300),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 4,
-                                offset: Offset(2, 2),
-                              ),
-                            ],
-                          ),
-                          child: DragTarget<String>(
-                            onWillAcceptWithDetails: (details) {
-                              final medicoId = details.data;
-                              // Verifica se o médico realmente está alocado antes de aceitar o cartão
-                              final estaAlocado =
-                                  alocacoes.any((a) => a.medicoId == medicoId);
-                              if (!estaAlocado) {
-                                debugPrint(
-                                    'Médico $medicoId NÃO está alocado, ignorando desalocação.');
-                                return false;
-                              }
-                              debugPrint(
-                                  'Médico $medicoId está alocado, aceitando para desalocar.');
-                              return true;
-                            },
-                            onAcceptWithDetails: (details) async {
-                              final medicoId = details.data;
-                              // Agora só será chamado para médicos alocados
-                              await _desalocarMedicoComPergunta(medicoId);
-                            },
-                            builder: (context, candidateData, rejectedData) {
-                              return MedicosDisponiveisSection(
-                                medicosDisponiveis: medicosDisponiveis,
-                                disponibilidades: disponibilidades,
-                                selectedDate: selectedDate,
-                                onDesalocarMedico: (mId) =>
-                                    _desalocarMedicoDiaUnico(mId),
-                              );
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Lista / Grade de Gabinetes
-                        Expanded(
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                            child: GabinetesSection(
-                              gabinetes: gabinetesFiltrados,
-                              alocacoes: alocacoes,
-                              medicos: medicos,
-                              disponibilidades: disponibilidades,
-                              selectedDate: selectedDate,
-                              onAlocarMedico: _alocarMedico,
-                              onAtualizarEstado: _carregarDadosIniciais,
-                              onDesalocarMedicoComPergunta:
-                                  _desalocarMedicoComPergunta,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  : _buildEmptyStateOrContent(),
             ),
           ],
         ),

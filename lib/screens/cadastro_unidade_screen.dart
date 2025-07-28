@@ -22,6 +22,8 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
   final _emailController = TextEditingController();
 
   final _tipoController = TextEditingController();
+  final _nomeOcupantesController = TextEditingController();
+  final _nomeAlocacaoController = TextEditingController();
   bool _isLoading = false;
   List<String> _tiposExistentes = [];
 
@@ -35,6 +37,12 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
       _telefoneController.text = widget.unidade!.telefone ?? '';
       _emailController.text = widget.unidade!.email ?? '';
       _tipoController.text = widget.unidade!.tipo;
+      _nomeOcupantesController.text = widget.unidade!.nomeOcupantes;
+      _nomeAlocacaoController.text = widget.unidade!.nomeAlocacao;
+    } else {
+      // Valores padrão para nova unidade
+      _nomeOcupantesController.text = 'Médicos';
+      _nomeAlocacaoController.text = 'Gabinete';
     }
   }
 
@@ -56,6 +64,8 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     _telefoneController.dispose();
     _emailController.dispose();
     _tipoController.dispose();
+    _nomeOcupantesController.dispose();
+    _nomeAlocacaoController.dispose();
     super.dispose();
   }
 
@@ -65,19 +75,21 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     setState(() => _isLoading = true);
 
     try {
-            final unidade = Unidade(
+      final unidade = Unidade(
         id: widget.unidade?.id ?? '',
         nome: _nomeController.text.trim(),
         tipo: _tipoController.text.trim(),
         endereco: _enderecoController.text.trim(),
-        telefone: _telefoneController.text.trim().isEmpty 
-            ? null 
+        telefone: _telefoneController.text.trim().isEmpty
+            ? null
             : _telefoneController.text.trim(),
-        email: _emailController.text.trim().isEmpty 
-            ? null 
+        email: _emailController.text.trim().isEmpty
+            ? null
             : _emailController.text.trim(),
         dataCriacao: widget.unidade?.dataCriacao ?? DateTime.now(),
         ativa: widget.unidade?.ativa ?? true,
+        nomeOcupantes: _nomeOcupantesController.text.trim(),
+        nomeAlocacao: _nomeAlocacaoController.text.trim(),
       );
 
       bool sucesso;
@@ -171,7 +183,8 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.lightbulb_outline, color: Colors.blue[700], size: 16),
+                        Icon(Icons.lightbulb_outline,
+                            color: Colors.blue[700], size: 16),
                         const SizedBox(width: 8),
                         Text(
                           'Tipos existentes:',
@@ -296,6 +309,44 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
                       .hasMatch(value)) {
                     return 'Digite um email válido';
                   }
+                }
+                return null;
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // Nome dos Ocupantes
+            TextFormField(
+              controller: _nomeOcupantesController,
+              decoration: const InputDecoration(
+                labelText: 'Nome dos Ocupantes *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.people),
+                hintText: 'Ex: Médicos, Convidados, Clientes, etc...',
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Digite o nome dos ocupantes';
+                }
+                return null;
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // Nome da Alocação
+            TextFormField(
+              controller: _nomeAlocacaoController,
+              decoration: const InputDecoration(
+                labelText: 'Nome da Alocação *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.room),
+                hintText: 'Ex: Gabinete, Quarto, Mesa, etc...',
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Digite o nome da alocação';
                 }
                 return null;
               },

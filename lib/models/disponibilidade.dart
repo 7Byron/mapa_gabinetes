@@ -17,12 +17,12 @@ class Disponibilidade {
     required this.tipo,
   });
 
-  Map<String, dynamic> toMap(String medicoId) {
+  Map<String, dynamic> toMap([String? medicoId]) {
     return {
       'id': id,
-      'medicoId': medicoId,
+      'medicoId': medicoId ?? this.medicoId,
       'data': data.toIso8601String(),
-      'horarios': jsonEncode(horarios),
+      'horarios': horarios,
       'tipo': tipo,
     };
   }
@@ -31,18 +31,24 @@ class Disponibilidade {
     final horariosRaw = map['horarios'];
     List<String> horarios;
     if (horariosRaw is String) {
-      horarios = (jsonDecode(horariosRaw) as List).cast<String>();
+      try {
+        horarios = (jsonDecode(horariosRaw) as List).cast<String>();
+      } catch (e) {
+        horarios = [];
+      }
     } else if (horariosRaw is List) {
       horarios = (horariosRaw).cast<String>();
     } else {
       horarios = [];
     }
     return Disponibilidade(
-      id: map['id'],
-      medicoId: map['medicoId'],
-      data: DateTime.parse(map['data']),
+      id: map['id']?.toString() ?? '',
+      medicoId: map['medicoId']?.toString() ?? '',
+      data: map['data'] != null
+          ? DateTime.parse(map['data'].toString())
+          : DateTime.now(),
       horarios: horarios,
-      tipo: map['tipo'] ?? 'Única',
+      tipo: map['tipo']?.toString() ?? 'Única',
     );
   }
 }

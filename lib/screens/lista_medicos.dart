@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
+import '../models/unidade.dart';
 import 'cadastro_medicos.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ListaMedicos extends StatefulWidget {
-  const ListaMedicos({super.key});
+  final Unidade? unidade;
+  const ListaMedicos({super.key, this.unidade});
 
   @override
   ListaMedicosState createState() => ListaMedicosState();
@@ -40,8 +42,23 @@ class ListaMedicosState extends State<ListaMedicos> {
   Future<void> _carregarMedicos() async {
     setState(() => isLoading = true);
     try {
-      final snapshot = await FirebaseFirestore.instance.collection('medicos').get();
-      final medicosCarregados = snapshot.docs.map((doc) => Medico.fromMap(doc.data())).toList();
+      CollectionReference ocupantesRef;
+
+      if (widget.unidade != null) {
+        // Busca ocupantes da unidade específica
+        ocupantesRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('ocupantes');
+      } else {
+        // Busca todos os ocupantes (fallback para compatibilidade)
+        ocupantesRef = FirebaseFirestore.instance.collection('medicos');
+      }
+
+      final snapshot = await ocupantesRef.get();
+      final medicosCarregados = snapshot.docs
+          .map((doc) => Medico.fromMap(doc.data() as Map<String, dynamic>))
+          .toList();
       medicosCarregados.sort((a, b) => a.nome.compareTo(b.nome));
       setState(() {
         medicos = medicosCarregados;
@@ -51,7 +68,8 @@ class ListaMedicosState extends State<ListaMedicos> {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao carregar médicos: $e'),
+          content: Text(
+              'Erro ao carregar ${widget.unidade?.nomeOcupantes ?? 'Ocupantes'}: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -61,22 +79,37 @@ class ListaMedicosState extends State<ListaMedicos> {
   /// Função para deletar um médico
   Future<void> _deletarMedico(String id) async {
     try {
+      CollectionReference ocupantesRef;
+      CollectionReference disponibilidadesRef;
+
+      if (widget.unidade != null) {
+        // Deleta ocupante da unidade específica
+        ocupantesRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('ocupantes');
+        disponibilidadesRef =
+            ocupantesRef.doc(id).collection('disponibilidades');
+      } else {
+        // Deleta da coleção antiga (fallback)
+        ocupantesRef = FirebaseFirestore.instance.collection('medicos');
+        disponibilidadesRef =
+            ocupantesRef.doc(id).collection('disponibilidades');
+      }
+
       // Apaga todas as disponibilidades do médico
-      final disponSnapshot = await FirebaseFirestore.instance
-          .collection('medicos')
-          .doc(id)
-          .collection('disponibilidades')
-          .get();
+      final disponSnapshot = await disponibilidadesRef.get();
       for (final doc in disponSnapshot.docs) {
         await doc.reference.delete();
       }
       // Agora apaga o médico
-      await FirebaseFirestore.instance.collection('medicos').doc(id).delete();
+      await ocupantesRef.doc(id).delete();
       await _carregarMedicos(); // Recarrega a lista após exclusão
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao deletar médico: $e'),
+          content: Text(
+              'Erro ao deletar ${widget.unidade?.nomeOcupantes ?? 'Ocupante'}: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -90,7 +123,8 @@ class ListaMedicosState extends State<ListaMedicos> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Confirmar Exclusão'),
-          content: const Text('Tem certeza que deseja excluir este médico?'),
+          content: Text(
+              'Tem certeza que deseja excluir este ${widget.unidade?.nomeOcupantes ?? 'Ocupante'}?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -114,7 +148,8 @@ class ListaMedicosState extends State<ListaMedicos> {
     final resultado = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CadastroMedico(medico: medico),
+        builder: (context) =>
+            CadastroMedico(medico: medico, unidade: widget.unidade),
       ),
     );
     if (resultado != null) {
@@ -125,12 +160,15 @@ class ListaMedicosState extends State<ListaMedicos> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: CustomAppBar(title: 'Lista de Médicos'),
+      appBar: CustomAppBar(
+          title: 'Lista de ${widget.unidade?.nomeOcupantes ?? 'Ocupantes'}'),
       backgroundColor: MyAppTheme.cinzento,
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : medicos.isEmpty
-              ? const Center(child: Text('Nenhum médico encontrado'))
+              ? Center(
+                  child: Text(
+                      'Nenhum ${widget.unidade?.nomeOcupantes ?? 'Ocupante'} encontrado'))
               : Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 600),
@@ -169,7 +207,7 @@ class ListaMedicosState extends State<ListaMedicos> {
                 ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarOuEditarMedico(),
-        tooltip: 'Adicionar Médico',
+        tooltip: 'Adicionar ',
         child: const Icon(Icons.add),
       ),
     );

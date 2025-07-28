@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
@@ -37,13 +36,21 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   Future<void> _carregarDados() async {
     try {
       // Carrega setores existentes dos gabinetes
-      final gabinetesSnapshot = await FirebaseFirestore.instance.collection('gabinetes').get();
-      final setores = gabinetesSnapshot.docs.map((doc) => doc.data()['setor'] as String).toSet().toList();
-      
+      final gabinetesSnapshot =
+          await FirebaseFirestore.instance.collection('gabinetes').get();
+      final setores = gabinetesSnapshot.docs
+          .map((doc) => doc.data()['setor'] as String)
+          .toSet()
+          .toList();
+
       // Carrega especialidades existentes
-      final medicosSnapshot = await FirebaseFirestore.instance.collection('medicos').get();
-      final especialidades = medicosSnapshot.docs.map((doc) => doc.data()['especialidade'] as String).toSet().toList();
-      
+      final medicosSnapshot =
+          await FirebaseFirestore.instance.collection('medicos').get();
+      final especialidades = medicosSnapshot.docs
+          .map((doc) => doc.data()['especialidade'] as String)
+          .toSet()
+          .toList();
+
       setState(() {
         _setoresDisponiveis.clear();
         _setoresDisponiveis.addAll(setores);
@@ -63,10 +70,11 @@ class CadastroGabineteState extends State<CadastroGabinete> {
       );
       return;
     }
-    
+
     if (_formKey.currentState!.validate()) {
       try {
-        final gabineteId = widget.gabinete?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final gabineteId = widget.gabinete?.id ??
+            DateTime.now().millisecondsSinceEpoch.toString();
         final setor = _setorController.text.trim();
         final nome = _nomeController.text.trim();
         final especialidades = _especialidadesController.text
@@ -75,7 +83,8 @@ class CadastroGabineteState extends State<CadastroGabinete> {
             .where((e) => e.isNotEmpty)
             .toList();
 
-        debugPrint('Salvando gabinete: ID=$gabineteId, Setor=$setor, Nome=$nome, Especialidades=$especialidades');
+        debugPrint(
+            'Salvando gabinete: ID=$gabineteId, Setor=$setor, Nome=$nome, Especialidades=$especialidades');
 
         // Cria o objeto Gabinete
         final gabinete = Gabinete(
@@ -195,7 +204,8 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                         controller: _especialidadesController,
                         decoration: const InputDecoration(
                           labelText: 'Especialidades Permitidas',
-                          hintText: 'Exemplo: Ortopedia, ORL, Medicina Dentária',
+                          hintText:
+                              'Exemplo: Ortopedia, ORL, Medicina Dentária',
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {

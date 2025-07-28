@@ -5,6 +5,7 @@ import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 // Services
 import '../models/disponibilidade.dart';
 import '../models/medico.dart';
+import '../models/unidade.dart';
 import '../services/medico_salvar_service.dart';
 import '../services/disponibilidade_criacao.dart';
 import '../services/disponibilidade_remocao.dart';
@@ -18,8 +19,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CadastroMedico extends StatefulWidget {
   final Medico? medico;
+  final Unidade? unidade;
 
-  const CadastroMedico({super.key, this.medico});
+  const CadastroMedico({super.key, this.medico, this.unidade});
 
   @override
   CadastroMedicoState createState() => CadastroMedicoState();
@@ -63,14 +65,30 @@ class CadastroMedicoState extends State<CadastroMedico> {
     setState(() {
       isLoadingDisponibilidades = true;
     });
-    final snapshot = await FirebaseFirestore.instance
-        .collection('medicos')
-        .doc(medicoId)
-        .collection('disponibilidades')
-        .get();
+
+    CollectionReference disponibilidadesRef;
+    if (widget.unidade != null) {
+      // Busca disponibilidades da unidade específica
+      disponibilidadesRef = FirebaseFirestore.instance
+          .collection('unidades')
+          .doc(widget.unidade!.id)
+          .collection('ocupantes')
+          .doc(medicoId)
+          .collection('disponibilidades');
+    } else {
+      // Busca da coleção antiga (fallback)
+      disponibilidadesRef = FirebaseFirestore.instance
+          .collection('medicos')
+          .doc(medicoId)
+          .collection('disponibilidades');
+    }
+
+    final snapshot = await disponibilidadesRef.get();
     setState(() {
-      disponibilidades =
-          snapshot.docs.map((doc) => Disponibilidade.fromMap(doc.data())).toList();
+      disponibilidades = snapshot.docs
+          .map((doc) =>
+              Disponibilidade.fromMap(doc.data() as Map<String, dynamic>))
+          .toList();
       isLoadingDisponibilidades = false;
     });
   }
@@ -151,7 +169,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
     );
 
     try {
-      await salvarMedicoCompleto(medico);
+      await salvarMedicoCompleto(medico, unidade: widget.unidade);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registo salvo com sucesso!')),
@@ -186,7 +204,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
     final isLargeScreen = MediaQuery.of(context).size.width > 600;
 
     return Scaffold(
-      appBar: CustomAppBar(title: widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
+      appBar: CustomAppBar(
+          title: widget.medico == null ? 'Novo Médico' : 'Editar Médico'),
       backgroundColor: MyAppTheme.cinzento,
       body: isLoadingDisponibilidades
           ? const Center(child: CircularProgressIndicator())
@@ -209,26 +228,31 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                     nomeController: nomeController,
                                     especialidadeController:
                                         especialidadeController,
-                                    observacoesController: observacoesController,
+                                    observacoesController:
+                                        observacoesController,
                                   ),
                                   const SizedBox(height: 16),
                                   CalendarioDisponibilidades(
                                     diasSelecionados: diasSelecionados,
                                     onAdicionarData: _adicionarData,
                                     onRemoverData: (date, removeSerie) {
-                                      _removerData(date, removeSerie: removeSerie);
+                                      _removerData(date,
+                                          removeSerie: removeSerie);
                                     },
                                   ),
                                   const SizedBox(height: 16),
                                   Card(
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 16),
                                       child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
                                         children: [
                                           IconButton(
                                             onPressed: () => _salvarMedico(),
-                                            icon: const Icon(Icons.save, color: Colors.blue),
+                                            icon: const Icon(Icons.save,
+                                                color: Colors.blue),
                                             tooltip: 'Salvar',
                                           ),
                                           IconButton(
@@ -236,12 +260,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                               await _salvarMedico();
                                               _criarNovo();
                                             },
-                                            icon: const Icon(Icons.add, color: Colors.green),
+                                            icon: const Icon(Icons.add,
+                                                color: Colors.green),
                                             tooltip: 'Salvar e Adicionar Novo',
                                           ),
                                           IconButton(
                                             onPressed: _cancelar,
-                                            icon: const Icon(Icons.cancel, color: Colors.red),
+                                            icon: const Icon(Icons.cancel,
+                                                color: Colors.red),
                                             tooltip: 'Cancelar',
                                           ),
                                         ],

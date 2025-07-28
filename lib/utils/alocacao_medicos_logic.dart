@@ -16,18 +16,35 @@ class AlocacaoMedicosLogic {
     required Function(List<Disponibilidade>) onDisponibilidades,
     required Function(List<Alocacao>) onAlocacoes,
   }) async {
-    // TODO: Refatorar lógica para usar Firestore diretamente.
-    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
-    final gabs = [];
-    final meds = [];
-    final disps = [];
-    final alocs = [];
+    try {
+      print('🔄 Carregando dados iniciais do Firebase...');
 
-    // Corrigido: Conversão explícita dos dados vindos do Firestore para as listas corretas.
-    onGabinetes(List<Gabinete>.from(gabs));
-    onMedicos(List<Medico>.from(meds));
-    onDisponibilidades(List<Disponibilidade>.from(disps));
-    onAlocacoes(List<Alocacao>.from(alocs));
+      // Por enquanto, vamos inicializar com listas vazias
+      // TODO: Implementar carregamento real do Firebase por unidade
+      final gabs = <Gabinete>[];
+      final meds = <Medico>[];
+      final disps = <Disponibilidade>[];
+      final alocs = <Alocacao>[];
+
+      print('✅ Dados iniciais carregados (listas vazias)');
+      print('📊 Gabinetes: ${gabs.length}');
+      print('📊 Médicos: ${meds.length}');
+      print('📊 Disponibilidades: ${disps.length}');
+      print('📊 Alocações: ${alocs.length}');
+
+      // Atualizar as listas
+      onGabinetes(List<Gabinete>.from(gabs));
+      onMedicos(List<Medico>.from(meds));
+      onDisponibilidades(List<Disponibilidade>.from(disps));
+      onAlocacoes(List<Alocacao>.from(alocs));
+    } catch (e) {
+      print('❌ Erro ao carregar dados iniciais: $e');
+      // Em caso de erro, inicializar com listas vazias
+      onGabinetes(<Gabinete>[]);
+      onMedicos(<Medico>[]);
+      onDisponibilidades(<Disponibilidade>[]);
+      onAlocacoes(<Alocacao>[]);
+    }
   }
 
   static List<Medico> filtrarMedicosPorData({
@@ -36,7 +53,8 @@ class AlocacaoMedicosLogic {
     required List<Alocacao> alocacoes,
     required List<Medico> medicos,
   }) {
-    final dataAlvo = DateTime(dataSelecionada.year, dataSelecionada.month, dataSelecionada.day);
+    final dataAlvo = DateTime(
+        dataSelecionada.year, dataSelecionada.month, dataSelecionada.day);
 
     final dispNoDia = disponibilidades.where((disp) {
       final d = DateTime(disp.data.year, disp.data.month, disp.data.day);
@@ -44,13 +62,17 @@ class AlocacaoMedicosLogic {
     }).toList();
 
     final idsMedicosNoDia = dispNoDia.map((d) => d.medicoId).toSet();
-    final alocadosNoDia = alocacoes.where((a) {
-      final aData = DateTime(a.data.year, a.data.month, a.data.day);
-      return aData == dataAlvo;
-    }).map((a) => a.medicoId).toSet();
+    final alocadosNoDia = alocacoes
+        .where((a) {
+          final aData = DateTime(a.data.year, a.data.month, a.data.day);
+          return aData == dataAlvo;
+        })
+        .map((a) => a.medicoId)
+        .toSet();
 
     return medicos
-        .where((m) => idsMedicosNoDia.contains(m.id) && !alocadosNoDia.contains(m.id))
+        .where((m) =>
+            idsMedicosNoDia.contains(m.id) && !alocadosNoDia.contains(m.id))
         .toList();
   }
 
@@ -62,7 +84,8 @@ class AlocacaoMedicosLogic {
     required String filtroOcupacao,
     required bool mostrarConflitos,
   }) {
-    final filtrados = gabinetes.where((g) => pisosSelecionados.contains(g.setor)).toList();
+    final filtrados =
+        gabinetes.where((g) => pisosSelecionados.contains(g.setor)).toList();
 
     List<Gabinete> filtradosOcupacao = [];
     for (final gab in filtrados) {
@@ -107,7 +130,8 @@ class AlocacaoMedicosLogic {
     required List<Disponibilidade> disponibilidades,
     required Function() onAlocacoesChanged,
   }) async {
-    final dataAlvo = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final dataAlvo =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
 
     final indexAloc = alocacoes.indexWhere((a) {
       final alocDate = DateTime(a.data.year, a.data.month, a.data.day);
@@ -125,9 +149,9 @@ class AlocacaoMedicosLogic {
     }).toList();
 
     final horarioInicio =
-    dispDoDia.isNotEmpty ? dispDoDia.first.horarios[0] : '00:00';
+        dispDoDia.isNotEmpty ? dispDoDia.first.horarios[0] : '00:00';
     final horarioFim =
-    dispDoDia.isNotEmpty ? dispDoDia.first.horarios[1] : '00:00';
+        dispDoDia.isNotEmpty ? dispDoDia.first.horarios[1] : '00:00';
 
     final novaAloc = Alocacao(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -153,7 +177,8 @@ class AlocacaoMedicosLogic {
     required List<Medico> medicosDisponiveis,
     required Function() onAlocacoesChanged,
   }) async {
-    final dataAlvo = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final dataAlvo =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
 
     final indexAloc = alocacoes.indexWhere((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
@@ -171,7 +196,7 @@ class AlocacaoMedicosLogic {
     });
     if (temDisp) {
       final medico = medicos.firstWhere(
-            (m) => m.id == medicoId,
+        (m) => m.id == medicoId,
         orElse: () => Medico(
           id: medicoId,
           nome: 'Médico não identificado',
@@ -222,7 +247,7 @@ class AlocacaoMedicosLogic {
       });
       if (temDisp) {
         final medico = medicos.firstWhere(
-              (m) => m.id == medicoId,
+          (m) => m.id == medicoId,
           orElse: () => Medico(
             id: medicoId,
             nome: 'Médico não identificado',

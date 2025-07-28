@@ -193,71 +193,72 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       lastDate: DateTime(2100),
     );
 
+    // Se o usuário cancelou a seleção de data, não faz nada
+    if (pickedDate == null) return;
+
     String descricao = '';
 
-    if (pickedDate != null) {
-      await showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Adicionar Feriado'),
-            content: TextField(
-              decoration: const InputDecoration(
-                labelText: 'Descrição (Opcional)',
-                hintText: 'Ex.: Feriado Nacional',
-              ),
-              onChanged: (value) => descricao = value,
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Adicionar Feriado'),
+          content: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Descrição (Opcional)',
+              hintText: 'Ex.: Feriado Nacional',
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Confirmar'),
-              ),
-            ],
-          );
-        },
+            onChanged: (value) => descricao = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    try {
+      // Salva no Firestore
+      final feriadoRef =
+          await FirebaseFirestore.instance.collection('feriados').add({
+        'data': pickedDate.toIso8601String(),
+        'descricao': descricao.isNotEmpty ? descricao : '',
+      });
+
+      // Cria um Map<String, dynamic> explícito para evitar problemas de tipo
+      final novoFeriado = <String, dynamic>{
+        'id': feriadoRef.id,
+        'data': pickedDate.toIso8601String(),
+        'descricao': descricao.isNotEmpty ? descricao : '',
+      };
+
+      setState(() {
+        feriados.add(novoFeriado);
+        feriados.sort((a, b) => DateTime.parse(a['data'] as String)
+            .compareTo(DateTime.parse(b['data'] as String)));
+      });
+
+      debugPrint('Feriado salvo no Firestore com ID: ${feriadoRef.id}');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Feriado adicionado com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
       );
-
-      try {
-        // Salva no Firestore
-        final feriadoRef =
-            await FirebaseFirestore.instance.collection('feriados').add({
-          'data': pickedDate.toIso8601String(),
-          'descricao': descricao.isNotEmpty ? descricao : '',
-        });
-
-        // Cria um Map<String, dynamic> explícito para evitar problemas de tipo
-        final novoFeriado = <String, dynamic>{
-          'id': feriadoRef.id,
-          'data': pickedDate.toIso8601String(),
-          'descricao': descricao.isNotEmpty ? descricao : '',
-        };
-
-        setState(() {
-          feriados.add(novoFeriado);
-          feriados.sort((a, b) => DateTime.parse(a['data'] as String)
-              .compareTo(DateTime.parse(b['data'] as String)));
-        });
-
-        debugPrint('Feriado salvo no Firestore com ID: ${feriadoRef.id}');
-
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Feriado adicionado com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (e) {
-        debugPrint('Erro ao salvar feriado: $e');
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao salvar feriado: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    } catch (e) {
+      debugPrint('Erro ao salvar feriado: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao salvar feriado: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

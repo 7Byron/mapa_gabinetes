@@ -6,6 +6,7 @@ import '../models/unidade.dart';
 
 /// Tela para configurar horários de funcionamento da clínica
 /// Permite definir horários de abertura e fechamento para cada dia da semana
+/// Inclui configurações de encerramento: nunca encerra, dias específicos e feriados
 /// Os dados são salvos por unidade para permitir configurações específicas
 
 class ConfigClinicaScreen extends StatefulWidget {
@@ -285,7 +286,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         await _gravarAlteracoes();
       },
       child: Scaffold(
-        appBar: CustomAppBar(title: 'Configuração Horário da Clínica'),
+        appBar: CustomAppBar(title: 'Horário de Abertura'),
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: SingleChildScrollView(

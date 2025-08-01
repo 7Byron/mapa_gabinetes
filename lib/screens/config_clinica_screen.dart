@@ -311,177 +311,177 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
               
-                        // Checkbox Nunca Encerra
-                        CheckboxListTile(
-                          title: const Text(
-                            'Nunca encerra',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          value: nuncaEncerra,
-                          onChanged: (bool? value) {
-                            setState(() {
-                              nuncaEncerra = value ?? false;
-                              // Se "nunca encerra" está ativo, desativa todas as outras opções
-                              if (nuncaEncerra) {
-                                for (int i = 1; i <= 7; i++) {
-                                  encerraDias[i] = false;
-                                }
-                                encerraFeriados = false;
-                              }
-                            });
-                            _gravarAlteracoes();
-                          },
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ),
+                            // Checkbox Nunca Encerra
+                            CheckboxListTile(
+                              title: const Text(
+                                'Nunca encerra',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                              value: nuncaEncerra,
+                              onChanged: (bool? value) {
+                                setState(() {
+                                  nuncaEncerra = value ?? false;
+                                  // Se "nunca encerra" está ativo, desativa todas as outras opções
+                                  if (nuncaEncerra) {
+                                    for (int i = 1; i <= 7; i++) {
+                                      encerraDias[i] = false;
+                                    }
+                                    encerraFeriados = false;
+                                  }
+                                });
+                                _gravarAlteracoes();
+                              },
+                              controlAffinity: ListTileControlAffinity.leading,
+                            ),
 
-                        const Divider(),
+                            const Divider(),
 
-                        // Configurações por dia da semana
-                        if (!nuncaEncerra) ...[
-                          for (int ds = 1; ds <= 7; ds++) ...[
-                            Row(
-                              children: [
-                                // Nome do dia
-                                SizedBox(
-                                  width: 80,
-                                  child: Text(diasSemana[ds - 1]),
+                            // Configurações por dia da semana
+                            if (!nuncaEncerra) ...[
+                              for (int ds = 1; ds <= 7; ds++) ...[
+                                Row(
+                                  children: [
+                                    // Nome do dia
+                                    SizedBox(
+                                      width: 80,
+                                      child: Text(diasSemana[ds - 1]),
+                                    ),
+
+                                    const SizedBox(width: 8),
+
+                                    // Horário de início
+                                    SizedBox(
+                                      width: 70,
+                                      child: InkWell(
+                                        onTap: () => _escolherHora(ds, true),
+                                        child: InputDecorator(
+                                          decoration: const InputDecoration(
+                                            labelText: 'Início',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          child: Text(horarios[ds]![0]),
+                                        ),
+                                      ),
+                                    ),
+
+                                    const SizedBox(width: 8),
+
+                                    // Horário de fim
+                                    SizedBox(
+                                      width: 70,
+                                      child: InkWell(
+                                        onTap: () => _escolherHora(ds, false),
+                                        child: InputDecorator(
+                                          decoration: const InputDecoration(
+                                            labelText: 'Fim',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          child: Text(horarios[ds]![1]),
+                                        ),
+                                      ),
+                                    ),
+
+                                    const SizedBox(width: 8),
+
+                                    // Checkbox Encerrado (à direita)
+                                    SizedBox(
+                                      width: 70,
+                                      child: InputDecorator(
+                                        decoration: const InputDecoration(
+                                          labelText: 'Encerrado',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        child: Checkbox(
+                                          value: encerraDias[ds],
+                                          onChanged: (bool? value) {
+                                            setState(() {
+                                              encerraDias[ds] = value ?? false;
+                                            });
+                                            _gravarAlteracoes();
+                                          },
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Botão eliminar
+                                    IconButton(
+                                      tooltip: "Eliminar",
+                                      icon: const Icon(Icons.delete,
+                                          color: Colors.red),
+                                      onPressed: () => _apagarHorarios(ds),
+                                    ),
+                                  ],
                                 ),
+                                const SizedBox(height: 8),
+                              ],
 
-                                const SizedBox(width: 8),
+                              const Divider(),
 
-                                // Horário de início
-                                SizedBox(
-                                  width: 70,
-                                  child: InkWell(
-                                    onTap: () => _escolherHora(ds, true),
+                              // Configuração para Feriados
+                              Row(
+                                children: [
+                                  // Nome "Feriados"
+                                  SizedBox(
+                                    width: 80,
+                                    child: const Text('Feriados'),
+                                  ),
+
+                                  const SizedBox(width: 8),
+
+                                  // Horário de início (desabilitado para feriados)
+                                  SizedBox(
+                                    width: 70,
                                     child: InputDecorator(
                                       decoration: const InputDecoration(
                                         labelText: 'Início',
                                         border: OutlineInputBorder(),
                                       ),
-                                      child: Text(horarios[ds]![0]),
+                                      child: const Text('--:--'),
                                     ),
                                   ),
-                                ),
 
-                                const SizedBox(width: 8),
+                                  const SizedBox(width: 8),
 
-                                // Horário de fim
-                                SizedBox(
-                                  width: 70,
-                                  child: InkWell(
-                                    onTap: () => _escolherHora(ds, false),
+                                  // Horário de fim (desabilitado para feriados)
+                                  SizedBox(
+                                    width: 70,
                                     child: InputDecorator(
                                       decoration: const InputDecoration(
                                         labelText: 'Fim',
                                         border: OutlineInputBorder(),
                                       ),
-                                      child: Text(horarios[ds]![1]),
+                                      child: const Text('--:--'),
                                     ),
                                   ),
-                                ),
 
-                                const SizedBox(width: 8),
+                                  const SizedBox(width: 8),
 
-                                // Checkbox Encerrado (à direita)
-                                SizedBox(
-                                  width: 70,
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: 'Encerrado',
-                                      border: OutlineInputBorder(),
+                                  // Checkbox Encerrado para feriados (à direita)
+                                  SizedBox(
+                                    width: 70,
+                                    child: InputDecorator(
+                                      decoration: const InputDecoration(
+                                        labelText: 'Encerrado',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      child: Checkbox(
+                                        value: encerraFeriados,
+                                        onChanged: (bool? value) {
+                                          setState(() {
+                                            encerraFeriados = value ?? false;
+                                          });
+                                          _gravarAlteracoes();
+                                        },
+                                      ),
                                     ),
-                                    child: Checkbox(
-                                      value: encerraDias[ds],
-                                      onChanged: (bool? value) {
-                                        setState(() {
-                                          encerraDias[ds] = value ?? false;
-                                        });
-                                        _gravarAlteracoes();
-                                      },
-                                    ),
                                   ),
-                                ),
 
-                                // Botão eliminar
-                                IconButton(
-                                  tooltip: "Eliminar",
-                                  icon: const Icon(Icons.delete,
-                                      color: Colors.red),
-                                  onPressed: () => _apagarHorarios(ds),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                          ],
-
-                          const Divider(),
-
-                          // Configuração para Feriados
-                          Row(
-                            children: [
-                              // Nome "Feriados"
-                              SizedBox(
-                                width: 80,
-                                child: const Text('Feriados'),
+                                  // Espaço vazio para alinhar com os outros dias
+                                  const SizedBox(width: 48),
+                                ],
                               ),
-
-                              const SizedBox(width: 8),
-
-                              // Horário de início (desabilitado para feriados)
-                              SizedBox(
-                                width: 70,
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Início',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  child: const Text('--:--'),
-                                ),
-                              ),
-
-                              const SizedBox(width: 8),
-
-                              // Horário de fim (desabilitado para feriados)
-                              SizedBox(
-                                width: 70,
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Fim',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  child: const Text('--:--'),
-                                ),
-                              ),
-
-                              const SizedBox(width: 8),
-
-                              // Checkbox Encerrado para feriados (à direita)
-                              SizedBox(
-                                width: 70,
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Encerrado',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  child: Checkbox(
-                                    value: encerraFeriados,
-                                    onChanged: (bool? value) {
-                                      setState(() {
-                                        encerraFeriados = value ?? false;
-                                      });
-                                      _gravarAlteracoes();
-                                    },
-                                  ),
-                                ),
-                              ),
-
-                              // Espaço vazio para alinhar com os outros dias
-                              const SizedBox(width: 48),
                             ],
-                          ),
-                        ],
                       ],
                     ),
                   ),

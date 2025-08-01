@@ -4,6 +4,10 @@ import 'package:mapa_gabinetes/widgets/time_picker_dialog.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
 
+/// Tela para configurar horários de funcionamento da clínica
+/// Permite definir horários de abertura e fechamento para cada dia da semana
+/// Os dados são salvos por unidade para permitir configurações específicas
+
 class ConfigClinicaScreen extends StatefulWidget {
   final Unidade? unidade;
 

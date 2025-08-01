@@ -4,6 +4,10 @@ import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
 
+/// Tela para gerenciar dias de encerramento da clínica
+/// Permite configurar feriados, manutenções e outros dias de encerramento
+/// Os dados são organizados por unidade e ano para melhor organização
+
 class DiasEncerramentoScreen extends StatefulWidget {
   final Unidade? unidade;
 

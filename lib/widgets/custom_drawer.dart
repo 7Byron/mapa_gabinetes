@@ -11,6 +11,10 @@ import '../screens/relatorios_screen.dart';
 import '../screens/relatorio_especialidades_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
 
+/// Drawer personalizado com menu de navegação
+/// Inclui opções separadas para configurar horários e dias de encerramento
+/// Adapta-se ao tipo de utilizador (administrador ou utilizador normal)
+
 class CustomDrawer extends StatelessWidget {
   final VoidCallback onRefresh; // Callback para recarregar dados
   final Unidade? unidade; // Unidade atual para personalizar os nomes

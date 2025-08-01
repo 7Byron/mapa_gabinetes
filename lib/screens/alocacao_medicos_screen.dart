@@ -606,123 +606,128 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         isAdmin: widget.isAdmin, // Passa informação se é administrador
       ),
       // Corpo com cor de fundo suave e layout mais espaçoso
-      body: Container(
-        color: Colors.grey.shade200,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Coluna Esquerda: DatePicker + Filtros
-            Container(
-              width: 280,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    // DatePicker
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 4,
-                            offset: Offset(2, 2),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Container(
+            color: Colors.grey.shade200,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Coluna Esquerda: DatePicker + Filtros
+                Container(
+                  width: 280,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        // DatePicker
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 4,
+                                offset: Offset(2, 2),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: DatePickerSection(
-                        selectedDate: selectedDate,
-                        onDateChanged: _onDateChanged,
-                      ),
-                    ),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: DatePickerSection(
+                            selectedDate: selectedDate,
+                            onDateChanged: _onDateChanged,
+                          ),
+                        ),
 
-                    // Filtros
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 4,
-                            offset: Offset(2, 2),
+                        // Filtros
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 4,
+                                offset: Offset(2, 2),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: FiltrosSection(
-                        todosSetores:
-                            gabinetes.map((g) => g.setor).toSet().toList(),
-                        pisosSelecionados: pisosSelecionados,
-                        onTogglePiso: (setor, isSelected) {
-                          setState(() {
-                            if (isSelected) {
-                              pisosSelecionados.add(setor);
-                            } else {
-                              pisosSelecionados.remove(setor);
-                            }
-                          });
-                        },
-                        filtroOcupacao: filtroOcupacao,
-                        onFiltroOcupacaoChanged: (novo) {
-                          setState(() => filtroOcupacao = novo);
-                        },
-                        mostrarConflitos: mostrarConflitos,
-                        onMostrarConflitosChanged: (val) {
-                          setState(() => mostrarConflitos = val);
-                        },
-                      ),
+                          child: FiltrosSection(
+                            todosSetores:
+                                gabinetes.map((g) => g.setor).toSet().toList(),
+                            pisosSelecionados: pisosSelecionados,
+                            onTogglePiso: (setor, isSelected) {
+                              setState(() {
+                                if (isSelected) {
+                                  pisosSelecionados.add(setor);
+                                } else {
+                                  pisosSelecionados.remove(setor);
+                                }
+                              });
+                            },
+                            filtroOcupacao: filtroOcupacao,
+                            onFiltroOcupacaoChanged: (novo) {
+                              setState(() => filtroOcupacao = novo);
+                            },
+                            mostrarConflitos: mostrarConflitos,
+                            onMostrarConflitosChanged: (val) {
+                              setState(() => mostrarConflitos = val);
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
 
-            // Coluna Direita: Médicos Disponíveis (dragTarget) e Gabinetes
-            Expanded(
-              child: clinicaFechada
-                  ? Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.red.shade200),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.block,
-                              size: 64,
-                              color: Colors.red.shade400,
+                // Coluna Direita: Médicos Disponíveis (dragTarget) e Gabinetes
+                Expanded(
+                  child: clinicaFechada
+                      ? Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.red.shade200),
                             ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Clínica Encerrada!',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red.shade700,
-                              ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.block,
+                                  size: 64,
+                                  color: Colors.red.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Clínica Encerrada!',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  mensagemClinicaFechada,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.red.shade600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              mensagemClinicaFechada,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.red.shade600,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : _buildEmptyStateOrContent(),
+                          ),
+                        )
+                      : _buildEmptyStateOrContent(),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

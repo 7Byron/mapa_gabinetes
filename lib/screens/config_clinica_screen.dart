@@ -291,28 +291,24 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       },
       child: Scaffold(
         appBar: CustomAppBar(title: 'Horário de Abertura'),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                // Card principal com todas as configurações
-                Card(
-                  color: Colors.blue.shade50,
-                  margin: const EdgeInsets.all(8.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Título "Encerrado" no topo
-                        const Text(
-                          'Encerrado',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 16),
-
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // Card principal com todas as configurações
+                    Card(
+                      color: Colors.blue.shade50,
+                      margin: const EdgeInsets.all(8.0),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+              
                         // Checkbox Nunca Encerra
                         CheckboxListTile(
                           title: const Text(
@@ -388,19 +384,21 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
                                 // Checkbox Encerrado (à direita)
                                 SizedBox(
-                                  width: 100,
-                                  child: CheckboxListTile(
-                                    title: const Text('Encerrado'),
-                                    value: encerraDias[ds],
-                                    onChanged: (bool? value) {
-                                      setState(() {
-                                        encerraDias[ds] = value ?? false;
-                                      });
-                                      _gravarAlteracoes();
-                                    },
-                                    controlAffinity:
-                                        ListTileControlAffinity.leading,
-                                    contentPadding: EdgeInsets.zero,
+                                  width: 70,
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Encerrado',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    child: Checkbox(
+                                      value: encerraDias[ds],
+                                      onChanged: (bool? value) {
+                                        setState(() {
+                                          encerraDias[ds] = value ?? false;
+                                        });
+                                        _gravarAlteracoes();
+                                      },
+                                    ),
                                   ),
                                 ),
 
@@ -459,19 +457,21 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
                               // Checkbox Encerrado para feriados (à direita)
                               SizedBox(
-                                width: 100,
-                                child: CheckboxListTile(
-                                  title: const Text('Encerrado'),
-                                  value: encerraFeriados,
-                                  onChanged: (bool? value) {
-                                    setState(() {
-                                      encerraFeriados = value ?? false;
-                                    });
-                                    _gravarAlteracoes();
-                                  },
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  contentPadding: EdgeInsets.zero,
+                                width: 70,
+                                child: InputDecorator(
+                                  decoration: const InputDecoration(
+                                    labelText: 'Encerrado',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  child: Checkbox(
+                                    value: encerraFeriados,
+                                    onChanged: (bool? value) {
+                                      setState(() {
+                                        encerraFeriados = value ?? false;
+                                      });
+                                      _gravarAlteracoes();
+                                    },
+                                  ),
                                 ),
                               ),
 

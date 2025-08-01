@@ -38,6 +38,19 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
     "Domingo",
   ];
 
+  // Configurações de encerramento
+  bool nuncaEncerra = false;
+  Map<int, bool> encerraDias = {
+    1: false, // Segunda-feira
+    2: false, // Terça-feira
+    3: false, // Quarta-feira
+    4: false, // Quinta-feira
+    5: false, // Sexta-feira
+    6: false, // Sábado
+    7: false, // Domingo
+  };
+  bool encerraFeriados = false;
+
   @override
   void initState() {
     super.initState();
@@ -94,6 +107,22 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         }
       }
 
+      // Carregar configurações de encerramento
+      final configDoc = await horariosRef.doc('config').get();
+      if (configDoc.exists) {
+        final configData = configDoc.data() as Map<String, dynamic>;
+        setState(() {
+          nuncaEncerra = configData['nuncaEncerra'] as bool? ?? false;
+          encerraFeriados = configData['encerraFeriados'] as bool? ?? false;
+          
+          // Carregar configurações por dia
+          for (int i = 1; i <= 7; i++) {
+            encerraDias[i] = configData['encerraDia$i'] as bool? ?? false;
+          }
+        });
+        debugPrint('Configurações de encerramento carregadas');
+      }
+
       debugPrint('Dados carregados com sucesso. Horários: ${horarios.length}');
 
       // Atualiza o estado da tela
@@ -136,6 +165,20 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
         debugPrint('Horário salvo para dia $ds: $horaAbertura - $horaFecho');
       }
+
+      // Salvar configurações de encerramento
+      final configData = <String, dynamic>{
+        'nuncaEncerra': nuncaEncerra,
+        'encerraFeriados': encerraFeriados,
+      };
+      
+      // Adicionar configurações por dia
+      for (int i = 1; i <= 7; i++) {
+        configData['encerraDia$i'] = encerraDias[i];
+      }
+
+      await horariosRef.doc('config').set(configData);
+      debugPrint('Configurações de encerramento salvas');
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -245,70 +288,213 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         appBar: CustomAppBar(title: 'Configuração Horário da Clínica'),
         body: Padding(
           padding: const EdgeInsets.all(16),
-          child: Center(
-            child: Card(
-              color: Colors.blue.shade50,
-              margin: const EdgeInsets.all(8.0),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Horários de Início/Fim (Seg-Dom)',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 26),
-                      for (int ds = 1; ds <= 7; ds++) ...[
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 80,
-                              child: Text(diasSemana[ds - 1]),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 70,
-                              child: InkWell(
-                                onTap: () => _escolherHora(ds, true),
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Início',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  child: Text(horarios[ds]![0]),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 70,
-                              child: InkWell(
-                                onTap: () => _escolherHora(ds, false),
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Fim',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  child: Text(horarios[ds]![1]),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: "Eliminar",
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _apagarHorarios(ds),
-                            ),
-                          ],
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Card para Horários
+                Card(
+                  color: Colors.blue.shade50,
+                  margin: const EdgeInsets.all(8.0),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Horários de Início/Fim (Seg-Dom)',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 26),
+                        for (int ds = 1; ds <= 7; ds++) ...[
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 80,
+                                child: Text(diasSemana[ds - 1]),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 70,
+                                child: InkWell(
+                                  onTap: () => _escolherHora(ds, true),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Início',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    child: Text(horarios[ds]![0]),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 70,
+                                child: InkWell(
+                                  onTap: () => _escolherHora(ds, false),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Fim',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    child: Text(horarios[ds]![1]),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: "Eliminar",
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _apagarHorarios(ds),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
+                
+                const SizedBox(height: 16),
+                
+                // Card para Configurações de Encerramento
+                Card(
+                  color: Colors.orange.shade50,
+                  margin: const EdgeInsets.all(8.0),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Configurações de Encerramento',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Checkbox Nunca Encerra
+                        CheckboxListTile(
+                          title: const Text(
+                            'Nunca encerra',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text('A clínica está sempre aberta'),
+                          value: nuncaEncerra,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              nuncaEncerra = value ?? false;
+                              // Se "nunca encerra" está ativo, desativa todas as outras opções
+                              if (nuncaEncerra) {
+                                for (int i = 1; i <= 7; i++) {
+                                  encerraDias[i] = false;
+                                }
+                                encerraFeriados = false;
+                              }
+                            });
+                            _gravarAlteracoes();
+                          },
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
+                        
+                        const Divider(),
+                        
+                        // Checkboxes para dias específicos
+                        if (!nuncaEncerra) ...[
+                          CheckboxListTile(
+                            title: const Text('Encerra às 2ªs feiras'),
+                            value: encerraDias[1],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[1] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra às 3ªs feiras'),
+                            value: encerraDias[2],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[2] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra às 4ªs feiras'),
+                            value: encerraDias[3],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[3] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra às 5ªs feiras'),
+                            value: encerraDias[4],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[4] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra às 6ªs feiras'),
+                            value: encerraDias[5],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[5] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra ao sábado'),
+                            value: encerraDias[6],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[6] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra ao domingo'),
+                            value: encerraDias[7],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraDias[7] = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            title: const Text('Encerra aos feriados'),
+                            value: encerraFeriados,
+                            onChanged: (bool? value) {
+                              setState(() {
+                                encerraFeriados = value ?? false;
+                              });
+                              _gravarAlteracoes();
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

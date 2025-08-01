@@ -391,10 +391,10 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
                                     color: Colors.white,
                                   ),
                                 ),
-                                title: Text(
-                                  DateFormat('dd/MM/yyyy (EEEE)', 'pt_BR').format(data),
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
+                                                                 title: Text(
+                                   DateFormat('dd/MM/yyyy (EEEE)').format(data),
+                                   style: const TextStyle(fontWeight: FontWeight.bold),
+                                 ),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [

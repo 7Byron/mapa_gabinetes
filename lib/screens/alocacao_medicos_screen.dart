@@ -56,6 +56,19 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   bool clinicaFechada = false;
   String mensagemClinicaFechada = '';
 
+  // Configurações de encerramento
+  bool nuncaEncerra = false;
+  Map<int, bool> encerraDias = {
+    1: false, // Segunda-feira
+    2: false, // Terça-feira
+    3: false, // Quarta-feira
+    4: false, // Quinta-feira
+    5: false, // Sexta-feira
+    6: false, // Sábado
+    7: false, // Domingo
+  };
+  bool encerraFeriados = false;
+
   // Filtros
   List<String> pisosSelecionados = [];
   String filtroOcupacao = 'Todos'; // 'Livres', 'Ocupados', 'Todos'
@@ -105,12 +118,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
             .collection('unidades')
             .doc(widget.unidade.id)
             .collection('feriados');
-        
+
         // Carrega apenas o ano atual por padrão (otimização)
         final anoAtual = DateTime.now().year.toString();
         final anoRef = feriadosRef.doc(anoAtual);
         final registosRef = anoRef.collection('registos');
-        
+
         try {
           final registosSnapshot = await registosRef.get();
           feriados = registosSnapshot.docs.map((doc) {
@@ -121,7 +134,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
               'descricao': data['descricao'] as String? ?? '',
             };
           }).toList();
-          debugPrint('Feriados carregados do ano $anoAtual: ${feriados.length}');
+          debugPrint(
+              'Feriados carregados do ano $anoAtual: ${feriados.length}');
         } catch (e) {
           debugPrint('⚠️ Erro ao carregar feriados do ano $anoAtual: $e');
           // Fallback: tenta carregar de todos os anos
@@ -154,7 +168,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
             .collection('unidades')
             .doc(widget.unidade.id)
             .collection('horarios_clinica');
-              
+
         final horariosSnapshot = await horariosRef.get();
         horariosClinica = {};
         for (final doc in horariosSnapshot.docs) {
@@ -168,6 +182,25 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         }
         debugPrint(
             'Horários da clínica carregados: ${horariosClinica.length} dias');
+
+        // Carregar configurações de encerramento
+        debugPrint('Carregando configurações de encerramento...');
+        try {
+          final configDoc = await horariosRef.doc('config').get();
+          if (configDoc.exists) {
+            final configData = configDoc.data() as Map<String, dynamic>;
+            nuncaEncerra = configData['nuncaEncerra'] as bool? ?? false;
+            encerraFeriados = configData['encerraFeriados'] as bool? ?? false;
+
+            // Carregar configurações por dia
+            for (int i = 1; i <= 7; i++) {
+              encerraDias[i] = configData['encerraDia$i'] as bool? ?? false;
+            }
+            debugPrint('Configurações de encerramento carregadas');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Erro ao carregar configurações de encerramento: $e');
+        }
       } catch (e) {
         debugPrint('⚠️ Erro ao carregar horários da clínica: $e');
         horariosClinica = {}; // Mapa vazio se não conseguir carregar
@@ -191,16 +224,24 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   }
 
   void _verificarClinicaFechada() {
-    final diaSemana = selectedDate.weekday;
-    final horariosDoDia = horariosClinica[diaSemana] ?? [];
-
-    if (horariosDoDia.isEmpty) {
-      clinicaFechada = true;
-      mensagemClinicaFechada = 'A clínica está fechada neste dia.';
+    // Se "nunca encerra" está ativo, a clínica nunca está fechada
+    if (nuncaEncerra) {
+      clinicaFechada = false;
+      mensagemClinicaFechada = '';
       return;
     }
 
-    // Verificar se é feriado
+    final diaSemana = selectedDate.weekday;
+    
+    // Verificar se o dia específico está configurado para encerrar
+    if (encerraDias[diaSemana] == true) {
+      clinicaFechada = true;
+      final diasSemana = ['', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+      mensagemClinicaFechada = 'Clínica encerrada às ${diasSemana[diaSemana]}s';
+      return;
+    }
+
+    // Verificar se é feriado e se está configurado para encerrar em feriados
     final dataFormatada = DateFormat('yyyy-MM-dd').format(selectedDate);
     final feriado = feriados.firstWhere(
       (f) => f['data'] == dataFormatada,
@@ -208,8 +249,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     );
 
     if (feriado.containsKey('id') && feriado['id']!.isNotEmpty) {
+      if (encerraFeriados) {
+        clinicaFechada = true;
+        mensagemClinicaFechada = 'Clínica encerrada - Feriado: ${feriado['descricao'] ?? ''}';
+        return;
+      }
+    }
+
+    // Verificar horários tradicionais (fallback)
+    final horariosDoDia = horariosClinica[diaSemana] ?? [];
+    if (horariosDoDia.isEmpty) {
       clinicaFechada = true;
-      mensagemClinicaFechada = 'Feriado: ${feriado['descricao'] ?? ''}';
+      mensagemClinicaFechada = 'Clínica encerrada neste dia.';
       return;
     }
 
@@ -219,20 +270,26 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
 
   void _atualizarMedicosDisponiveis() {
     debugPrint('🔄 Atualizando médicos disponíveis...');
-    debugPrint('📅 Data selecionada: ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
+    debugPrint(
+        '📅 Data selecionada: ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
     debugPrint('👥 Total de médicos: ${medicos.length}');
     debugPrint('📋 Total de disponibilidades: ${disponibilidades.length}');
-    
+
     final medicosAlocados = alocacoes
         .where((a) =>
             DateFormat('yyyy-MM-dd').format(a.data) ==
             DateFormat('yyyy-MM-dd').format(selectedDate))
         .map((a) => a.medicoId)
         .toSet();
-    
+
     debugPrint('🚫 Médicos alocados: ${medicosAlocados.length}');
     for (final medicoId in medicosAlocados) {
-      final medico = medicos.firstWhere((m) => m.id == medicoId, orElse: () => Medico(id: '', nome: 'Desconhecido', especialidade: '', disponibilidades: []));
+      final medico = medicos.firstWhere((m) => m.id == medicoId,
+          orElse: () => Medico(
+              id: '',
+              nome: 'Desconhecido',
+              especialidade: '',
+              disponibilidades: []));
       debugPrint('  - ${medico.nome}');
     }
 
@@ -245,58 +302,71 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         debugPrint('❌ ${m.nome} está alocado, removendo da lista');
         return false;
       }
-      
+
       // Verifica se tem disponibilidade para o dia selecionado
       final disponibilidadesDoMedico = disponibilidades.where((d) {
         final dd = DateTime(d.data.year, d.data.month, d.data.day);
-        final sd = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        final sd =
+            DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
         return d.medicoId == m.id && dd == sd;
       }).toList();
-      
+
       if (disponibilidadesDoMedico.isEmpty) {
-        debugPrint('❌ ${m.nome} não tem disponibilidade para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
+        debugPrint(
+            '❌ ${m.nome} não tem disponibilidade para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
         return false;
       }
-      
-      debugPrint('✅ ${m.nome} tem ${disponibilidadesDoMedico.length} disponibilidade(s) para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
+
+      debugPrint(
+          '✅ ${m.nome} tem ${disponibilidadesDoMedico.length} disponibilidade(s) para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
       for (final disp in disponibilidadesDoMedico) {
         debugPrint('  - Horários: ${disp.horarios.join(', ')}');
       }
-      
+
       return true;
     }).toList();
-    
-          debugPrint('🎯 Médicos disponíveis finais: ${medicosDisponiveis.length}');
-      for (final medico in medicosDisponiveis) {
-        debugPrint('- ${medico.nome} (${medico.especialidade})');
-      }
-      
-      // Debug específico para o Dr. Francisco
-      final drFrancisco = medicosDisponiveis.where((m) => m.nome.toLowerCase().contains('francisco')).toList();
-      if (drFrancisco.isNotEmpty) {
-        debugPrint('✅ Dr. Francisco está na lista de médicos disponíveis!');
-      } else {
-        debugPrint('❌ Dr. Francisco NÃO está na lista de médicos disponíveis!');
-        debugPrint('🔍 Verificando por que...');
-        final todosMedicos = medicos.where((m) => m.nome.toLowerCase().contains('francisco')).toList();
-        if (todosMedicos.isNotEmpty) {
-          debugPrint('  - Dr. Francisco existe na lista geral de médicos');
-          final dispDrFrancisco = disponibilidades.where((d) => d.medicoId == todosMedicos.first.id).toList();
-          debugPrint('  - Disponibilidades do Dr. Francisco: ${dispDrFrancisco.length}');
-          for (final disp in dispDrFrancisco) {
-            debugPrint('    - ${disp.data.day}/${disp.data.month}/${disp.data.year} - Horários: ${disp.horarios.join(', ')}');
-          }
-        } else {
-          debugPrint('  - Dr. Francisco NÃO existe na lista geral de médicos!');
+
+    debugPrint('🎯 Médicos disponíveis finais: ${medicosDisponiveis.length}');
+    for (final medico in medicosDisponiveis) {
+      debugPrint('- ${medico.nome} (${medico.especialidade})');
+    }
+
+    // Debug específico para o Dr. Francisco
+    final drFrancisco = medicosDisponiveis
+        .where((m) => m.nome.toLowerCase().contains('francisco'))
+        .toList();
+    if (drFrancisco.isNotEmpty) {
+      debugPrint('✅ Dr. Francisco está na lista de médicos disponíveis!');
+    } else {
+      debugPrint('❌ Dr. Francisco NÃO está na lista de médicos disponíveis!');
+      debugPrint('🔍 Verificando por que...');
+      final todosMedicos = medicos
+          .where((m) => m.nome.toLowerCase().contains('francisco'))
+          .toList();
+      if (todosMedicos.isNotEmpty) {
+        debugPrint('  - Dr. Francisco existe na lista geral de médicos');
+        final dispDrFrancisco = disponibilidades
+            .where((d) => d.medicoId == todosMedicos.first.id)
+            .toList();
+        debugPrint(
+            '  - Disponibilidades do Dr. Francisco: ${dispDrFrancisco.length}');
+        for (final disp in dispDrFrancisco) {
+          debugPrint(
+              '    - ${disp.data.day}/${disp.data.month}/${disp.data.year} - Horários: ${disp.horarios.join(', ')}');
         }
+      } else {
+        debugPrint('  - Dr. Francisco NÃO existe na lista geral de médicos!');
       }
+    }
   }
 
   void _onDateChanged(DateTime newDate) {
-    print('🔄 _onDateChanged chamado com data: ${newDate.day}/${newDate.month}/${newDate.year}');
+    print(
+        '🔄 _onDateChanged chamado com data: ${newDate.day}/${newDate.month}/${newDate.year}');
     setState(() {
       selectedDate = newDate;
-      print('📅 Data selecionada atualizada para: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
+      print(
+          '📅 Data selecionada atualizada para: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
       _verificarClinicaFechada();
       _atualizarMedicosDisponiveis();
     });
@@ -613,9 +683,41 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
             Expanded(
               child: clinicaFechada
                   ? Center(
-                      child: Text(
-                        mensagemClinicaFechada,
-                        style: const TextStyle(fontSize: 18),
+                      child: Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.block,
+                              size: 64,
+                              color: Colors.red.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Clínica Encerrada!',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              mensagemClinicaFechada,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.red.shade600,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
                     )
                   : _buildEmptyStateOrContent(),

@@ -11,10 +11,10 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  
+
   // Debug temporário - remover depois
   await debugFirebase();
-  
+
   runApp(const MyApp());
 }
 
@@ -33,11 +33,11 @@ class MyApp extends StatelessWidget {
 }
 
 class MyAppTheme {
-  static const Color azulEscuro = Color(0xFF1565C0); // Azul Escuro; // Azul Escuro
+  static const Color azulEscuro =
+      Color(0xFF1565C0); // Azul Escuro; // Azul Escuro
   static const Color azulClaro = Color(0xFF42A5F5); // Azul Claro
   static const Color roxo = Color(0xFF7E57C2); // Roxo
-  static Color cinzento = Colors.grey.shade200;// Roxo
-
+  static Color cinzento = Colors.grey.shade200; // Roxo
 
   static final ThemeData themeData = ThemeData(
     useMaterial3: true,

@@ -83,12 +83,40 @@ class CadastroMedicoState extends State<CadastroMedico> {
           .collection('disponibilidades');
     }
 
-    final snapshot = await disponibilidadesRef.get();
+    // Carrega disponibilidades da nova estrutura por ano
+    final disponibilidades = <Disponibilidade>[];
+    
+    // Carrega apenas o ano atual por padrão (otimização)
+    final anoAtual = DateTime.now().year.toString();
+    final anoRef = disponibilidadesRef.doc(anoAtual);
+    final registosRef = anoRef.collection('registos');
+    
+    try {
+      final registosSnapshot = await registosRef.get();
+      for (final doc in registosSnapshot.docs) {
+        final data = doc.data();
+        disponibilidades.add(Disponibilidade.fromMap(data));
+      }
+      print('📊 Disponibilidades carregadas para edição: ${disponibilidades.length} (ano: $anoAtual)');
+    } catch (e) {
+      print('⚠️ Erro ao carregar disponibilidades do ano $anoAtual: $e');
+      // Fallback: tenta carregar de todos os anos
+      final anosSnapshot = await disponibilidadesRef.get();
+      for (final anoDoc in anosSnapshot.docs) {
+        final registosRef = anoDoc.reference.collection('registos');
+        final registosSnapshot = await registosRef.get();
+        for (final doc in registosSnapshot.docs) {
+          final data = doc.data();
+          disponibilidades.add(Disponibilidade.fromMap(data));
+        }
+      }
+      print('📊 Disponibilidades carregadas (fallback): ${disponibilidades.length}');
+    }
+    
     setState(() {
-      disponibilidades = snapshot.docs
-          .map((doc) =>
-              Disponibilidade.fromMap(doc.data() as Map<String, dynamic>))
-          .toList();
+      this.disponibilidades = disponibilidades;
+      // Atualiza os dias selecionados baseado nas disponibilidades carregadas
+      diasSelecionados = disponibilidades.map((d) => d.data).toList();
       isLoadingDisponibilidades = false;
     });
   }
@@ -174,6 +202,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registo salvo com sucesso!')),
       );
+      // Retorna true para indicar que foi salvo com sucesso
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -257,8 +287,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                           ),
                                           IconButton(
                                             onPressed: () async {
-                                              await _salvarMedico();
-                                              _criarNovo();
+                                              try {
+                                                await _salvarMedico();
+                                                _criarNovo();
+                                              } catch (e) {
+                                                // Não faz pop se der erro
+                                                print('Erro ao salvar e adicionar novo: $e');
+                                              }
                                             },
                                             icon: const Icon(Icons.add,
                                                 color: Colors.green),

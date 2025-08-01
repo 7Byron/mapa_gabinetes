@@ -3,70 +3,97 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-Future<void> debugFirebase() async {
-  print('🔍 === DEBUG FIREBASE ===');
+void main() async {
+  print('🔍 === DEBUG ESPECÍFICO DR. FRANCISCO ===');
+
+  final firestore = FirebaseFirestore.instance;
+  final unidadeId = 'fyEj6kOXvCuL65sMfCaR'; // ID da unidade que vi nos logs
 
   try {
-    final firestore = FirebaseFirestore.instance;
+    // 1. Verificar se a unidade existe
+    print('📋 Verificando unidade: $unidadeId');
+    final unidadeDoc =
+        await firestore.collection('unidades').doc(unidadeId).get();
+    if (!unidadeDoc.exists) {
+      print('❌ Unidade $unidadeId não encontrada!');
+      return;
+    }
+    print('✅ Unidade encontrada: ${unidadeDoc.data()?['nome']}');
 
-    // 1. Verificar se a coleção 'unidades' existe
-    print('📂 Verificando coleção "unidades"...');
-    final unidadesSnapshot = await firestore.collection('unidades').get();
-    print(
-        '📊 Total de documentos na coleção "unidades": ${unidadesSnapshot.docs.length}');
+    // 2. Verificar médicos da unidade
+    print('\n👥 Verificando médicos da unidade...');
+    final medicosRef =
+        firestore.collection('unidades').doc(unidadeId).collection('ocupantes');
 
-    // 2. Listar todos os documentos
-    for (final doc in unidadesSnapshot.docs) {
-      print('📄 Documento ID: ${doc.id}');
-      print('📄 Dados: ${doc.data()}');
-      print('---');
+    final medicosSnapshot = await medicosRef.get();
+    print('📊 Total de médicos encontrados: ${medicosSnapshot.docs.length}');
+
+    for (final medicoDoc in medicosSnapshot.docs) {
+      final medicoData = medicoDoc.data();
+      final medicoNome = medicoData['nome'] ?? 'Sem nome';
+      final medicoId = medicoDoc.id;
+
+      print('👨‍⚕️ Médico: $medicoNome (ID: $medicoId)');
+
+      // 3. Verificar disponibilidades do médico
+      final disponibilidadesRef =
+          medicoDoc.reference.collection('disponibilidades');
+      final dispSnapshot = await disponibilidadesRef.get();
+      print('  📅 Disponibilidades: ${dispSnapshot.docs.length}');
+
+      for (final dispDoc in dispSnapshot.docs) {
+        final dispData = dispDoc.data();
+        final data = DateTime.parse(dispData['data']);
+        final horarios = List<String>.from(dispData['horarios'] ?? []);
+        final tipo = dispData['tipo'] ?? 'Desconhecido';
+
+        print(
+            '    - ${data.day}/${data.month}/${data.year} ($tipo) - Horários: ${horarios.join(', ')}');
+      }
     }
 
-    // 3. Verificar documentos com ativa = true
-    print('✅ Verificando documentos com ativa = true...');
-    final ativasSnapshot = await firestore
-        .collection('unidades')
-        .where('ativa', isEqualTo: true)
-        .get();
-    print('📊 Documentos ativos: ${ativasSnapshot.docs.length}');
+    // 4. Verificar especificamente o Dr. Francisco
+    print('\n🔍 Procurando especificamente pelo Dr. Francisco...');
+    final drFranciscoDocs = medicosSnapshot.docs.where((doc) {
+      final nome = doc.data()['nome'] ?? '';
+      return nome.toLowerCase().contains('francisco');
+    }).toList();
 
-    for (final doc in ativasSnapshot.docs) {
-      print('✅ Ativa - ID: ${doc.id}');
-      print('✅ Dados: ${doc.data()}');
-      print('---');
+    if (drFranciscoDocs.isEmpty) {
+      print('❌ Dr. Francisco não encontrado na unidade!');
+    } else {
+      print('✅ Dr. Francisco encontrado!');
+      for (final doc in drFranciscoDocs) {
+        final data = doc.data();
+        print('  - Nome: ${data['nome']}');
+        print('  - Especialidade: ${data['especialidade']}');
+        print('  - ID: ${doc.id}');
+
+        // Verificar disponibilidades específicas para 29/7/2025
+        final disponibilidadesRef =
+            doc.reference.collection('disponibilidades');
+        final dispSnapshot = await disponibilidadesRef.get();
+
+        print('  📅 Total de disponibilidades: ${dispSnapshot.docs.length}');
+
+        for (final dispDoc in dispSnapshot.docs) {
+          final dispData = dispDoc.data();
+          final data = DateTime.parse(dispData['data']);
+          final horarios = List<String>.from(dispData['horarios'] ?? []);
+
+          print(
+              '    - ${data.day}/${data.month}/${data.year} - Horários: ${horarios.join(', ')}');
+
+          // Verificar especificamente 29/7/2025
+          if (data.day == 29 && data.month == 7 && data.year == 2025) {
+            print('    🎯 ENCONTRADA DISPONIBILIDADE PARA 29/7/2025!');
+          }
+        }
+      }
     }
-
-    // 4. Verificar documentos com ativa = false
-    print('❌ Verificando documentos com ativa = false...');
-    final inativasSnapshot = await firestore
-        .collection('unidades')
-        .where('ativa', isEqualTo: false)
-        .get();
-    print('📊 Documentos inativos: ${inativasSnapshot.docs.length}');
-
-    for (final doc in inativasSnapshot.docs) {
-      print('❌ Inativa - ID: ${doc.id}');
-      print('❌ Dados: ${doc.data()}');
-      print('---');
-    }
-
-    // 5. Verificar documentos sem campo 'ativa'
-    print('❓ Verificando documentos sem campo "ativa"...');
-    final semAtivaSnapshot = await firestore.collection('unidades').get();
-
-    final semAtiva = semAtivaSnapshot.docs
-        .where((doc) => !doc.data().containsKey('ativa'))
-        .toList();
-    print('📊 Documentos sem campo "ativa": ${semAtiva.length}');
-
-    for (final doc in semAtiva) {
-      print('❓ Sem ativa - ID: ${doc.id}');
-      print('❓ Dados: ${doc.data()}');
-      print('---');
-    }
-
-    print('🔍 === FIM DEBUG FIREBASE ===');
   } catch (e) {
-    print('❌ Erro no debug: $e');
+    print('❌ Erro durante debug: $e');
   }
+
+  print('\n🔍 === FIM DEBUG ESPECÍFICO ===');
 }

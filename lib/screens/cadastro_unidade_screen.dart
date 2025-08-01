@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import '../models/unidade.dart';
 import '../services/unidade_service.dart';
+import '../services/password_service.dart';
 
 class CadastroUnidadeScreen extends StatefulWidget {
   final Unidade? unidade;
@@ -24,23 +25,21 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
   final _tipoController = TextEditingController();
   final _nomeOcupantesController = TextEditingController();
   final _nomeAlocacaoController = TextEditingController();
+  final _passwordProjetoController = TextEditingController();
+  final _passwordAdminController = TextEditingController();
+
   bool _isLoading = false;
+  bool _showProjectPassword = false;
+  bool _showAdminPassword = false;
   List<String> _tiposExistentes = [];
 
   @override
   void initState() {
     super.initState();
-    _carregarTiposExistentes();
-    if (widget.unidade != null) {
-      _nomeController.text = widget.unidade!.nome;
-      _enderecoController.text = widget.unidade!.endereco;
-      _telefoneController.text = widget.unidade!.telefone ?? '';
-      _emailController.text = widget.unidade!.email ?? '';
-      _tipoController.text = widget.unidade!.tipo;
-      _nomeOcupantesController.text = widget.unidade!.nomeOcupantes;
-      _nomeAlocacaoController.text = widget.unidade!.nomeAlocacao;
-    } else {
-      // Valores padrão para nova unidade
+    _carregarDadosUnidade();
+
+    // Valores padrão para nova unidade
+    if (widget.unidade == null) {
       _nomeOcupantesController.text = 'Médicos';
       _nomeAlocacaoController.text = 'Gabinete';
     }
@@ -57,6 +56,58 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     }
   }
 
+  Future<void> _carregarDadosUnidade() async {
+    if (widget.unidade == null) return;
+
+    try {
+      print('🔄 Carregando dados da unidade: ${widget.unidade!.id}');
+
+      // Carregar dados básicos da unidade
+      _nomeController.text = widget.unidade!.nome;
+      _tipoController.text = widget.unidade!.tipo;
+      _enderecoController.text = widget.unidade!.endereco;
+      _telefoneController.text = widget.unidade!.telefone ?? '';
+      _emailController.text = widget.unidade!.email ?? '';
+      _nomeOcupantesController.text = widget.unidade!.nomeOcupantes;
+      _nomeAlocacaoController.text = widget.unidade!.nomeAlocacao;
+
+      // Carregar passwords do documento da unidade
+      print('🔐 Carregando passwords do documento da unidade...');
+      final projectPassword = await PasswordService.getProjectPassword(
+          unidadeId: widget.unidade!.id);
+      final adminPassword =
+          await PasswordService.getAdminPassword(unidadeId: widget.unidade!.id);
+
+      if (projectPassword != null) {
+        _passwordProjetoController.text = projectPassword;
+        print(
+            '✅ Password do projeto carregada: ${projectPassword.length} caracteres');
+      } else {
+        print('⚠️ Password do projeto não encontrada');
+      }
+
+      if (adminPassword != null) {
+        _passwordAdminController.text = adminPassword;
+        print(
+            '✅ Password do administrador carregada: ${adminPassword.length} caracteres');
+      } else {
+        print('⚠️ Password do administrador não encontrada');
+      }
+
+      print('✅ Dados da unidade carregados com sucesso');
+    } catch (e) {
+      print('❌ Erro ao carregar dados da unidade: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao carregar dados da unidade: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nomeController.dispose();
@@ -66,20 +117,93 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     _tipoController.dispose();
     _nomeOcupantesController.dispose();
     _nomeAlocacaoController.dispose();
+    _passwordProjetoController.dispose();
+    _passwordAdminController.dispose();
     super.dispose();
   }
 
   Future<void> _salvarUnidade() async {
-    if (!_formKey.currentState!.validate()) return;
+    // Validar todos os campos obrigatórios
+    if (!_formKey.currentState!.validate()) {
+      print('❌ Validação do formulário falhou');
+      return;
+    }
+
+    // Validação adicional manual para garantir que todos os campos obrigatórios estão preenchidos
+    final tipo = _tipoController.text.trim();
+    final nome = _nomeController.text.trim();
+    final endereco = _enderecoController.text.trim();
+    final passwordProjeto = _passwordProjetoController.text.trim();
+    final passwordAdmin = _passwordAdminController.text.trim();
+    final nomeOcupantes = _nomeOcupantesController.text.trim();
+    final nomeAlocacao = _nomeAlocacaoController.text.trim();
+
+    // Verificar se todos os campos obrigatórios estão preenchidos
+    if (tipo.isEmpty ||
+        nome.isEmpty ||
+        endereco.isEmpty ||
+        passwordProjeto.isEmpty ||
+        passwordAdmin.isEmpty ||
+        nomeOcupantes.isEmpty ||
+        nomeAlocacao.isEmpty) {
+      List<String> camposFaltantes = [];
+      if (tipo.isEmpty) camposFaltantes.add('Tipo de Unidade');
+      if (nome.isEmpty) camposFaltantes.add('Nome da Unidade');
+      if (endereco.isEmpty) camposFaltantes.add('Endereço');
+      if (passwordProjeto.isEmpty) camposFaltantes.add('Password do Projeto');
+      if (passwordAdmin.isEmpty) {
+        camposFaltantes.add('Password do Administrador');
+      }
+      if (nomeOcupantes.isEmpty) camposFaltantes.add('Nome dos Ocupantes');
+      if (nomeAlocacao.isEmpty) camposFaltantes.add('Nome da Alocação');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Campos obrigatórios não preenchidos: ${camposFaltantes.join(', ')}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      print(
+          '❌ Campos obrigatórios não preenchidos: ${camposFaltantes.join(', ')}');
+      return;
+    }
+
+    // Verificar se as passwords têm pelo menos 3 caracteres
+    if (passwordProjeto.length < 3 || passwordAdmin.length < 3) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('As passwords devem ter pelo menos 3 caracteres'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      print('❌ Passwords muito curtas');
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
+      print('💾 Iniciando salvamento da unidade...');
+      print('📋 Dados a salvar:');
+      print('   - Tipo: $tipo');
+      print('   - Nome: $nome');
+      print('   - Endereço: $endereco');
+      print('   - Password Projeto: ${passwordProjeto.length} caracteres');
+      print('   - Password Admin: ${passwordAdmin.length} caracteres');
+      print('   - Ocupantes: $nomeOcupantes');
+      print('   - Alocação: $nomeAlocacao');
+
       final unidade = Unidade(
         id: widget.unidade?.id ?? '',
-        nome: _nomeController.text.trim(),
-        tipo: _tipoController.text.trim(),
-        endereco: _enderecoController.text.trim(),
+        nome: nome,
+        tipo: tipo,
+        endereco: endereco,
         telefone: _telefoneController.text.trim().isEmpty
             ? null
             : _telefoneController.text.trim(),
@@ -88,21 +212,60 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
             : _emailController.text.trim(),
         dataCriacao: widget.unidade?.dataCriacao ?? DateTime.now(),
         ativa: widget.unidade?.ativa ?? true,
-        nomeOcupantes: _nomeOcupantesController.text.trim(),
-        nomeAlocacao: _nomeAlocacaoController.text.trim(),
+        nomeOcupantes: nomeOcupantes,
+        nomeAlocacao: nomeAlocacao,
       );
 
       bool sucesso;
+      String? unidadeId;
       if (widget.unidade == null) {
         // Criar nova unidade
-        final id = await UnidadeService.criarUnidade(unidade);
-        sucesso = id != null;
+        print('🆕 Criando nova unidade...');
+        unidadeId = await UnidadeService.criarUnidade(unidade);
+        sucesso = unidadeId != null;
+
+        // Se criou com sucesso, salva as passwords com o novo ID
+        if (sucesso) {
+          print('✅ Unidade criada com ID: $unidadeId');
+          print('🔐 Salvando passwords no Firebase...');
+          print('   - Unidade ID para passwords: $unidadeId');
+          print('   - Password projeto: ${passwordProjeto.length} caracteres');
+          print('   - Password admin: ${passwordAdmin.length} caracteres');
+
+          await PasswordService.saveProjectPassword(passwordProjeto,
+              unidadeId: unidadeId);
+          await PasswordService.saveAdminPassword(passwordAdmin,
+              unidadeId: unidadeId);
+          print('✅ Passwords salvas com o novo ID da unidade');
+        }
       } else {
         // Atualizar unidade existente
+        print('🔄 Atualizando unidade existente...');
+        print('   - Unidade ID existente: ${widget.unidade!.id}');
         sucesso = await UnidadeService.atualizarUnidade(unidade);
+        unidadeId = widget.unidade!.id;
+
+        // Se atualizou com sucesso, salva as passwords
+        if (sucesso) {
+          print('✅ Unidade atualizada com sucesso');
+          print('🔐 Salvando passwords no Firebase...');
+          print('   - Unidade ID para passwords: $unidadeId');
+          print('   - Password projeto: ${passwordProjeto.length} caracteres');
+          print('   - Password admin: ${passwordAdmin.length} caracteres');
+
+          await PasswordService.saveProjectPassword(passwordProjeto,
+              unidadeId: unidadeId);
+          await PasswordService.saveAdminPassword(passwordAdmin,
+              unidadeId: unidadeId);
+          print('✅ Passwords salvas no Firebase');
+        }
       }
 
+      // Marcar que não é mais a primeira vez
+      await PasswordService.markAsNotFirstTime();
+
       if (sucesso) {
+        print('✅ Unidade salva com sucesso!');
         if (mounted) {
           Navigator.pop(context, true);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -120,6 +283,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
         throw Exception('Erro ao salvar unidade');
       }
     } catch (e) {
+      print('❌ Erro ao salvar unidade: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -135,6 +299,67 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     }
   }
 
+  Future<void> _desativarUnidade() async {
+    if (widget.unidade == null) return;
+
+    final confirmacao = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Desativação'),
+        content: Text(
+          'Tem certeza que deseja desativar a unidade "${widget.unidade!.nome}"?\n\n'
+          'Esta ação pode ser revertida posteriormente editando a unidade.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Desativar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmacao == true) {
+      setState(() => _isLoading = true);
+
+      try {
+        await UnidadeService.desativarUnidade(widget.unidade!.id);
+
+        if (mounted) {
+          Navigator.pop(context, true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Unidade "${widget.unidade!.nome}" desativada com sucesso'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao desativar unidade: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEditando = widget.unidade != null;
@@ -145,293 +370,275 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
         backgroundColor: MyAppTheme.azulEscuro,
         foregroundColor: Colors.white,
         elevation: 0,
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Tipo de unidade
-            TextFormField(
-              controller: _tipoController,
-              decoration: const InputDecoration(
-                labelText: 'Tipo de Unidade *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.business),
-                hintText: 'Ex: Clínica, Hospital, Centro Médico...',
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Digite o tipo de unidade';
-                }
-                return null;
-              },
+        actions: [
+          // Botão de desativar apenas quando estiver a editar
+          if (isEditando && widget.unidade!.ativa)
+            IconButton(
+              onPressed: _isLoading ? null : _desativarUnidade,
+              icon: const Icon(Icons.block, color: Colors.orange),
+              tooltip: 'Desativar Unidade',
             ),
-
-            // Sugestões de tipos existentes
-            if (_tiposExistentes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Tipo de unidade
+                TextFormField(
+                  controller: _tipoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de Unidade *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.business),
+                    hintText: 'Ex: Clínica, Hospital, Centro Médico...',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite o tipo de unidade';
+                    }
+                    return null;
+                  },
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                const SizedBox(height: 16),
+
+                // Nome da unidade
+                TextFormField(
+                  controller: _nomeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome da Unidade *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.business_center),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite o nome da unidade';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Endereço
+                TextFormField(
+                  controller: _enderecoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Endereço *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.location_on),
+                  ),
+                  maxLines: 2,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite o endereço da unidade';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Telefone
+                TextFormField(
+                  controller: _telefoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Telefone',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.phone, color: Colors.grey),
+                    hintText: 'Ex: 351 999999999',
+                  ),
+                  keyboardType: TextInputType.phone,
+                ),
+
+                const SizedBox(height: 16),
+
+                // Email
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.email, color: Colors.grey),
+                    hintText: 'unidade@exemplo.com',
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty) {
+                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                          .hasMatch(value)) {
+                        return 'Digite um email válido';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Divider
+                const Divider(
+                  thickness: 1,
+                  color: Colors.grey,
+                ),
+
+                const SizedBox(height: 16),
+
+                // Nome dos Ocupantes
+                TextFormField(
+                  controller: _nomeOcupantesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome dos Ocupantes *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.people),
+                    hintText: 'Ex: Médicos, Convidados, Clientes, etc...',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite o nome dos ocupantes';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Nome da Alocação
+                TextFormField(
+                  controller: _nomeAlocacaoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome da Alocação *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.room),
+                    hintText: 'Ex: Gabinete, Quarto, Mesa, etc...',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite o nome da alocação';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Password do Projeto
+                TextFormField(
+                  controller: _passwordProjetoController,
+                  decoration: InputDecoration(
+                    labelText: 'Password do Projeto *',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.lock),
+                    hintText: 'Digite a password do projeto',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showProjectPassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _showProjectPassword = !_showProjectPassword;
+                        });
+                      },
+                    ),
+                  ),
+                  obscureText: !_showProjectPassword,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite a password do projeto';
+                    }
+                    if (value.trim().length < 3) {
+                      return 'A password deve ter pelo menos 3 caracteres';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Password do Administrador
+                TextFormField(
+                  controller: _passwordAdminController,
+                  decoration: InputDecoration(
+                    labelText: 'Password do Administrador *',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.admin_panel_settings),
+                    hintText: 'Digite a password do administrador',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showAdminPassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _showAdminPassword = !_showAdminPassword;
+                        });
+                      },
+                    ),
+                  ),
+                  obscureText: !_showAdminPassword,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Digite a password do administrador';
+                    }
+                    if (value.trim().length < 3) {
+                      return 'A password deve ter pelo menos 3 caracteres';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 32),
+
+                // Botões
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.lightbulb_outline,
-                            color: Colors.blue[700], size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Tipos existentes:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
-                          ),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed:
+                            _isLoading ? null : () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                      ],
+                        child: const Text('Cancelar'),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: _tiposExistentes.map((tipo) {
-                        return InkWell(
-                          onTap: () {
-                            _tipoController.text = tipo;
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[100],
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.blue[300]!),
-                            ),
-                            child: Text(
-                              tipo,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue[700],
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Toque em um tipo para selecioná-lo, ou digite um novo tipo',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.blue[600],
-                        fontStyle: FontStyle.italic,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _salvarUnidade,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: MyAppTheme.azulEscuro,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                ),
+                              )
+                            : Text(isEditando ? 'Atualizar' : 'Criar'),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-
-            const SizedBox(height: 16),
-
-            // Nome da unidade
-            TextFormField(
-              controller: _nomeController,
-              decoration: const InputDecoration(
-                labelText: 'Nome da Unidade *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.business_center),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Digite o nome da unidade';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            // Endereço
-            TextFormField(
-              controller: _enderecoController,
-              decoration: const InputDecoration(
-                labelText: 'Endereço *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.location_on),
-              ),
-              maxLines: 2,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Digite o endereço da unidade';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            // Telefone
-            TextFormField(
-              controller: _telefoneController,
-              decoration: const InputDecoration(
-                labelText: 'Telefone (opcional)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.phone),
-                hintText: '(11) 99999-9999',
-              ),
-              keyboardType: TextInputType.phone,
-            ),
-
-            const SizedBox(height: 16),
-
-            // Email
-            TextFormField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email (opcional)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.email),
-                hintText: 'unidade@exemplo.com',
-              ),
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                if (value != null && value.isNotEmpty) {
-                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                      .hasMatch(value)) {
-                    return 'Digite um email válido';
-                  }
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            // Nome dos Ocupantes
-            TextFormField(
-              controller: _nomeOcupantesController,
-              decoration: const InputDecoration(
-                labelText: 'Nome dos Ocupantes *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.people),
-                hintText: 'Ex: Médicos, Convidados, Clientes, etc...',
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Digite o nome dos ocupantes';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            // Nome da Alocação
-            TextFormField(
-              controller: _nomeAlocacaoController,
-              decoration: const InputDecoration(
-                labelText: 'Nome da Alocação *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.room),
-                hintText: 'Ex: Gabinete, Quarto, Mesa, etc...',
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Digite o nome da alocação';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 32),
-
-            // Botões
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _isLoading ? null : () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text('Cancelar'),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _salvarUnidade,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: MyAppTheme.azulEscuro,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : Text(isEditando ? 'Atualizar' : 'Criar'),
-                  ),
-                ),
               ],
             ),
-
-            const SizedBox(height: 16),
-
-            // Informações adicionais
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info, color: Colors.blue[700]),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Informações',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '• Campos marcados com * são obrigatórios\n'
-                    '• A unidade será criada como ativa por padrão\n'
-                    '• Você pode desativar a unidade posteriormente\n'
-                    '• Todos os dados da unidade ficarão isolados',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue[700],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

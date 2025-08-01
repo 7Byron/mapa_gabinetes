@@ -51,24 +51,58 @@ class RelatoriosService {
   }
 
   /// Busca horários da clínica no Firestore
-  static Future<Map<int, List<String>>> _carregarHorariosMap() async {
+  static Future<Map<int, List<String>>> _carregarHorariosMap({String? unidadeId}) async {
     final firestore = FirebaseFirestore.instance;
-    final snap = await firestore.collection('horarios_clinica').get();
+    CollectionReference horariosRef;
+    
+    if (unidadeId != null) {
+      horariosRef = firestore
+          .collection('unidades')
+          .doc(unidadeId)
+          .collection('horarios_clinica');
+    } else {
+      horariosRef = firestore.collection('horarios_clinica');
+    }
+    
+    final snap = await horariosRef.get();
     final map = <int, List<String>>{};
     for (final doc in snap.docs) {
-      final ds = doc['diaSemana'] as int;
-      final ab = doc['horaAbertura'] as String;
-      final fe = doc['horaFecho'] as String;
+      final data = doc.data() as Map<String, dynamic>;
+      final ds = data['diaSemana'] as int;
+      final ab = data['horaAbertura'] as String;
+      final fe = data['horaFecho'] as String;
       map[ds] = [ab, fe];
     }
     return map;
   }
 
-  /// Busca feriados no Firestore
-  static Future<List<Map<String, dynamic>>> _carregarFeriados() async {
+  /// Busca feriados no Firestore (nova estrutura por ano)
+  static Future<List<Map<String, dynamic>>> _carregarFeriados({String? unidadeId}) async {
     final firestore = FirebaseFirestore.instance;
-    final snap = await firestore.collection('feriados').get();
-    return snap.docs.map((d) => d.data()).toList();
+    CollectionReference feriadosRef;
+    
+    if (unidadeId != null) {
+      feriadosRef = firestore
+          .collection('unidades')
+          .doc(unidadeId)
+          .collection('feriados');
+    } else {
+      feriadosRef = firestore.collection('feriados');
+    }
+    
+    // Para relatórios, carrega todos os anos para ter dados completos
+    final anosSnapshot = await feriadosRef.get();
+    final feriados = <Map<String, dynamic>>[];
+    
+    for (final anoDoc in anosSnapshot.docs) {
+      final registosRef = anoDoc.reference.collection('registos');
+      final registosSnapshot = await registosRef.get();
+      for (final doc in registosSnapshot.docs) {
+        feriados.add(doc.data() as Map<String, dynamic>);
+      }
+    }
+    
+    return feriados;
   }
 
   /// Busca alocações no Firestore
@@ -79,22 +113,36 @@ class RelatoriosService {
   }
 
   /// Busca gabinetes no Firestore
-  static Future<List<Map<String, dynamic>>> _carregarGabinetes() async {
+  static Future<List<Map<String, dynamic>>> _carregarGabinetes({String? unidadeId}) async {
     final firestore = FirebaseFirestore.instance;
-    final snap = await firestore.collection('gabinetes').get();
-    return snap.docs.map((d) => d.data()).toList();
+    CollectionReference gabinetesRef;
+    
+    if (unidadeId != null) {
+      // Busca gabinetes da unidade específica
+      gabinetesRef = firestore
+          .collection('unidades')
+          .doc(unidadeId)
+          .collection('gabinetes');
+    } else {
+      // Busca todos os gabinetes (fallback para compatibilidade)
+      gabinetesRef = firestore.collection('gabinetes');
+    }
+    
+    final snap = await gabinetesRef.get();
+    return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
   }
 
   /// ========== 1) Taxa Geral de todos os gabinetes ============================
   static Future<double> taxaOcupacaoGeral({
     required DateTime inicio,
     required DateTime fim,
+    String? unidadeId,
   }) async {
     // Carrega alocações
     final alocacoes = await _carregarAlocacoes();
     // Carrega horários e feriados do Firestore
-    final horariosMap = await _carregarHorariosMap();
-    final feriados = await _carregarFeriados();
+    final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(unidadeId: unidadeId);
 
     // Filtra as alocações no intervalo
     final alocFiltradas = alocacoes.where((a) {
@@ -144,9 +192,10 @@ class RelatoriosService {
     required DateTime inicio,
     required DateTime fim,
     required String setor,
+    String? unidadeId,
   }) async {
     // Carrega gabinetes para saber quais IDs pertencem a esse setor
-    final gabinetes = await _carregarGabinetes();
+    final gabinetes = await _carregarGabinetes(unidadeId: unidadeId);
     final gabIds = gabinetes
         .where((g) => g['setor'] == setor)
         .map((g) => g['id'])
@@ -154,8 +203,8 @@ class RelatoriosService {
 
     // Carrega alocações + horários + feriados
     final alocacoes = await _carregarAlocacoes();
-    final horariosMap = await _carregarHorariosMap();
-    final feriados = await _carregarFeriados();
+    final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(unidadeId: unidadeId);
 
     // Filtra alocações do período E desses gabinetes
     final alocFiltradas = alocacoes.where((a) {
@@ -206,11 +255,12 @@ class RelatoriosService {
     required DateTime inicio,
     required DateTime fim,
     required String gabineteId,
+    String? unidadeId,
   }) async {
     // Carrega alocações
     final alocacoes = await _carregarAlocacoes();
-    final horariosMap = await _carregarHorariosMap();
-    final feriados = await _carregarFeriados();
+    final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(unidadeId: unidadeId);
 
     // Filtra só as do gabinete e do período
     final alocFiltradas = alocacoes.where((a) {
@@ -259,17 +309,18 @@ class RelatoriosService {
     required DateTime inicio,
     required DateTime fim,
     required String especialidadeProcurada,
+    String? unidadeId,
   }) async {
     // Carrega gabinetes => filtra os que contêm essa especialidade
-    final gabinetes = await _carregarGabinetes();
+    final gabinetes = await _carregarGabinetes(unidadeId: unidadeId);
     final gabIds = gabinetes
         .where((g) => (g['especialidadesPermitidas'] as List).contains(especialidadeProcurada))
         .map((g) => g['id'])
         .toSet();
 
     final alocacoes = await _carregarAlocacoes();
-    final horariosMap = await _carregarHorariosMap();
-    final feriados = await _carregarFeriados();
+    final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(unidadeId: unidadeId);
 
     final alocFiltradas = alocacoes.where((a) {
       final dataOk = !DateTime.parse(a['data']).isBefore(inicio) && !DateTime.parse(a['data']).isAfter(fim);

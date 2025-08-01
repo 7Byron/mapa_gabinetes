@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
+import '../models/unidade.dart';
+import '../services/gabinete_service.dart';
 
 class CadastroGabinete extends StatefulWidget {
   final Gabinete? gabinete;
+  final Unidade? unidade;
 
-  const CadastroGabinete({super.key, this.gabinete});
+  const CadastroGabinete({super.key, this.gabinete, this.unidade});
 
   @override
   CadastroGabineteState createState() => CadastroGabineteState();
@@ -36,18 +39,26 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   Future<void> _carregarDados() async {
     try {
       // Carrega setores existentes dos gabinetes
-      final gabinetesSnapshot =
-          await FirebaseFirestore.instance.collection('gabinetes').get();
-      final setores = gabinetesSnapshot.docs
-          .map((doc) => doc.data()['setor'] as String)
+      final gabinetes = await buscarGabinetes(unidade: widget.unidade);
+      final setores = gabinetes
+          .map((gabinete) => gabinete.setor)
           .toSet()
           .toList();
 
-      // Carrega especialidades existentes
-      final medicosSnapshot =
-          await FirebaseFirestore.instance.collection('medicos').get();
+      // Carrega especialidades existentes dos médicos
+      CollectionReference medicosRef;
+      if (widget.unidade != null) {
+        medicosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('ocupantes');
+      } else {
+        medicosRef = FirebaseFirestore.instance.collection('medicos');
+      }
+      
+      final medicosSnapshot = await medicosRef.get();
       final especialidades = medicosSnapshot.docs
-          .map((doc) => doc.data()['especialidade'] as String)
+          .map((doc) => (doc.data() as Map<String, dynamic>)['especialidade'] as String)
           .toSet()
           .toList();
 
@@ -63,6 +74,10 @@ class CadastroGabineteState extends State<CadastroGabinete> {
   }
 
   Future<void> _salvarGabinete() async {
+    await _salvarGabineteInterno();
+  }
+
+  Future<void> _salvarGabineteInterno({bool voltar = true}) async {
     // Verifica se o campo de setor está preenchido
     if (_setorController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,11 +113,8 @@ class CadastroGabineteState extends State<CadastroGabinete> {
         final gabineteMap = gabinete.toMap();
         debugPrint('Dados a salvar: $gabineteMap');
 
-        // Salva no Firestore
-        await FirebaseFirestore.instance
-            .collection('gabinetes')
-            .doc(gabineteId)
-            .set(gabineteMap);
+        // Salva no Firestore usando o serviço
+        await salvarGabineteCompleto(gabinete, unidade: widget.unidade);
 
         debugPrint('Gabinete salvo com sucesso no Firestore');
 
@@ -113,8 +125,8 @@ class CadastroGabineteState extends State<CadastroGabinete> {
           ),
         );
 
-        // Se for edição, volta para a tela anterior
-        if (widget.gabinete != null) {
+        // Volta para a tela anterior apenas se solicitado
+        if (voltar) {
           Navigator.pop(context, true);
         }
       } catch (e) {
@@ -227,7 +239,7 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                             ),
                             IconButton(
                               onPressed: () async {
-                                await _salvarGabinete();
+                                await _salvarGabineteInterno(voltar: false);
                                 _criarNovo();
                               },
                               icon: const Icon(Icons.add, color: Colors.green),

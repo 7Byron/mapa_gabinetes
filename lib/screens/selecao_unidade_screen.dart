@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import '../models/unidade.dart';
 import '../services/unidade_service.dart';
+import '../services/password_service.dart';
 import 'cadastro_unidade_screen.dart';
-import 'alocacao_medicos_screen.dart';
+import 'login_screen.dart';
 
 class SelecaoUnidadeScreen extends StatefulWidget {
   const SelecaoUnidadeScreen({super.key});
@@ -56,10 +57,10 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
   }
 
   void _selecionarUnidade(Unidade unidade) {
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AlocacaoMedicos(unidade: unidade),
+        builder: (context) => LoginScreen(unidade: unidade),
       ),
     );
   }
@@ -77,7 +78,47 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
     }
   }
 
-  void _editarUnidade(Unidade unidade) async {
+  Future<void> _editarUnidade(Unidade unidade) async {
+    // Verificar se há passwords configuradas no Firebase
+    final hasPasswords =
+        await PasswordService.hasPasswordsConfigured(unidadeId: unidade.id);
+
+    if (hasPasswords) {
+      // Se há passwords configuradas, pede a password do administrador
+      final password = await _solicitarPasswordAdmin();
+      if (password == null) return; // Usuário cancelou
+
+      // Verificar se a password está correta
+      final isValid = await PasswordService.verifyAdminPassword(password,
+          unidadeId: unidade.id);
+      if (!isValid) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Password do administrador incorreta'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+    } else {
+      // Se não há passwords configuradas, permite editar sem verificação
+      print(
+          '⚠️ Nenhuma password configurada no Firebase - permitindo edição temporária');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Acesso temporário permitido - configure as passwords após a edição'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
+    // Password correta ou sem passwords configuradas, abrir tela de edição
     final resultado = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -90,50 +131,75 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
     }
   }
 
-  void _desativarUnidade(Unidade unidade) async {
-    final confirmacao = await showDialog<bool>(
+  Future<String?> _solicitarPasswordAdmin() async {
+    final passwordController = TextEditingController();
+    bool showPassword = false;
+
+    return await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmar Desativação'),
-        content: Text(
-          'Tem certeza que deseja desativar a unidade "${unidade.nome}"?\n\n'
-          'Esta ação pode ser revertida posteriormente.',
+        title: const Text('Password do Administrador'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Digite a password do administrador para editar a unidade:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: passwordController,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.lock),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    showPassword ? Icons.visibility : Icons.visibility_off,
+                  ),
+                  onPressed: () {
+                    showPassword = !showPassword;
+                    // Forçar rebuild do dialog
+                    (context as Element).markNeedsBuild();
+                  },
+                ),
+              ),
+              obscureText: !showPassword,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Digite a password';
+                }
+                return null;
+              },
+              onFieldSubmitted: (_) {
+                if (passwordController.text.trim().isNotEmpty) {
+                  Navigator.pop(context, passwordController.text.trim());
+                }
+              },
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              if (passwordController.text.trim().isNotEmpty) {
+                Navigator.pop(context, passwordController.text.trim());
+              }
+            },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: MyAppTheme.azulEscuro,
+              foregroundColor: Colors.white,
             ),
-            child: const Text('Desativar'),
+            child: const Text('Confirmar'),
           ),
         ],
       ),
     );
-
-    if (confirmacao == true) {
-      try {
-        await UnidadeService.desativarUnidade(unidade.id);
-        _carregarUnidades();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unidade "${unidade.nome}" desativada com sucesso'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao desativar unidade: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   @override
@@ -212,13 +278,18 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : unidadesFiltradas.isEmpty
                     ? _buildEmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: unidadesFiltradas.length,
-                        itemBuilder: (context, index) {
-                          final unidade = unidadesFiltradas[index];
-                          return _buildUnidadeCard(unidade);
-                        },
+                    : Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 600),
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: unidadesFiltradas.length,
+                            itemBuilder: (context, index) {
+                              final unidade = unidadesFiltradas[index];
+                              return _buildUnidadeCard(unidade);
+                            },
+                          ),
+                        ),
                       ),
           ),
         ],
@@ -228,47 +299,50 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.business,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Nenhuma unidade encontrada',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.business,
+              size: 80,
+              color: Colors.grey[400],
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Clique em "Nova Unidade" para criar a primeira unidade',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
+            const SizedBox(height: 16),
+            Text(
+              'Nenhuma unidade encontrada',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _criarNovaUnidade,
-            icon: const Icon(Icons.add),
-            label: const Text('Criar Primeira Unidade'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: MyAppTheme.azulEscuro,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 16,
+            const SizedBox(height: 8),
+            Text(
+              'Clique em "Nova Unidade" para criar a primeira unidade',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _criarNovaUnidade,
+              icon: const Icon(Icons.add),
+              label: const Text('Criar Primeira Unidade'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: MyAppTheme.azulEscuro,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -306,39 +380,22 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
                     ),
                   ),
                   const Spacer(),
-                  PopupMenuButton<String>(
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'editar':
-                          _editarUnidade(unidade);
-                          break;
-                        case 'desativar':
-                          _desativarUnidade(unidade);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'editar',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit),
-                            SizedBox(width: 8),
-                            Text('Editar'),
-                          ],
-                        ),
+                  // Ícone de edição
+                  InkWell(
+                    onTap: () => _editarUnidade(unidade),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      const PopupMenuItem(
-                        value: 'desativar',
-                        child: Row(
-                          children: [
-                            Icon(Icons.block, color: Colors.orange),
-                            SizedBox(width: 8),
-                            Text('Desativar'),
-                          ],
-                        ),
+                      child: Icon(
+                        Icons.edit,
+                        size: 20,
+                        color: Colors.grey[600],
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -413,13 +470,15 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.green[100],
+                      color:
+                          unidade.ativa ? Colors.green[100] : Colors.red[100],
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      'Ativa',
+                      unidade.ativa ? 'Ativa' : 'Inativa',
                       style: TextStyle(
-                        color: Colors.green[700],
+                        color:
+                            unidade.ativa ? Colors.green[700] : Colors.red[700],
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),

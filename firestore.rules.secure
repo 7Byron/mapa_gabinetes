@@ -33,6 +33,13 @@ service cloud.firestore {
              data.horarioFim is string;
     }
     
+    // Função para validar dados de password
+    function isValidPassword(data) {
+      return data.keys().hasAny(['project_password', 'admin_password']) &&
+             (data.project_password is string || data.admin_password is string) &&
+             (data.project_password.size() > 0 || data.admin_password.size() > 0);
+    }
+    
     // Regras para a coleção de médicos
     match /medicos/{medicoId} {
       allow read: if true;
@@ -77,6 +84,18 @@ service cloud.firestore {
     // Regras para configurações da clínica
     match /config_clinica/{configId} {
       allow read, write: if true;
+    }
+    
+    // Regras para unidades
+    match /unidades/{unidadeId} {
+      allow read, write: if true;
+    }
+    
+    // Regras para passwords das unidades
+    match /passwords/{unidadeId} {
+      allow read: if true;
+      allow create, update: if isValidPassword(resource.data);
+      allow delete: if true;
     }
     
     // Regra padrão - nega acesso a qualquer outra coleção

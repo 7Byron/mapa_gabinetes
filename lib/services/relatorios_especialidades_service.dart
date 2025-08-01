@@ -15,13 +15,21 @@ class RelatoriosEspecialidadesService {
     for (final doc in medicosSnap.docs) {
       final dados = doc.data();
       mapMedEsp[dados['id']] = dados['especialidade'];
-      final dispSnap = await doc.reference.collection('disponibilidades').get();
-      for (final dispDoc in dispSnap.docs) {
-        final dispData = dispDoc.data();
-        allDisp.add(Disponibilidade.fromMap({
-          ...dispData,
-          'horarios': dispData['horarios'] is List ? dispData['horarios'] : [],
-        }));
+      // Carrega disponibilidades da nova estrutura por ano
+      final dispRef = doc.reference.collection('disponibilidades');
+      
+      // Para relatórios, carrega todos os anos para ter dados completos
+      final anosSnapshot = await dispRef.get();
+      for (final anoDoc in anosSnapshot.docs) {
+        final registosRef = anoDoc.reference.collection('registos');
+        final registosSnapshot = await registosRef.get();
+        for (final dispDoc in registosSnapshot.docs) {
+          final dispData = dispDoc.data();
+          allDisp.add(Disponibilidade.fromMap({
+            ...dispData,
+            'horarios': dispData['horarios'] is List ? dispData['horarios'] : [],
+          }));
+        }
       }
     }
     // Filtra no período

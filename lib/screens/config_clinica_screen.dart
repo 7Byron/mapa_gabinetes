@@ -3,9 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:mapa_gabinetes/widgets/time_picker_dialog.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/unidade.dart';
 
 class ConfigClinicaScreen extends StatefulWidget {
-  const ConfigClinicaScreen({super.key});
+  final Unidade? unidade;
+
+  const ConfigClinicaScreen({super.key, this.unidade});
 
   @override
   State<ConfigClinicaScreen> createState() => _ConfigClinicaScreenState();
@@ -37,6 +40,8 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint(
+        'ConfigClinicaScreen inicializada. Unidade: ${widget.unidade?.id ?? 'null'}');
     _carregarDoBD();
   }
 
@@ -56,13 +61,33 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
     try {
       debugPrint('Carregando dados da clínica do Firestore...');
 
+      CollectionReference horariosRef;
+      CollectionReference feriadosRef;
+
+      if (widget.unidade != null) {
+        // Carrega dados da unidade específica
+        horariosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('horarios_clinica');
+        feriadosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('feriados');
+        debugPrint('Carregando dados da unidade: ${widget.unidade!.id}');
+      } else {
+        // Carrega dados globais (fallback para compatibilidade)
+        horariosRef = FirebaseFirestore.instance.collection('horarios_clinica');
+        feriadosRef = FirebaseFirestore.instance.collection('feriados');
+        debugPrint('Carregando dados globais');
+      }
+
       // Carregar horários da clínica
-      final horariosSnapshot =
-          await FirebaseFirestore.instance.collection('horarios_clinica').get();
+      final horariosSnapshot = await horariosRef.get();
       debugPrint('Horários encontrados: ${horariosSnapshot.docs.length}');
 
       for (final doc in horariosSnapshot.docs) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         final diaSemana = data['diaSemana'] as int?;
         final horaAbertura = data['horaAbertura'] as String? ?? '';
         final horaFecho = data['horaFecho'] as String? ?? '';
@@ -74,19 +99,47 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         }
       }
 
-      // Carregar feriados
-      final feriadosSnapshot =
-          await FirebaseFirestore.instance.collection('feriados').get();
-      debugPrint('Feriados encontrados: ${feriadosSnapshot.docs.length}');
+      // Carregar feriados da nova estrutura por ano
+      final feriados = <Map<String, dynamic>>[];
 
-      feriados = feriadosSnapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'id': doc.id,
-          'data': data['data'] as String? ?? '',
-          'descricao': data['descricao'] as String? ?? '',
-        };
-      }).toList();
+      // Carrega apenas o ano atual por padrão (otimização)
+      final anoAtual = DateTime.now().year.toString();
+      final anoRef = feriadosRef.doc(anoAtual);
+      final registosRef = anoRef.collection('registos');
+
+      try {
+        final registosSnapshot = await registosRef.get();
+        debugPrint(
+            'Feriados encontrados no ano $anoAtual: ${registosSnapshot.docs.length}');
+
+        for (final doc in registosSnapshot.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          feriados.add({
+            'id': doc.id,
+            'data': data['data'] as String? ?? '',
+            'descricao': data['descricao'] as String? ?? '',
+          });
+        }
+      } catch (e) {
+        debugPrint('Erro ao carregar feriados do ano $anoAtual: $e');
+        // Fallback: tenta carregar de todos os anos
+        final anosSnapshot = await feriadosRef.get();
+        for (final anoDoc in anosSnapshot.docs) {
+          final registosRef = anoDoc.reference.collection('registos');
+          final registosSnapshot = await registosRef.get();
+          for (final doc in registosSnapshot.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            feriados.add({
+              'id': doc.id,
+              'data': data['data'] as String? ?? '',
+              'descricao': data['descricao'] as String? ?? '',
+            });
+          }
+        }
+        debugPrint('Feriados carregados (fallback): ${feriados.length}');
+      }
+
+      this.feriados = feriados;
 
       // Ordena feriados por data
       feriados.sort((a, b) {
@@ -113,15 +166,24 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
     try {
       debugPrint('Gravando alterações no Firestore...');
 
+      CollectionReference horariosRef;
+      if (widget.unidade != null) {
+        horariosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('horarios_clinica');
+        debugPrint('Salvando horários na unidade: ${widget.unidade!.id}');
+      } else {
+        horariosRef = FirebaseFirestore.instance.collection('horarios_clinica');
+        debugPrint('Salvando horários globais');
+      }
+
       // Salvar horários da clínica
       for (int ds = 1; ds <= 7; ds++) {
         final horaAbertura = horarios[ds]![0];
         final horaFecho = horarios[ds]![1];
 
-        await FirebaseFirestore.instance
-            .collection('horarios_clinica')
-            .doc(ds.toString())
-            .set({
+        await horariosRef.doc(ds.toString()).set({
           'diaSemana': ds,
           'horaAbertura': horaAbertura,
           'horaFecho': horaFecho,
@@ -155,11 +217,18 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         horarios[diaSemana] = ["", ""];
       });
 
+      CollectionReference horariosRef;
+      if (widget.unidade != null) {
+        horariosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('horarios_clinica');
+      } else {
+        horariosRef = FirebaseFirestore.instance.collection('horarios_clinica');
+      }
+
       // Salva no Firestore com horários vazios
-      await FirebaseFirestore.instance
-          .collection('horarios_clinica')
-          .doc(diaSemana.toString())
-          .set({
+      await horariosRef.doc(diaSemana.toString()).set({
         'diaSemana': diaSemana,
         'horaAbertura': '',
         'horaFecho': '',
@@ -221,27 +290,57 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
     );
 
     try {
-      // Salva no Firestore
-      final feriadoRef =
-          await FirebaseFirestore.instance.collection('feriados').add({
+      CollectionReference feriadosRef;
+      if (widget.unidade != null) {
+        feriadosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('feriados');
+        debugPrint('Salvando feriado na unidade: ${widget.unidade!.id}');
+      } else {
+        feriadosRef = FirebaseFirestore.instance.collection('feriados');
+        debugPrint('Salvando feriado global');
+      }
+
+      // Salva no Firestore na nova estrutura por ano
+      final ano = pickedDate.year.toString();
+      final anoRef = feriadosRef.doc(ano);
+      final registosRef = anoRef.collection('registos');
+
+      final feriadoId = DateTime.now().millisecondsSinceEpoch.toString();
+      await registosRef.doc(feriadoId).set({
         'data': pickedDate.toIso8601String(),
         'descricao': descricao.isNotEmpty ? descricao : '',
       });
 
       // Cria um Map<String, dynamic> explícito para evitar problemas de tipo
       final novoFeriado = <String, dynamic>{
-        'id': feriadoRef.id,
+        'id': feriadoId,
         'data': pickedDate.toIso8601String(),
         'descricao': descricao.isNotEmpty ? descricao : '',
       };
 
+      debugPrint('Feriado salvo no ano $ano com ID: $feriadoId');
+
+      debugPrint('Feriado criado: ${novoFeriado.toString()}');
+
       setState(() {
+        debugPrint(
+            'Adicionando feriado à lista. Total antes: ${feriados.length}');
         feriados.add(novoFeriado);
-        feriados.sort((a, b) => DateTime.parse(a['data'] as String)
-            .compareTo(DateTime.parse(b['data'] as String)));
+        debugPrint('Feriado adicionado. Total depois: ${feriados.length}');
+
+        feriados.sort((a, b) {
+          final dateA =
+              DateTime.tryParse(a['data'] as String) ?? DateTime.now();
+          final dateB =
+              DateTime.tryParse(b['data'] as String) ?? DateTime.now();
+          return dateA.compareTo(dateB);
+        });
+        debugPrint('Feriados ordenados. Total final: ${feriados.length}');
       });
 
-      debugPrint('Feriado salvo no Firestore com ID: ${feriadoRef.id}');
+      debugPrint('Feriado salvo no Firestore com ID: $feriadoId');
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -267,13 +366,30 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       final feriadoId = feriado['id'] as String?;
 
       if (feriadoId != null) {
-        // Remove do Firestore
-        await FirebaseFirestore.instance
-            .collection('feriados')
-            .doc(feriadoId)
-            .delete();
+        CollectionReference feriadosRef;
+        if (widget.unidade != null) {
+          feriadosRef = FirebaseFirestore.instance
+              .collection('unidades')
+              .doc(widget.unidade!.id)
+              .collection('feriados');
+        } else {
+          feriadosRef = FirebaseFirestore.instance.collection('feriados');
+        }
 
-        debugPrint('Feriado removido do Firestore: $feriadoId');
+        // Remove do Firestore na nova estrutura por ano
+        final dataFeriado = DateTime.tryParse(feriado['data'] as String);
+        if (dataFeriado != null) {
+          final ano = dataFeriado.year.toString();
+          final anoRef = feriadosRef.doc(ano);
+          final registosRef = anoRef.collection('registos');
+
+          await registosRef.doc(feriadoId).delete();
+          debugPrint('Feriado removido do ano $ano: $feriadoId');
+        } else {
+          // Fallback: tenta remover da estrutura antiga
+          await feriadosRef.doc(feriadoId).delete();
+          debugPrint('Feriado removido (fallback): $feriadoId');
+        }
       }
 
       setState(() {
@@ -470,10 +586,9 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                             children: [
                                               Text(
                                                 DateFormat('dd/MM/yyyy').format(
-                                                  f['data'] is String
-                                                      ? DateTime.parse(
-                                                          f['data'])
-                                                      : f['data'] as DateTime,
+                                                  DateTime.tryParse(f['data']
+                                                          as String) ??
+                                                      DateTime.now(),
                                                 ),
                                                 style: const TextStyle(
                                                   fontSize: 14,

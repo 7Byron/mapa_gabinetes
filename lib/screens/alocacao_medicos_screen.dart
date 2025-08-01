@@ -22,10 +22,18 @@ import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 import '../models/unidade.dart';
 
+// Services
+import '../services/password_service.dart';
+
 class AlocacaoMedicos extends StatefulWidget {
   final Unidade unidade;
+  final bool isAdmin; // Novo parâmetro para indicar se é administrador
 
-  const AlocacaoMedicos({super.key, required this.unidade});
+  const AlocacaoMedicos({
+    super.key,
+    required this.unidade,
+    this.isAdmin = false, // Por defeito é utilizador normal
+  });
 
   @override
   State<AlocacaoMedicos> createState() => AlocacaoMedicosState();
@@ -43,7 +51,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   List<Medico> medicosDisponiveis = [];
 
   // Dados da clínica
-  List<Map<String, dynamic>> feriados = [];
+  List<Map<String, String>> feriados = [];
   Map<int, List<String>> horariosClinica = {};
   bool clinicaFechada = false;
   String mensagemClinicaFechada = '';
@@ -57,6 +65,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   void initState() {
     super.initState();
     _carregarDadosIniciais();
+    _carregarPasswordsDoFirebase();
+  }
+
+  Future<void> _carregarPasswordsDoFirebase() async {
+    try {
+      // Carrega as passwords do Firebase para cache local
+      await PasswordService.loadPasswordsFromFirebase(widget.unidade.id);
+      print(
+          '✅ Passwords carregadas do Firebase para unidade: ${widget.unidade.id}');
+    } catch (e) {
+      print('⚠️ Erro ao carregar passwords do Firebase: $e');
+    }
   }
 
   Future<void> _carregarDadosIniciais() async {
@@ -74,22 +94,53 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
           alocacoes = a;
           setState(() {});
         },
+        unidade: widget.unidade,
       );
 
-      // Carregar feriados do Firestore (com tratamento de erro)
+      // Carregar feriados do Firestore (nova estrutura por ano)
       debugPrint('Carregando feriados do Firestore...');
       try {
-        final feriadosSnapshot =
-            await FirebaseFirestore.instance.collection('feriados').get();
-        feriados = feriadosSnapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'id': doc.id,
-            'data': data['data'] as String? ?? '',
-            'descricao': data['descricao'] as String? ?? '',
-          };
-        }).toList();
-        debugPrint('Feriados carregados: ${feriados.length}');
+        CollectionReference feriadosRef;
+        feriadosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade.id)
+            .collection('feriados');
+        
+        // Carrega apenas o ano atual por padrão (otimização)
+        final anoAtual = DateTime.now().year.toString();
+        final anoRef = feriadosRef.doc(anoAtual);
+        final registosRef = anoRef.collection('registos');
+        
+        try {
+          final registosSnapshot = await registosRef.get();
+          feriados = registosSnapshot.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return <String, String>{
+              'id': doc.id,
+              'data': data['data'] as String? ?? '',
+              'descricao': data['descricao'] as String? ?? '',
+            };
+          }).toList();
+          debugPrint('Feriados carregados do ano $anoAtual: ${feriados.length}');
+        } catch (e) {
+          debugPrint('⚠️ Erro ao carregar feriados do ano $anoAtual: $e');
+          // Fallback: tenta carregar de todos os anos
+          final anosSnapshot = await feriadosRef.get();
+          feriados = [];
+          for (final anoDoc in anosSnapshot.docs) {
+            final registosRef = anoDoc.reference.collection('registos');
+            final registosSnapshot = await registosRef.get();
+            for (final doc in registosSnapshot.docs) {
+              final data = doc.data() as Map<String, dynamic>;
+              feriados.add(<String, String>{
+                'id': doc.id,
+                'data': data['data'] as String? ?? '',
+                'descricao': data['descricao'] as String? ?? '',
+              });
+            }
+          }
+          debugPrint('Feriados carregados (fallback): ${feriados.length}');
+        }
       } catch (e) {
         debugPrint('⚠️ Erro ao carregar feriados: $e');
         feriados = []; // Lista vazia se não conseguir carregar
@@ -98,210 +149,247 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       // Carregar horários da clínica do Firestore (com tratamento de erro)
       debugPrint('Carregando horários da clínica do Firestore...');
       try {
-        final horariosSnapshot = await FirebaseFirestore.instance
-            .collection('horarios_clinica')
-            .get();
+        CollectionReference horariosRef;
+        horariosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade.id)
+            .collection('horarios_clinica');
+              
+        final horariosSnapshot = await horariosRef.get();
+        horariosClinica = {};
         for (final doc in horariosSnapshot.docs) {
-          final data = doc.data();
-          final diaSemana = data['diaSemana'] as int?;
+          final data = doc.data() as Map<String, dynamic>;
+          final diaSemana = data['diaSemana'] as int? ?? 0;
           final horaAbertura = data['horaAbertura'] as String? ?? '';
           final horaFecho = data['horaFecho'] as String? ?? '';
-
-          if (diaSemana != null && diaSemana >= 1 && diaSemana <= 7) {
+          if (horaAbertura.isNotEmpty && horaFecho.isNotEmpty) {
             horariosClinica[diaSemana] = [horaAbertura, horaFecho];
-            debugPrint(
-                'Horário carregado para dia $diaSemana: $horaAbertura - $horaFecho');
           }
         }
-        debugPrint('Horários da clínica carregados: ${horariosClinica.length}');
+        debugPrint(
+            'Horários da clínica carregados: ${horariosClinica.length} dias');
       } catch (e) {
         debugPrint('⚠️ Erro ao carregar horários da clínica: $e');
-        // Definir horários padrão se não conseguir carregar
-        horariosClinica = {
-          1: ['08:00', '18:00'], // Segunda
-          2: ['08:00', '18:00'], // Terça
-          3: ['08:00', '18:00'], // Quarta
-          4: ['08:00', '18:00'], // Quinta
-          5: ['08:00', '18:00'], // Sexta
-          6: ['08:00', '12:00'], // Sábado
-          7: ['', ''], // Domingo - fechado
-        };
+        horariosClinica = {}; // Mapa vazio se não conseguir carregar
       }
 
-      // Filtra médicos do dia
-      medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
-        dataSelecionada: selectedDate,
-        disponibilidades: disponibilidades,
-        alocacoes: alocacoes,
-        medicos: medicos,
-      );
+      // Verificar se a clínica está fechada
+      _verificarClinicaFechada();
 
-      // Inicializa pisos
-      pisosSelecionados = gabinetes.map((g) => g.setor).toSet().toList();
+      // Atualizar médicos disponíveis
+      _atualizarMedicosDisponiveis();
 
-      setState(() => isCarregando = false);
+      setState(() {
+        isCarregando = false;
+      });
     } catch (e) {
-      debugPrint('Erro ao carregar dados do banco: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erro ao carregar dados do banco.')),
-      );
+      debugPrint('❌ Erro ao carregar dados iniciais: $e');
+      setState(() {
+        isCarregando = false;
+      });
     }
   }
 
-  bool _verificarClinicaFechada(DateTime data) {
-    debugPrint(
-        'Verificando se clínica está fechada para: ${DateFormat('dd/MM/yyyy').format(data)}');
+  void _verificarClinicaFechada() {
+    final diaSemana = selectedDate.weekday;
+    final horariosDoDia = horariosClinica[diaSemana] ?? [];
 
-    // Verificar se é feriado
-    final ehFeriado = feriados.any((feriado) {
-      final dataFeriado = DateTime.parse(feriado['data']);
-      final isFeriado = data.year == dataFeriado.year &&
-          data.month == dataFeriado.month &&
-          data.day == dataFeriado.day;
-
-      if (isFeriado) {
-        debugPrint(
-            'Data é feriado: ${feriado['descricao'] ?? 'Sem descrição'}');
-      }
-      return isFeriado;
-    });
-
-    // Verificar horários da clínica
-    final diaSemana = data.weekday; // 1 para segunda-feira, 7 para domingo
-    final horarios = horariosClinica[diaSemana];
-    debugPrint('Dia da semana: $diaSemana, Horários: $horarios');
-
-    final horarioIndisponivel =
-        horarios == null || (horarios[0].isEmpty && horarios[1].isEmpty);
-
-    debugPrint(
-        'É feriado: $ehFeriado, Horário indisponível: $horarioIndisponivel');
-
-    final clinicaFechada = ehFeriado || horarioIndisponivel;
-    debugPrint('Clínica fechada: $clinicaFechada');
-
-    return clinicaFechada;
-  }
-
-  void _onDateChanged(DateTime newDate) {
-    final clinicaEncerrada = _verificarClinicaFechada(newDate);
-
-    setState(() {
-      selectedDate = newDate;
-      clinicaFechada = clinicaEncerrada;
-      mensagemClinicaFechada =
-          clinicaEncerrada ? 'A clínica está encerrada neste dia!' : '';
-
-      if (!clinicaEncerrada) {
-        medicosDisponiveis = AlocacaoMedicosLogic.filtrarMedicosPorData(
-          dataSelecionada: newDate,
-          disponibilidades: disponibilidades,
-          alocacoes: alocacoes,
-          medicos: medicos,
-        );
-      }
-    });
-  }
-
-  Future<void> _alocarMedico(
-    String medicoId,
-    String gabineteId, {
-    DateTime? dataEspecifica,
-  }) async {
-    await AlocacaoMedicosLogic.alocarMedico(
-      selectedDate: dataEspecifica ?? selectedDate,
-      medicoId: medicoId,
-      gabineteId: gabineteId,
-      alocacoes: alocacoes,
-      disponibilidades: disponibilidades,
-      onAlocacoesChanged: () {
-        setState(() {
-          // Se o médico foi alocado, removemos da lista de “disponíveis”
-          medicosDisponiveis.removeWhere((m) => m.id == medicoId);
-          _carregarDadosIniciais();
-        });
-      },
-    );
-  }
-
-  Future<void> _desalocarMedicoDiaUnico(String medicoId) async {
-    await AlocacaoMedicosLogic.desalocarMedicoDiaUnico(
-      selectedDate: selectedDate,
-      medicoId: medicoId,
-      alocacoes: alocacoes,
-      disponibilidades: disponibilidades,
-      medicos: medicos,
-      medicosDisponiveis: medicosDisponiveis,
-      onAlocacoesChanged: () => setState(() {}),
-    );
-  }
-
-  Future<void> _desalocarMedicoComPergunta(String medicoId) async {
-    final dataAlvo =
-        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-
-    final disp = disponibilidades.firstWhere(
-      (d) {
-        final dd = DateTime(d.data.year, d.data.month, d.data.day);
-        return d.medicoId == medicoId && dd == dataAlvo;
-      },
-      orElse: () => Disponibilidade(
-        id: '',
-        medicoId: '',
-        data: DateTime(1900, 1, 1),
-        horarios: [],
-        tipo: 'Única',
-      ),
-    );
-
-    // Se for única, desaloca só um dia
-    if (disp.medicoId.isEmpty || disp.tipo == 'Única') {
-      await _desalocarMedicoDiaUnico(medicoId);
+    if (horariosDoDia.isEmpty) {
+      clinicaFechada = true;
+      mensagemClinicaFechada = 'A clínica está fechada neste dia.';
       return;
     }
 
-    // Pergunta ao usuário
-    final escolha = await showDialog<String>(
-      context: context,
-      builder: (ctxDialog) {
-        return AlertDialog(
-          title: const Text('Desalocar série?'),
-          content: Text(
-            'Esta disponibilidade é do tipo "${disp.tipo}".\n'
-            'Deseja desalocar apenas este dia (${selectedDate.day}/${selectedDate.month}) '
-            'ou todos os dias da série a partir deste?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctxDialog).pop('1dia'),
-              child: const Text('Apenas este dia'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctxDialog).pop('serie'),
-              child: const Text('Toda a série'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctxDialog).pop(null),
-              child: const Text('Cancelar'),
-            ),
-          ],
-        );
-      },
+    // Verificar se é feriado
+    final dataFormatada = DateFormat('yyyy-MM-dd').format(selectedDate);
+    final feriado = feriados.firstWhere(
+      (f) => f['data'] == dataFormatada,
+      orElse: () => <String, String>{},
     );
 
-    if (escolha == '1dia') {
-      await _desalocarMedicoDiaUnico(medicoId);
-    } else if (escolha == 'serie') {
-      await AlocacaoMedicosLogic.desalocarMedicoSerie(
+    if (feriado.containsKey('id') && feriado['id']!.isNotEmpty) {
+      clinicaFechada = true;
+      mensagemClinicaFechada = 'Feriado: ${feriado['descricao'] ?? ''}';
+      return;
+    }
+
+    clinicaFechada = false;
+    mensagemClinicaFechada = '';
+  }
+
+  void _atualizarMedicosDisponiveis() {
+    debugPrint('🔄 Atualizando médicos disponíveis...');
+    debugPrint('📅 Data selecionada: ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
+    debugPrint('👥 Total de médicos: ${medicos.length}');
+    debugPrint('📋 Total de disponibilidades: ${disponibilidades.length}');
+    
+    final medicosAlocados = alocacoes
+        .where((a) =>
+            DateFormat('yyyy-MM-dd').format(a.data) ==
+            DateFormat('yyyy-MM-dd').format(selectedDate))
+        .map((a) => a.medicoId)
+        .toSet();
+    
+    debugPrint('🚫 Médicos alocados: ${medicosAlocados.length}');
+    for (final medicoId in medicosAlocados) {
+      final medico = medicos.firstWhere((m) => m.id == medicoId, orElse: () => Medico(id: '', nome: 'Desconhecido', especialidade: '', disponibilidades: []));
+      debugPrint('  - ${medico.nome}');
+    }
+
+    // Filtra médicos que:
+    // 1. Não estão alocados no dia selecionado
+    // 2. Têm disponibilidade para o dia selecionado
+    medicosDisponiveis = medicos.where((m) {
+      // Verifica se não está alocado
+      if (medicosAlocados.contains(m.id)) {
+        debugPrint('❌ ${m.nome} está alocado, removendo da lista');
+        return false;
+      }
+      
+      // Verifica se tem disponibilidade para o dia selecionado
+      final disponibilidadesDoMedico = disponibilidades.where((d) {
+        final dd = DateTime(d.data.year, d.data.month, d.data.day);
+        final sd = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        return d.medicoId == m.id && dd == sd;
+      }).toList();
+      
+      if (disponibilidadesDoMedico.isEmpty) {
+        debugPrint('❌ ${m.nome} não tem disponibilidade para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
+        return false;
+      }
+      
+      debugPrint('✅ ${m.nome} tem ${disponibilidadesDoMedico.length} disponibilidade(s) para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
+      for (final disp in disponibilidadesDoMedico) {
+        debugPrint('  - Horários: ${disp.horarios.join(', ')}');
+      }
+      
+      return true;
+    }).toList();
+    
+          debugPrint('🎯 Médicos disponíveis finais: ${medicosDisponiveis.length}');
+      for (final medico in medicosDisponiveis) {
+        debugPrint('- ${medico.nome} (${medico.especialidade})');
+      }
+      
+      // Debug específico para o Dr. Francisco
+      final drFrancisco = medicosDisponiveis.where((m) => m.nome.toLowerCase().contains('francisco')).toList();
+      if (drFrancisco.isNotEmpty) {
+        debugPrint('✅ Dr. Francisco está na lista de médicos disponíveis!');
+      } else {
+        debugPrint('❌ Dr. Francisco NÃO está na lista de médicos disponíveis!');
+        debugPrint('🔍 Verificando por que...');
+        final todosMedicos = medicos.where((m) => m.nome.toLowerCase().contains('francisco')).toList();
+        if (todosMedicos.isNotEmpty) {
+          debugPrint('  - Dr. Francisco existe na lista geral de médicos');
+          final dispDrFrancisco = disponibilidades.where((d) => d.medicoId == todosMedicos.first.id).toList();
+          debugPrint('  - Disponibilidades do Dr. Francisco: ${dispDrFrancisco.length}');
+          for (final disp in dispDrFrancisco) {
+            debugPrint('    - ${disp.data.day}/${disp.data.month}/${disp.data.year} - Horários: ${disp.horarios.join(', ')}');
+          }
+        } else {
+          debugPrint('  - Dr. Francisco NÃO existe na lista geral de médicos!');
+        }
+      }
+  }
+
+  void _onDateChanged(DateTime newDate) {
+    print('🔄 _onDateChanged chamado com data: ${newDate.day}/${newDate.month}/${newDate.year}');
+    setState(() {
+      selectedDate = newDate;
+      print('📅 Data selecionada atualizada para: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
+      _verificarClinicaFechada();
+      _atualizarMedicosDisponiveis();
+    });
+  }
+
+  Future<void> _alocarMedico(String medicoId, String gabineteId,
+      {DateTime? dataEspecifica}) async {
+    try {
+      await AlocacaoMedicosLogic.alocarMedico(
+        selectedDate: dataEspecifica ?? selectedDate,
         medicoId: medicoId,
-        dataRef: dataAlvo,
-        tipo: disp.tipo,
-        disponibilidades: disponibilidades,
+        gabineteId: gabineteId,
         alocacoes: alocacoes,
+        disponibilidades: disponibilidades,
+        onAlocacoesChanged: () {
+          _carregarDadosIniciais();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Médico alocado com sucesso!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        },
+        unidade: widget.unidade,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao alocar médico: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _desalocarMedicoComPergunta(String medicoId) async {
+    final medico = medicos.firstWhere((m) => m.id == medicoId);
+    final alocacao = alocacoes.firstWhere((a) => a.medicoId == medicoId);
+
+    final confirmacao = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Desalocação'),
+        content: Text(
+          'Tem certeza que deseja desalocar ${medico.nome} do ${alocacao.gabineteId}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Desalocar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmacao == true) {
+      await _desalocarMedicoDiaUnico(medicoId);
+    }
+  }
+
+  Future<void> _desalocarMedicoDiaUnico(String medicoId) async {
+    try {
+      await AlocacaoMedicosLogic.desalocarMedicoDiaUnico(
+        selectedDate: selectedDate,
+        medicoId: medicoId,
+        alocacoes: alocacoes,
+        disponibilidades: disponibilidades,
         medicos: medicos,
         medicosDisponiveis: medicosDisponiveis,
-        onAlocacoesChanged: () => setState(() {}),
+        onAlocacoesChanged: () {
+          _carregarDadosIniciais();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Médico desalocado com sucesso!'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        },
+        unidade: widget.unidade,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao desalocar médico: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -335,57 +423,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
                 color: Colors.grey[600],
               ),
               textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.green[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green[200]!),
-              ),
-              child: Text(
-                'Configurado para: ${widget.unidade.nomeOcupantes} e ${widget.unidade.nomeAlocacao}',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.green[700],
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 24),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.menu,
-                        color: Colors.blue[700],
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Use o menu lateral para configurar esta unidade',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.blue[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -496,6 +533,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       drawer: CustomDrawer(
         onRefresh: _carregarDadosIniciais, // Passa o callback para o drawer
         unidade: widget.unidade, // Passa a unidade para personalizar o drawer
+        isAdmin: widget.isAdmin, // Passa informação se é administrador
       ),
       // Corpo com cor de fundo suave e layout mais espaçoso
       body: Container(

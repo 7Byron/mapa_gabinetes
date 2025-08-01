@@ -243,7 +243,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           itemBuilder: (context, index) {
             final disponibilidade = widget.disponibilidades[index];
             final diaSemana =
-            DateFormat.EEEE('pt_BR').format(disponibilidade.data);
+            DateFormat('EEEE').format(disponibilidade.data);
 
             final horarioInicio = disponibilidade.horarios.isNotEmpty
                 ? disponibilidade.horarios[0]

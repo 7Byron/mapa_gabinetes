@@ -1,0 +1,47 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "alocacoes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "medicoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "data",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alocacoes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "gabineteId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "data",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "disponibilidades",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "medicoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "data",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+} 

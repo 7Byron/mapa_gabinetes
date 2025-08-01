@@ -3,6 +3,7 @@ import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
+import '../models/disponibilidade.dart';
 import 'cadastro_medicos.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -56,9 +57,58 @@ class ListaMedicosState extends State<ListaMedicos> {
       }
 
       final snapshot = await ocupantesRef.get();
-      final medicosCarregados = snapshot.docs
-          .map((doc) => Medico.fromMap(doc.data() as Map<String, dynamic>))
-          .toList();
+      print('🔍 Buscando médicos na unidade: ${widget.unidade?.id ?? 'global'}');
+      print('📊 Documentos encontrados: ${snapshot.docs.length}');
+      
+      final medicosCarregados = <Medico>[];
+      
+      for (final doc in snapshot.docs) {
+        final dados = doc.data() as Map<String, dynamic>;
+        
+        // Busca disponibilidades da nova estrutura por ano
+        final dispRef = doc.reference.collection('disponibilidades');
+        final disponibilidades = <Map<String, dynamic>>[];
+        
+        // Carrega apenas o ano atual por padrão (otimização)
+        final anoAtual = DateTime.now().year.toString();
+        final anoRef = dispRef.doc(anoAtual);
+        final registosRef = anoRef.collection('registos');
+        
+        try {
+          final registosSnapshot = await registosRef.get();
+          for (final d in registosSnapshot.docs) {
+            final data = d.data();
+            disponibilidades.add({
+              ...data,
+              'horarios': data['horarios'] is List ? data['horarios'] : [],
+            });
+          }
+        } catch (e) {
+          // Fallback: tenta carregar de todos os anos
+          final anosSnapshot = await dispRef.get();
+          for (final anoDoc in anosSnapshot.docs) {
+            final registosRef = anoDoc.reference.collection('registos');
+            final registosSnapshot = await registosRef.get();
+            for (final d in registosSnapshot.docs) {
+              final data = d.data();
+              disponibilidades.add({
+                ...data,
+                'horarios': data['horarios'] is List ? data['horarios'] : [],
+              });
+            }
+          }
+        }
+        
+        medicosCarregados.add(Medico(
+          id: dados['id'],
+          nome: dados['nome'],
+          especialidade: dados['especialidade'],
+          observacoes: dados['observacoes'],
+          disponibilidades: disponibilidades.map((e) => Disponibilidade.fromMap(e)).toList(),
+        ));
+        
+        print('✅ Médico carregado: ${dados['nome']} (${disponibilidades.length} disponibilidades)');
+      }
       medicosCarregados.sort((a, b) => a.nome.compareTo(b.nome));
       setState(() {
         medicos = medicosCarregados;
@@ -97,10 +147,16 @@ class ListaMedicosState extends State<ListaMedicos> {
             ocupantesRef.doc(id).collection('disponibilidades');
       }
 
-      // Apaga todas as disponibilidades do médico
-      final disponSnapshot = await disponibilidadesRef.get();
-      for (final doc in disponSnapshot.docs) {
-        await doc.reference.delete();
+      // Apaga todas as disponibilidades do médico (nova estrutura por ano)
+      final anosSnapshot = await disponibilidadesRef.get();
+      for (final anoDoc in anosSnapshot.docs) {
+        final registosRef = anoDoc.reference.collection('registos');
+        final registosSnapshot = await registosRef.get();
+        for (final doc in registosSnapshot.docs) {
+          await doc.reference.delete();
+        }
+        // Remove o documento do ano se estiver vazio
+        await anoDoc.reference.delete();
       }
       // Agora apaga o médico
       await ocupantesRef.doc(id).delete();

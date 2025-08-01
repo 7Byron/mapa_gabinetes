@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
+import '../services/gabinete_service.dart';
 import 'cadastro_gabinete.dart';
 
 class ListaGabinetes extends StatefulWidget {
@@ -22,35 +22,28 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   @override
   void initState() {
     super.initState();
-    _carregarGabinetes(); // Carrega os dados ao abrir a tela
+    _carregarGabinetes();
+    // Adiciona observer para detectar retorno à tela
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ModalRoute.of(context)?.addScopedWillPopCallback(() async {
+        _carregarGabinetes();
+        return true;
+      });
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Sempre que a tela volta a ser exibida, recarrega a lista
+    _carregarGabinetes();
   }
 
   Future<void> _carregarGabinetes() async {
     setState(() => isLoading = true);
     try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('gabinetes').get();
-      debugPrint('Documentos encontrados: ${snapshot.docs.length}');
-
-      final gabinetesCarregados = <Gabinete>[];
-
-      for (final doc in snapshot.docs) {
-        try {
-          final data = doc.data();
-          debugPrint('Dados do documento ${doc.id}: $data');
-
-          // Adiciona o ID do documento se não existir
-          if (!data.containsKey('id')) {
-            data['id'] = doc.id;
-          }
-
-          final gabinete = Gabinete.fromMap(data);
-          gabinetesCarregados.add(gabinete);
-        } catch (e) {
-          debugPrint('Erro ao processar documento ${doc.id}: $e');
-          // Continua com o próximo documento
-        }
-      }
+      final gabinetesCarregados = await buscarGabinetes(unidade: widget.unidade);
+      debugPrint('Gabinetes encontrados: ${gabinetesCarregados.length}');
 
       gabinetesCarregados.sort((a, b) => a.nome.compareTo(b.nome));
       debugPrint(
@@ -92,21 +85,23 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   }
 
   Future<void> _adicionarOuEditarGabinete({Gabinete? gabineteExistente}) async {
-    final resultado = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => CadastroGabinete(gabinete: gabineteExistente),
+        builder: (context) => CadastroGabinete(
+          gabinete: gabineteExistente,
+          unidade: widget.unidade,
+        ),
       ),
     );
-
-    if (resultado == true) {
-      _carregarGabinetes();
-    }
+    
+    // Sempre recarrega após voltar da tela de cadastro
+    _carregarGabinetes();
   }
 
   Future<void> _deletarGabinete(String id) async {
     try {
-      await FirebaseFirestore.instance.collection('gabinetes').doc(id).delete();
+      await deletarGabinete(id, unidade: widget.unidade);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Gabinete eliminado com sucesso!'),

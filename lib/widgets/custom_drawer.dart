@@ -6,6 +6,7 @@ import '../models/unidade.dart';
 import '../screens/lista_medicos.dart';
 import '../screens/lista_gabinetes.dart';
 import '../screens/config_clinica_screen.dart';
+import '../screens/dias_encerramento_screen.dart';
 import '../screens/relatorios_screen.dart';
 import '../screens/relatorio_especialidades_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
@@ -118,7 +119,7 @@ class CustomDrawer extends StatelessWidget {
           ),
 
           ListTile(
-            leading: const Icon(Icons.settings),
+            leading: const Icon(Icons.schedule),
             title: const Text('Configurar Horários'),
             enabled: isAdmin, // Só administradores podem configurar
             onTap: isAdmin
@@ -128,6 +129,22 @@ class CustomDrawer extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                           builder: (context) => ConfigClinicaScreen(unidade: unidade)),
+                    ).then((_) => onRefresh());
+                  }
+                : null,
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.event_busy),
+            title: const Text('Dias de Encerramento'),
+            enabled: isAdmin, // Só administradores podem configurar
+            onTap: isAdmin
+                ? () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => DiasEncerramentoScreen(unidade: unidade)),
                     ).then((_) => onRefresh());
                   }
                 : null,

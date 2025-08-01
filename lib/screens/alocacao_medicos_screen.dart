@@ -114,7 +114,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         try {
           final registosSnapshot = await registosRef.get();
           feriados = registosSnapshot.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
+            final data = doc.data();
             return <String, String>{
               'id': doc.id,
               'data': data['data'] as String? ?? '',
@@ -131,7 +131,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
             final registosRef = anoDoc.reference.collection('registos');
             final registosSnapshot = await registosRef.get();
             for (final doc in registosSnapshot.docs) {
-              final data = doc.data() as Map<String, dynamic>;
+              final data = doc.data();
               feriados.add(<String, String>{
                 'id': doc.id,
                 'data': data['data'] as String? ?? '',

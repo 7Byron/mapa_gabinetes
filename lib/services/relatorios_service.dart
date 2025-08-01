@@ -98,7 +98,7 @@ class RelatoriosService {
       final registosRef = anoDoc.reference.collection('registos');
       final registosSnapshot = await registosRef.get();
       for (final doc in registosSnapshot.docs) {
-        feriados.add(doc.data() as Map<String, dynamic>);
+        feriados.add(doc.data());
       }
     }
     

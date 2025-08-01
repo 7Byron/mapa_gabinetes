@@ -25,6 +25,11 @@ import '../models/unidade.dart';
 // Services
 import '../services/password_service.dart';
 
+/// Tela principal de alocação de médicos aos gabinetes
+/// Permite arrastar médicos disponíveis para gabinetes específicos
+/// Inclui verificação de dias de encerramento e exibe mensagem quando clínica está fechada
+/// Interface responsiva com largura máxima de 600px para melhor usabilidade
+
 class AlocacaoMedicos extends StatefulWidget {
   final Unidade unidade;
   final bool isAdmin; // Novo parâmetro para indicar se é administrador

@@ -14,6 +14,8 @@ import '../models/unidade.dart';
 /// - Checkbox "Nunca encerra" para clínicas 24h
 /// - Opções de encerramento por dia específico
 /// - Configuração de encerramento em feriados
+/// - Interface com largura máxima de 600px para melhor responsividade
+/// - Caixas uniformes para checkboxes "Encerrado" com estilo consistente
 
 class ConfigClinicaScreen extends StatefulWidget {
   final Unidade? unidade;

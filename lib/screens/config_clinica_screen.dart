@@ -190,12 +190,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       debugPrint('Configurações de encerramento salvas');
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Alterações gravadas com sucesso!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+    
     } catch (e) {
       debugPrint('Erro ao gravar alterações: $e');
       if (!mounted) return;
@@ -232,13 +227,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('Horários do dia ${diasSemana[diaSemana - 1]} apagados.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    
     } catch (e) {
       debugPrint('Erro ao apagar horários: $e');
       if (!mounted) return;
@@ -310,7 +299,6 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-              
                             // Checkbox Nunca Encerra
                             CheckboxListTile(
                               title: const Text(
@@ -339,6 +327,60 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
                             // Configurações por dia da semana
                             if (!nuncaEncerra) ...[
+                              // Cabeçalho da tabela
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    width: 80,
+                                    child: const Text(
+                                      'Dia',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: 70,
+                                    child: const Text(
+                                      'Início',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: 70,
+                                    child: const Text(
+                                      'Fim',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: 70,
+                                    child: const Text(
+                                      'Encerrado',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(
+                                      width:
+                                          48), // Espaço para o botão eliminar
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Linhas dos dias da semana
                               for (int ds = 1; ds <= 7; ds++) ...[
                                 Row(
                                   children: [
@@ -357,7 +399,6 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                         onTap: () => _escolherHora(ds, true),
                                         child: InputDecorator(
                                           decoration: const InputDecoration(
-                                            labelText: 'Início',
                                             border: OutlineInputBorder(),
                                           ),
                                           child: Text(horarios[ds]![0]),
@@ -374,7 +415,6 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                         onTap: () => _escolherHora(ds, false),
                                         child: InputDecorator(
                                           decoration: const InputDecoration(
-                                            labelText: 'Fim',
                                             border: OutlineInputBorder(),
                                           ),
                                           child: Text(horarios[ds]![1]),
@@ -387,11 +427,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                     // Checkbox Encerrado (à direita)
                                     SizedBox(
                                       width: 70,
-                                      child: InputDecorator(
-                                        decoration: const InputDecoration(
-                                          labelText: 'Encerrado',
-                                          border: OutlineInputBorder(),
-                                        ),
+                                      child: Center(
                                         child: Checkbox(
                                           value: encerraDias[ds],
                                           onChanged: (bool? value) {
@@ -434,10 +470,9 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                     width: 70,
                                     child: InputDecorator(
                                       decoration: const InputDecoration(
-                                        labelText: 'Início',
                                         border: OutlineInputBorder(),
                                       ),
-                                      child: const Text('--:--'),
+                                      child: const Text(''),
                                     ),
                                   ),
 
@@ -448,10 +483,9 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                     width: 70,
                                     child: InputDecorator(
                                       decoration: const InputDecoration(
-                                        labelText: 'Fim',
                                         border: OutlineInputBorder(),
                                       ),
-                                      child: const Text('--:--'),
+                                      child: const Text(''),
                                     ),
                                   ),
 
@@ -460,11 +494,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                   // Checkbox Encerrado para feriados (à direita)
                                   SizedBox(
                                     width: 70,
-                                    child: InputDecorator(
-                                      decoration: const InputDecoration(
-                                        labelText: 'Encerrado',
-                                        border: OutlineInputBorder(),
-                                      ),
+                                    child: Center(
                                       child: Checkbox(
                                         value: encerraFeriados,
                                         onChanged: (bool? value) {
@@ -482,11 +512,13 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
                                 ],
                               ),
                             ],
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

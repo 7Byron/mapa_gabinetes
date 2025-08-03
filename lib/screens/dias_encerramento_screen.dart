@@ -46,24 +46,25 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
             .doc(widget.unidade!.id)
             .collection('encerramentos');
       } else {
-        encerramentosRef = FirebaseFirestore.instance.collection('encerramentos');
+        encerramentosRef =
+            FirebaseFirestore.instance.collection('encerramentos');
       }
 
       final anosSnapshot = await encerramentosRef.get();
       final anos = <String>[];
-      
+
       for (final doc in anosSnapshot.docs) {
         anos.add(doc.id);
       }
-      
+
       // Adiciona o ano atual se não existir
       if (!anos.contains(anoSelecionado)) {
         anos.add(anoSelecionado);
       }
-      
+
       // Ordena os anos
       anos.sort((a, b) => int.parse(b).compareTo(int.parse(a)));
-      
+
       setState(() {
         anosDisponiveis = anos;
       });
@@ -84,7 +85,8 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
             .collection('encerramentos');
         debugPrint('Carregando dados da unidade: ${widget.unidade!.id}');
       } else {
-        encerramentosRef = FirebaseFirestore.instance.collection('encerramentos');
+        encerramentosRef =
+            FirebaseFirestore.instance.collection('encerramentos');
         debugPrint('Carregando dados globais');
       }
 
@@ -92,7 +94,8 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
       final registosRef = anoRef.collection('registos');
 
       final registosSnapshot = await registosRef.get();
-      debugPrint('Dias de encerramento encontrados: ${registosSnapshot.docs.length}');
+      debugPrint(
+          'Dias de encerramento encontrados: ${registosSnapshot.docs.length}');
 
       final dias = <Map<String, dynamic>>[];
       for (final doc in registosSnapshot.docs) {
@@ -134,8 +137,6 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
       lastDate: DateTime(2100),
     );
 
-    if (pickedDate == null) return;
-
     String descricao = '';
     String motivo = 'Encerramento';
 
@@ -161,9 +162,11 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
                 ),
                 value: motivo,
                 items: const [
-                  DropdownMenuItem(value: 'Encerramento', child: Text('Encerramento')),
+                  DropdownMenuItem(
+                      value: 'Encerramento', child: Text('Encerramento')),
                   DropdownMenuItem(value: 'Feriado', child: Text('Feriado')),
-                  DropdownMenuItem(value: 'Manutenção', child: Text('Manutenção')),
+                  DropdownMenuItem(
+                      value: 'Manutenção', child: Text('Manutenção')),
                   DropdownMenuItem(value: 'Outro', child: Text('Outro')),
                 ],
                 onChanged: (value) => motivo = value ?? 'Encerramento',
@@ -191,11 +194,15 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
             .collection('unidades')
             .doc(widget.unidade!.id)
             .collection('encerramentos');
-        debugPrint('Salvando dia de encerramento na unidade: ${widget.unidade!.id}');
+        debugPrint(
+            'Salvando dia de encerramento na unidade: ${widget.unidade!.id}');
       } else {
-        encerramentosRef = FirebaseFirestore.instance.collection('encerramentos');
+        encerramentosRef =
+            FirebaseFirestore.instance.collection('encerramentos');
         debugPrint('Salvando dia de encerramento global');
       }
+
+      if (pickedDate == null) return;
 
       final ano = pickedDate.year.toString();
       final anoRef = encerramentosRef.doc(ano);
@@ -220,8 +227,10 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
       setState(() {
         diasEncerramento.add(novoDia);
         diasEncerramento.sort((a, b) {
-          final dateA = DateTime.tryParse(a['data'] as String) ?? DateTime.now();
-          final dateB = DateTime.tryParse(b['data'] as String) ?? DateTime.now();
+          final dateA =
+              DateTime.tryParse(a['data'] as String) ?? DateTime.now();
+          final dateB =
+              DateTime.tryParse(b['data'] as String) ?? DateTime.now();
           return dateA.compareTo(dateB);
         });
       });
@@ -257,7 +266,8 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
               .doc(widget.unidade!.id)
               .collection('encerramentos');
         } else {
-          encerramentosRef = FirebaseFirestore.instance.collection('encerramentos');
+          encerramentosRef =
+              FirebaseFirestore.instance.collection('encerramentos');
         }
 
         final dataDia = DateTime.tryParse(dia['data'] as String);
@@ -311,119 +321,135 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(title: 'Dias de Encerramento'),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Seletor de ano
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Ano: ',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    DropdownButton<String>(
-                      value: anoSelecionado,
-                      items: anosDisponiveis.map((ano) {
-                        return DropdownMenuItem(
-                          value: ano,
-                          child: Text(ano),
-                        );
-                      }).toList(),
-                      onChanged: (String? novoAno) {
-                        if (novoAno != null) {
-                          setState(() {
-                            anoSelecionado = novoAno;
-                          });
-                          _carregarDiasEncerramento();
-                        }
-                      },
-                    ),
-                    const Spacer(),
-                    ElevatedButton.icon(
-                      onPressed: _adicionarDiaEncerramento,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Adicionar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Lista de dias de encerramento
-            Expanded(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: diasEncerramento.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Nenhum dia de encerramento configurado para este ano',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: diasEncerramento.length,
-                          itemBuilder: (context, index) {
-                            final dia = diasEncerramento[index];
-                            final data = DateTime.tryParse(dia['data'] as String) ?? DateTime.now();
-                            final motivo = dia['motivo'] as String? ?? 'Encerramento';
-                            
-                            return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: _getMotivoColor(motivo),
-                                  child: Icon(
-                                    _getMotivoIcon(motivo),
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                                                 title: Text(
-                                   DateFormat('dd/MM/yyyy (EEEE)').format(data),
-                                   style: const TextStyle(fontWeight: FontWeight.bold),
-                                 ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      motivo,
-                                      style: TextStyle(
-                                        color: _getMotivoColor(motivo),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    if ((dia['descricao'] ?? '').isNotEmpty)
-                                      Text(
-                                        dia['descricao'],
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                  ],
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _removerDiaEncerramento(dia),
-                                ),
-                              ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // Seletor de ano
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Ano: ',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        DropdownButton<String>(
+                          value: anoSelecionado,
+                          items: anosDisponiveis.map((ano) {
+                            return DropdownMenuItem(
+                              value: ano,
+                              child: Text(ano),
                             );
+                          }).toList(),
+                          onChanged: (String? novoAno) {
+                            if (novoAno != null) {
+                              setState(() {
+                                anoSelecionado = novoAno;
+                              });
+                              _carregarDiasEncerramento();
+                            }
                           },
                         ),
+                        const Spacer(),
+                        ElevatedButton.icon(
+                          onPressed: _adicionarDiaEncerramento,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Adicionar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 16),
+
+                // Lista de dias de encerramento
+                Expanded(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: diasEncerramento.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum dia de encerramento configurado para este ano',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: diasEncerramento.length,
+                              itemBuilder: (context, index) {
+                                final dia = diasEncerramento[index];
+                                final data =
+                                    DateTime.tryParse(dia['data'] as String) ??
+                                        DateTime.now();
+                                final motivo =
+                                    dia['motivo'] as String? ?? 'Encerramento';
+
+                                return Card(
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: _getMotivoColor(motivo),
+                                      child: Icon(
+                                        _getMotivoIcon(motivo),
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      DateFormat('dd/MM/yyyy (EEEE)')
+                                          .format(data),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          motivo,
+                                          style: TextStyle(
+                                            color: _getMotivoColor(motivo),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        if ((dia['descricao'] ?? '').isNotEmpty)
+                                          Text(
+                                            dia['descricao'],
+                                            style:
+                                                const TextStyle(fontSize: 12),
+                                          ),
+                                      ],
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.delete,
+                                          color: Colors.red),
+                                      onPressed: () =>
+                                          _removerDiaEncerramento(dia),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -441,4 +467,4 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
         return Icons.event_busy;
     }
   }
-} 
+}

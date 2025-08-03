@@ -15,6 +15,9 @@ class GabinetesSection extends StatefulWidget {
   final DateTime selectedDate;
   final VoidCallback onAtualizarEstado;
   final Future<void> Function(String medicoId) onDesalocarMedicoComPergunta;
+  final bool isAdmin; // Novo parâmetro para controlar permissões
+  final Set<String>
+      medicosDestacados; // IDs dos médicos destacados pela pesquisa
 
   /// Função que aloca UM médico em UM gabinete em UM dia específico
   final Future<void> Function(
@@ -33,6 +36,8 @@ class GabinetesSection extends StatefulWidget {
     required this.onAlocarMedico,
     required this.onAtualizarEstado,
     required this.onDesalocarMedicoComPergunta,
+    this.isAdmin = false, // Por defeito é utilizador normal
+    this.medicosDestacados = const {}, // Por defeito nenhum médico destacado
   });
 
   @override
@@ -47,23 +52,23 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
   bool _validarDisponibilidade(Disponibilidade disponibilidade) {
     if (disponibilidade.horarios.isEmpty) return false;
-    
+
     for (final horario in disponibilidade.horarios) {
       if (horario.isEmpty || !horario.contains(':')) return false;
-      
+
       final partes = horario.split(':');
       if (partes.length != 2) return false;
-      
+
       try {
         final hora = int.parse(partes[0]);
         final minuto = int.parse(partes[1]);
-        
+
         if (hora < 0 || hora > 23 || minuto < 0 || minuto > 59) return false;
       } catch (e) {
         return false;
       }
     }
-    
+
     return true;
   }
 
@@ -136,6 +141,19 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                 return DragTarget<String>(
                   onWillAcceptWithDetails: (details) {
+                    // Verificar se o usuário é administrador
+                    if (!widget.isAdmin) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Apenas administradores podem fazer alterações nas alocações.',
+                          ),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                      return false;
+                    }
+
                     final medicoId = details.data;
                     // 1) Ache o médico
                     final medico = widget.medicos.firstWhere(
@@ -177,7 +195,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                       );
                       return false;
                     }
-                    debugPrint('Médico $medicoId está alocado, aceitando para desalocar.');
+                    debugPrint(
+                        'Médico $medicoId está alocado, aceitando para desalocar.');
                     return true;
                   },
                   onAcceptWithDetails: (details) async {
@@ -358,34 +377,53 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                       ? '${a.horarioInicio} - ${a.horarioFim}'
                                       : a.horarioInicio;
 
-                                  return Draggable<String>(
-                                    data: medico.id,
-                                    feedback: MedicoCard.dragFeedback(
-                                      medico,
-                                      horariosAlocacao,
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: 0.5,
-                                      child: MedicoCard.buildSmallMedicoCard(
-                                        medico,
-                                        horariosAlocacao,
-                                        Colors.white,
-                                        true,
-                                      ),
-                                    ),
-                                    child: MedicoCard.buildSmallMedicoCard(
-                                      medico,
-                                      horariosAlocacao,
-                                      Colors.white,
-                                      true,
-                                    ),
-                                    onDragEnd: (details) {
-                                      if (details.wasAccepted == false) {
-                                        debugPrint(
-                                            'Cartão foi solto fora de qualquer DragTarget. Nenhuma ação será disparada.');
-                                      }
-                                    },
-                                  );
+                                  // Verificar se o médico está destacado pela pesquisa
+                                  final isDestacado = widget.medicosDestacados
+                                      .contains(medico.id);
+                                  final corDestaque = isDestacado
+                                      ? Colors.orange.shade200
+                                      : null;
+
+                                  return widget.isAdmin
+                                      ? Draggable<String>(
+                                          data: medico.id,
+                                          feedback: MedicoCard.dragFeedback(
+                                            medico,
+                                            horariosAlocacao,
+                                          ),
+                                          childWhenDragging: Opacity(
+                                            opacity: 0.5,
+                                            child:
+                                                MedicoCard.buildSmallMedicoCard(
+                                              medico,
+                                              horariosAlocacao,
+                                              Colors.white,
+                                              true,
+                                              corDestaque: corDestaque,
+                                            ),
+                                          ),
+                                          child:
+                                              MedicoCard.buildSmallMedicoCard(
+                                            medico,
+                                            horariosAlocacao,
+                                            Colors.white,
+                                            true,
+                                            corDestaque: corDestaque,
+                                          ),
+                                          onDragEnd: (details) {
+                                            if (details.wasAccepted == false) {
+                                              debugPrint(
+                                                  'Cartão foi solto fora de qualquer DragTarget. Nenhuma ação será disparada.');
+                                            }
+                                          },
+                                        )
+                                      : MedicoCard.buildSmallMedicoCard(
+                                          medico,
+                                          horariosAlocacao,
+                                          Colors.white,
+                                          true,
+                                          corDestaque: corDestaque,
+                                        );
                                 }),
                             ],
                           ),

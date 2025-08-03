@@ -11,6 +11,7 @@ import '../widgets/date_picker_section.dart';
 import '../widgets/gabinetes_section.dart';
 import '../widgets/medicos_disponiveis_section.dart';
 import '../widgets/filtros_section.dart';
+import '../widgets/pesquisa_section.dart';
 
 // Lógica separada
 import '../utils/alocacao_medicos_logic.dart';
@@ -48,6 +49,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   bool isCarregando = true;
   DateTime selectedDate = DateTime.now();
 
+  // Controle de layout responsivo
+  bool mostrarColunaEsquerda = true; // Para ecrãs pequenos
+
   // Dados principais
   List<Gabinete> gabinetes = [];
   List<Medico> medicos = [];
@@ -78,6 +82,25 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   List<String> pisosSelecionados = [];
   String filtroOcupacao = 'Todos'; // 'Livres', 'Ocupados', 'Todos'
   bool mostrarConflitos = false;
+  String? filtroEspecialidadeGabinete; // Filtro por especialidade do gabinete
+
+  // Pesquisa
+  String? pesquisaNome;
+  String? pesquisaEspecialidade;
+  Set<String> medicosDestacados =
+      {}; // IDs dos médicos destacados pela pesquisa
+
+  // Método para alternar entre colunas em ecrãs pequenos
+  void _alternarColuna() {
+    setState(() {
+      mostrarColunaEsquerda = !mostrarColunaEsquerda;
+    });
+  }
+
+  // Método para verificar se deve usar layout responsivo
+  bool _deveUsarLayoutResponsivo(BuildContext context) {
+    return MediaQuery.of(context).size.width < 600;
+  }
 
   @override
   void initState() {
@@ -217,6 +240,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       // Atualizar médicos disponíveis
       _atualizarMedicosDisponiveis();
 
+      // Inicializar filtros de piso com todos os setores selecionados por padrão
+      _inicializarFiltrosPiso();
+
       setState(() {
         isCarregando = false;
       });
@@ -237,11 +263,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     }
 
     final diaSemana = selectedDate.weekday;
-    
+
     // Verificar se o dia específico está configurado para encerrar
     if (encerraDias[diaSemana] == true) {
       clinicaFechada = true;
-      final diasSemana = ['', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+      final diasSemana = [
+        '',
+        'Segunda-feira',
+        'Terça-feira',
+        'Quarta-feira',
+        'Quinta-feira',
+        'Sexta-feira',
+        'Sábado',
+        'Domingo'
+      ];
       mensagemClinicaFechada = 'Clínica encerrada às ${diasSemana[diaSemana]}s';
       return;
     }
@@ -256,7 +291,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     if (feriado.containsKey('id') && feriado['id']!.isNotEmpty) {
       if (encerraFeriados) {
         clinicaFechada = true;
-        mensagemClinicaFechada = 'Clínica encerrada - Feriado: ${feriado['descricao'] ?? ''}';
+        mensagemClinicaFechada =
+            'Clínica encerrada - Feriado: ${feriado['descricao'] ?? ''}';
         return;
       }
     }
@@ -365,6 +401,131 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     }
   }
 
+  void _inicializarFiltrosPiso() {
+    // Inicializar todos os filtros de piso como selecionados por padrão
+    if (gabinetes.isNotEmpty) {
+      final todosSetores = gabinetes.map((g) => g.setor).toSet().toList();
+      pisosSelecionados = List<String>.from(todosSetores);
+      debugPrint(
+          '✅ Filtros de piso inicializados: ${pisosSelecionados.join(', ')}');
+    } else {
+      debugPrint(
+          '⚠️ Nenhum gabinete encontrado para inicializar filtros de piso');
+    }
+  }
+
+  // Obter médicos alocados no dia selecionado
+  List<Medico> _getMedicosAlocadosNoDia() {
+    final medicosAlocados = <Medico>[];
+    for (final alocacao in alocacoes) {
+      final alocDate =
+          DateTime(alocacao.data.year, alocacao.data.month, alocacao.data.day);
+      final selectedDateNormalized =
+          DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+
+      if (alocDate == selectedDateNormalized) {
+        final medico = medicos.firstWhere(
+          (m) => m.id == alocacao.medicoId,
+          orElse: () =>
+              Medico(id: '', nome: '', especialidade: '', disponibilidades: []),
+        );
+        if (medico.id.isNotEmpty &&
+            !medicosAlocados.any((m) => m.id == medico.id)) {
+          medicosAlocados.add(medico);
+        }
+      }
+    }
+    return medicosAlocados;
+  }
+
+  // Obter opções de pesquisa por nome
+  List<String> _getOpcoesPesquisaNome() {
+    final medicosAlocados = _getMedicosAlocadosNoDia();
+    final nomes = medicosAlocados.map((m) => m.nome).toList();
+    nomes.sort(); // Ordem alfabética
+    return nomes;
+  }
+
+  // Obter opções de pesquisa por especialidade
+  List<String> _getOpcoesPesquisaEspecialidade() {
+    final medicosAlocados = _getMedicosAlocadosNoDia();
+    final especialidades =
+        medicosAlocados.map((m) => m.especialidade).toSet().toList();
+    especialidades.sort(); // Ordem alfabética
+    return especialidades;
+  }
+
+  // Aplicar pesquisa por nome
+  void _aplicarPesquisaNome(String? valor) {
+    setState(() {
+      pesquisaNome = valor;
+      // Se selecionou um nome, limpar pesquisa por especialidade
+      if (valor != null && valor.isNotEmpty) {
+        pesquisaEspecialidade = null;
+      }
+      _atualizarMedicosDestacados();
+    });
+  }
+
+  // Aplicar pesquisa por especialidade
+  void _aplicarPesquisaEspecialidade(String? valor) {
+    setState(() {
+      pesquisaEspecialidade = valor;
+      // Se selecionou uma especialidade, limpar pesquisa por nome
+      if (valor != null && valor.isNotEmpty) {
+        pesquisaNome = null;
+      }
+      _atualizarMedicosDestacados();
+    });
+  }
+
+  // Atualizar médicos destacados baseado na pesquisa ativa
+  void _atualizarMedicosDestacados() {
+    medicosDestacados.clear();
+    final medicosAlocados = _getMedicosAlocadosNoDia();
+
+    // Pesquisa por nome (prioridade)
+    if (pesquisaNome != null && pesquisaNome!.isNotEmpty) {
+      final medicoEncontrado = medicosAlocados.firstWhere(
+        (m) => m.nome == pesquisaNome,
+        orElse: () =>
+            Medico(id: '', nome: '', especialidade: '', disponibilidades: []),
+      );
+      if (medicoEncontrado.id.isNotEmpty) {
+        medicosDestacados.add(medicoEncontrado.id);
+      }
+    }
+    // Pesquisa por especialidade (apenas se não houver pesquisa por nome)
+    else if (pesquisaEspecialidade != null &&
+        pesquisaEspecialidade!.isNotEmpty) {
+      for (final medico in medicosAlocados) {
+        if (medico.especialidade == pesquisaEspecialidade) {
+          medicosDestacados.add(medico.id);
+        }
+      }
+    }
+  }
+
+  // Obter especialidades únicas dos gabinetes
+  List<String> _getEspecialidadesGabinetes() {
+    final especialidades = <String>{};
+    for (final gabinete in gabinetes) {
+      especialidades.addAll(gabinete.especialidadesPermitidas);
+    }
+    final lista = especialidades.toList();
+    lista.sort(); // Ordem alfabética
+    return lista;
+  }
+
+  // Limpar pesquisa
+  void _limparPesquisa() {
+    setState(() {
+      pesquisaNome = null;
+      pesquisaEspecialidade = null;
+      medicosDestacados.clear();
+    });
+  }
+
   void _onDateChanged(DateTime newDate) {
     print(
         '🔄 _onDateChanged chamado com data: ${newDate.day}/${newDate.month}/${newDate.year}');
@@ -388,12 +549,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         disponibilidades: disponibilidades,
         onAlocacoesChanged: () {
           _carregarDadosIniciais();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Médico alocado com sucesso!'),
-              backgroundColor: Colors.green,
-            ),
-          );
         },
         unidade: widget.unidade,
       );
@@ -411,31 +566,95 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     final medico = medicos.firstWhere((m) => m.id == medicoId);
     final alocacao = alocacoes.firstWhere((a) => a.medicoId == medicoId);
 
-    final confirmacao = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar Desalocação'),
-        content: Text(
-          'Tem certeza que deseja desalocar ${medico.nome} do ${alocacao.gabineteId}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Desalocar'),
-          ),
-        ],
+    // Encontrar o nome do gabinete
+    final gabinete = gabinetes.firstWhere(
+      (g) => g.id == alocacao.gabineteId,
+      orElse: () => Gabinete(
+        id: '',
+        nome: 'Gabinete Desconhecido',
+        setor: '',
+        especialidadesPermitidas: [],
       ),
     );
 
-    if (confirmacao == true) {
+    // Encontrar a disponibilidade para verificar o tipo
+    final disponibilidade = disponibilidades.firstWhere(
+      (d) =>
+          d.medicoId == medicoId &&
+          d.data.year == selectedDate.year &&
+          d.data.month == selectedDate.month &&
+          d.data.day == selectedDate.day,
+      orElse: () => Disponibilidade(
+        id: '',
+        medicoId: '',
+        data: DateTime(1900, 1, 1),
+        horarios: [],
+        tipo: 'Única',
+      ),
+    );
+
+    String? escolha;
+    if (disponibilidade.tipo == 'Única') {
+      // Para disponibilidade única, apenas confirmar
+      final confirmacao = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirmar Desalocação'),
+          content: Text(
+            'Tem certeza que deseja desalocar ${medico.nome} do ${gabinete.nome}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Desalocar'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmacao == true) {
+        escolha = '1dia';
+      }
+    } else {
+      // Para disponibilidade em série, perguntar se quer desalocar apenas um dia ou toda a série
+      escolha = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirmar Desalocação'),
+          content: Text(
+            'Esta disponibilidade é do tipo "${disponibilidade.tipo}".\n'
+            'Deseja desalocar apenas este dia (${selectedDate.day}/${selectedDate.month}) '
+            'ou todos os dias da série a partir deste?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, '1dia'),
+              child: const Text('Apenas este dia'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'serie'),
+              child: const Text('Toda a série'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (escolha == '1dia') {
       await _desalocarMedicoDiaUnico(medicoId);
+    } else if (escolha == 'serie') {
+      await _desalocarMedicoSerie(medicoId, disponibilidade.tipo);
     }
   }
 
@@ -450,12 +669,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         medicosDisponiveis: medicosDisponiveis,
         onAlocacoesChanged: () {
           _carregarDadosIniciais();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Médico desalocado com sucesso!'),
-              backgroundColor: Colors.orange,
-            ),
-          );
+          
         },
         unidade: widget.unidade,
       );
@@ -463,6 +677,31 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Erro ao desalocar médico: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _desalocarMedicoSerie(String medicoId, String tipo) async {
+    try {
+      await AlocacaoMedicosLogic.desalocarMedicoSerie(
+        medicoId: medicoId,
+        dataRef: selectedDate,
+        tipo: tipo,
+        disponibilidades: disponibilidades,
+        alocacoes: alocacoes,
+        medicos: medicos,
+        medicosDisponiveis: medicosDisponiveis,
+        onAlocacoesChanged: () {
+          _carregarDadosIniciais();
+          
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao desalocar série: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -512,59 +751,94 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
       pisosSelecionados: pisosSelecionados,
       filtroOcupacao: filtroOcupacao,
       mostrarConflitos: mostrarConflitos,
+      filtroEspecialidadeGabinete: filtroEspecialidadeGabinete,
     );
 
     return Column(
       children: [
         const SizedBox(height: 12),
 
-        // DragTarget: área para desalocar médico
-        Container(
-          constraints: const BoxConstraints(minHeight: 85),
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 4,
-                offset: Offset(2, 2),
-              ),
-            ],
-          ),
-          child: DragTarget<String>(
-            onWillAcceptWithDetails: (details) {
-              final medicoId = details.data;
-              // Verifica se o médico realmente está alocado antes de aceitar o cartão
-              final estaAlocado = alocacoes.any((a) => a.medicoId == medicoId);
-              if (!estaAlocado) {
+        // Seção de médicos disponíveis - apenas para administradores
+        if (widget.isAdmin) ...[
+          Container(
+            constraints: const BoxConstraints(minHeight: 85),
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 4,
+                  offset: Offset(2, 2),
+                ),
+              ],
+            ),
+            child: DragTarget<String>(
+              onWillAcceptWithDetails: (details) {
+                final medicoId = details.data;
+                // Verifica se o médico realmente está alocado antes de aceitar o cartão
+                final estaAlocado =
+                    alocacoes.any((a) => a.medicoId == medicoId);
+                if (!estaAlocado) {
+                  debugPrint(
+                      'Médico $medicoId NÃO está alocado, ignorando desalocação.');
+                  return false;
+                }
                 debugPrint(
-                    'Médico $medicoId NÃO está alocado, ignorando desalocação.');
-                return false;
-              }
-              debugPrint(
-                  'Médico $medicoId está alocado, aceitando para desalocar.');
-              return true;
-            },
-            onAcceptWithDetails: (details) async {
-              final medicoId = details.data;
-              // Agora só será chamado para médicos alocados
-              await _desalocarMedicoComPergunta(medicoId);
-            },
-            builder: (context, candidateData, rejectedData) {
-              return MedicosDisponiveisSection(
-                medicosDisponiveis: medicosDisponiveis,
-                disponibilidades: disponibilidades,
-                selectedDate: selectedDate,
-                onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
-              );
-            },
+                    'Médico $medicoId está alocado, aceitando para desalocar.');
+                return true;
+              },
+              onAcceptWithDetails: (details) async {
+                final medicoId = details.data;
+                // Agora só será chamado para médicos alocados
+                await _desalocarMedicoComPergunta(medicoId);
+              },
+              builder: (context, candidateData, rejectedData) {
+                return MedicosDisponiveisSection(
+                  medicosDisponiveis: medicosDisponiveis,
+                  disponibilidades: disponibilidades,
+                  selectedDate: selectedDate,
+                  onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
+                );
+              },
+            ),
           ),
-        ),
+        ] else ...[
+          // Para utilizadores não-administradores, mostrar mensagem informativa
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: Colors.blue.shade600,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Modo de visualização: Apenas administradores podem fazer alterações nas alocações.',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
 
         const SizedBox(height: 12),
 
@@ -581,6 +855,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
               onAlocarMedico: _alocarMedico,
               onAtualizarEstado: _carregarDadosIniciais,
               onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
+              isAdmin: widget.isAdmin,
+              medicosDestacados: medicosDestacados,
             ),
           ),
         ),
@@ -610,131 +886,290 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         unidade: widget.unidade, // Passa a unidade para personalizar o drawer
         isAdmin: widget.isAdmin, // Passa informação se é administrador
       ),
-      // Corpo com cor de fundo suave e layout mais espaçoso
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: Container(
-            color: Colors.grey.shade200,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Coluna Esquerda: DatePicker + Filtros
-                Container(
-                  width: 280,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        // DatePicker
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 4,
-                                offset: Offset(2, 2),
-                              ),
-                            ],
-                          ),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: DatePickerSection(
-                            selectedDate: selectedDate,
-                            onDateChanged: _onDateChanged,
-                          ),
-                        ),
+      // Corpo com cor de fundo suave e layout responsivo
+      body: Container(
+        color: Colors.grey.shade200,
+        child: _deveUsarLayoutResponsivo(context)
+            ? _buildLayoutResponsivo()
+            : _buildLayoutDesktop(),
+      ),
+    );
+  }
 
-                        // Filtros
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 4,
-                                offset: Offset(2, 2),
-                              ),
-                            ],
-                          ),
-                          child: FiltrosSection(
-                            todosSetores:
-                                gabinetes.map((g) => g.setor).toSet().toList(),
-                            pisosSelecionados: pisosSelecionados,
-                            onTogglePiso: (setor, isSelected) {
-                              setState(() {
-                                if (isSelected) {
-                                  pisosSelecionados.add(setor);
-                                } else {
-                                  pisosSelecionados.remove(setor);
-                                }
-                              });
-                            },
-                            filtroOcupacao: filtroOcupacao,
-                            onFiltroOcupacaoChanged: (novo) {
-                              setState(() => filtroOcupacao = novo);
-                            },
-                            mostrarConflitos: mostrarConflitos,
-                            onMostrarConflitosChanged: (val) {
-                              setState(() => mostrarConflitos = val);
-                            },
-                          ),
+  // Layout responsivo para ecrãs pequenos
+  Widget _buildLayoutResponsivo() {
+    return Column(
+      children: [
+        // Botões de alternância entre colunas
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border(
+              bottom: BorderSide(color: Colors.blue.shade200),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Botão "Ver Filtros"
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        mostrarColunaEsquerda = true;
+                      });
+                    },
+                    icon: Icon(
+                      Icons.settings,
+                      size: 16,
+                      color: mostrarColunaEsquerda
+                          ? Colors.white
+                          : Colors.blue.shade600,
+                    ),
+                    label: Text(
+                      'Ver Filtros',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: mostrarColunaEsquerda
+                            ? Colors.white
+                            : Colors.blue.shade600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: mostrarColunaEsquerda
+                          ? Colors.blue.shade600
+                          : Colors.white,
+                      foregroundColor: mostrarColunaEsquerda
+                          ? Colors.white
+                          : Colors.blue.shade600,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Colors.blue.shade600,
+                          width: 1,
                         ),
-                      ],
+                      ),
+                      elevation: mostrarColunaEsquerda ? 2 : 0,
                     ),
                   ),
                 ),
+              ),
 
-                // Coluna Direita: Médicos Disponíveis (dragTarget) e Gabinetes
-                Expanded(
-                  child: clinicaFechada
-                      ? Center(
-                          child: Container(
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.shade200),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.block,
-                                  size: 64,
-                                  color: Colors.red.shade400,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Clínica Encerrada!',
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.red.shade700,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  mensagemClinicaFechada,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.red.shade600,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : _buildEmptyStateOrContent(),
+              // Botão "Ver Mapa"
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        mostrarColunaEsquerda = false;
+                      });
+                    },
+                    icon: Icon(
+                      Icons.map,
+                      size: 16,
+                      color: !mostrarColunaEsquerda
+                          ? Colors.white
+                          : Colors.blue.shade600,
+                    ),
+                    label: Text(
+                      'Ver Mapa',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: !mostrarColunaEsquerda
+                            ? Colors.white
+                            : Colors.blue.shade600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: !mostrarColunaEsquerda
+                          ? Colors.blue.shade600
+                          : Colors.white,
+                      foregroundColor: !mostrarColunaEsquerda
+                          ? Colors.white
+                          : Colors.blue.shade600,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Colors.blue.shade600,
+                          width: 1,
+                        ),
+                      ),
+                      elevation: !mostrarColunaEsquerda ? 2 : 0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Conteúdo da coluna selecionada
+        Expanded(
+          child: mostrarColunaEsquerda
+              ? _buildColunaEsquerda()
+              : _buildColunaDireita(),
+        ),
+      ],
+    );
+  }
+
+  // Layout desktop para ecrãs grandes
+  Widget _buildLayoutDesktop() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Coluna Esquerda: DatePicker + Filtros
+        Container(
+          width: 280,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          child: SingleChildScrollView(
+            child: _buildColunaEsquerda(),
+          ),
+        ),
+
+        // Coluna Direita: Médicos Disponíveis e Gabinetes
+        Expanded(
+          child: _buildColunaDireita(),
+        ),
+      ],
+    );
+  }
+
+  // Conteúdo da coluna esquerda (DatePicker + Filtros + Pesquisa)
+  Widget _buildColunaEsquerda() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        children: [
+          // DatePicker
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 4,
+                  offset: Offset(2, 2),
                 ),
               ],
             ),
+            margin: const EdgeInsets.only(bottom: 12),
+            child: DatePickerSection(
+              selectedDate: selectedDate,
+              onDateChanged: _onDateChanged,
+            ),
           ),
-        ),
+
+          // Filtros
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 4,
+                  offset: Offset(2, 2),
+                ),
+              ],
+            ),
+            margin: const EdgeInsets.only(bottom: 12),
+            child: FiltrosSection(
+              todosSetores: gabinetes.map((g) => g.setor).toSet().toList(),
+              pisosSelecionados: pisosSelecionados,
+              onTogglePiso: (setor, isSelected) {
+                setState(() {
+                  if (isSelected) {
+                    pisosSelecionados.add(setor);
+                  } else {
+                    pisosSelecionados.remove(setor);
+                  }
+                });
+              },
+              filtroOcupacao: filtroOcupacao,
+              onFiltroOcupacaoChanged: (novo) {
+                setState(() => filtroOcupacao = novo);
+              },
+              mostrarConflitos: mostrarConflitos,
+              onMostrarConflitosChanged: (val) {
+                setState(() => mostrarConflitos = val);
+              },
+              filtroEspecialidadeGabinete: filtroEspecialidadeGabinete,
+              onFiltroEspecialidadeGabineteChanged: (especialidade) {
+                setState(() => filtroEspecialidadeGabinete = especialidade);
+              },
+              especialidadesGabinetes: _getEspecialidadesGabinetes(),
+            ),
+          ),
+
+          // Pesquisa
+          PesquisaSection(
+            pesquisaNome: pesquisaNome,
+            pesquisaEspecialidade: pesquisaEspecialidade,
+            opcoesNome: _getOpcoesPesquisaNome(),
+            opcoesEspecialidade: _getOpcoesPesquisaEspecialidade(),
+            onPesquisaNomeChanged: _aplicarPesquisaNome,
+            onPesquisaEspecialidadeChanged: _aplicarPesquisaEspecialidade,
+            onLimparPesquisa: _limparPesquisa,
+          ),
+        ],
       ),
     );
+  }
+
+  // Conteúdo da coluna direita (Médicos Disponíveis + Gabinetes)
+  Widget _buildColunaDireita() {
+    if (clinicaFechada) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.shade200),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.block,
+                size: 64,
+                color: Colors.red.shade400,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Clínica Encerrada!',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                mensagemClinicaFechada,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.red.shade600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _buildEmptyStateOrContent();
   }
 }

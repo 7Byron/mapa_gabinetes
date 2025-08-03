@@ -5,67 +5,48 @@ import '../models/medico.dart';
 class MedicoCard {
   /// Cartão compacto principal, permitindo personalizar cor e "validez".
   static Widget buildSmallMedicoCard(
-      Medico medico, String horarios, Color backgroundColor, bool isValid) {
+      Medico medico, String horarios, Color backgroundColor, bool isValid,
+      {Color? corDestaque}) {
     return Container(
       constraints: const BoxConstraints(minHeight: 40),
       padding: const EdgeInsets.all(6),
       margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: corDestaque ?? backgroundColor,
         borderRadius: BorderRadius.circular(6),
+        border: corDestaque != null
+            ? Border.all(color: Colors.orange, width: 2)
+            : null,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Nome do Médico (centralizado e ajustável)
+          // Nome do Médico (centralizado)
           SizedBox(
             width: double.infinity,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.center,
-              child: Text(
-                medico.nome,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+            child: Text(
+              medico.nome,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
+              textAlign: TextAlign.center,
             ),
           ),
           const SizedBox(height: 4),
 
-          // Linha para horários e especialidade
+          // Horários e especialidade centralizados
           SizedBox(
             width: double.infinity,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Horários
-                Text(
-                  horarios,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.purple,
-                  ),
-                ),
-                const SizedBox(width: 4),
-
-                // Especialidade (ajustável)
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      medico.especialidade,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: Text(
+              "$horarios ${medico.especialidade}",
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.purple,
+              ),
+              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -95,7 +76,8 @@ class MedicoCard {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
@@ -104,17 +86,24 @@ class MedicoCard {
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
+              textAlign: TextAlign.center,
             ),
-            if (medico.especialidade.isNotEmpty)
-              Text(
-                medico.especialidade,
-                style: const TextStyle(color: Colors.white),
-              ),
-            if (horariosStr.isNotEmpty)
+            if (horariosStr.isNotEmpty) ...[
+              const SizedBox(height: 4),
               Text(
                 horariosStr,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
+                textAlign: TextAlign.center,
               ),
+            ],
+            if (medico.especialidade.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                medico.especialidade,
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),

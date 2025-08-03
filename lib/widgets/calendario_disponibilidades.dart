@@ -43,6 +43,10 @@ class CalendarioDisponibilidades extends StatelessWidget {
                 title: const Text('Mensal'),
                 onTap: () => Navigator.of(context).pop('Mensal'),
               ),
+              ListTile(
+                title: const Text('Consecutivo'),
+                onTap: () => Navigator.of(context).pop('Consecutivo'),
+              ),
             ],
           ),
         );
@@ -50,8 +54,86 @@ class CalendarioDisponibilidades extends StatelessWidget {
     );
 
     if (tipoMarcacao != null) {
-      onAdicionarData(date, tipoMarcacao);
+      if (tipoMarcacao == 'Consecutivo') {
+        // Se escolheu Consecutivo, perguntar quantos dias
+        final int? numeroDias = await _mostrarDialogoNumeroDias(context);
+        if (numeroDias != null) {
+          onAdicionarData(date, 'Consecutivo:$numeroDias');
+        }
+      } else {
+        onAdicionarData(date, tipoMarcacao);
+      }
     }
+  }
+
+  Future<int?> _mostrarDialogoNumeroDias(BuildContext context) async {
+    int numeroDias = 5; // Valor padrão
+    
+    return await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Quantos dias consecutivos?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Escolha quantos dias consecutivos deseja marcar:'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          if (numeroDias > 1) {
+                            setState(() {
+                              numeroDias--;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '$numeroDias',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          if (numeroDias < 30) {
+                            setState(() {
+                              numeroDias++;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(null),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(numeroDias),
+                  child: const Text('Confirmar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _mostrarDialogoRemocaoSeries(

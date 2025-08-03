@@ -42,14 +42,14 @@ class CustomDrawer extends StatelessWidget {
                 Expanded(
                   flex: 8,
                   child: Image.asset(
-                    'images/icon2.png',
+                    'images/am_icon.png',
                     fit: BoxFit.contain,
                   ),
                 ),
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Text(
-                    'Gestão Mapa ${unidade?.nomeAlocacao ?? 'Gabinetes'}',
+                    'AlocMap: ${unidade?.nomeAlocacao ?? ''}',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -132,7 +132,8 @@ class CustomDrawer extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => ConfigClinicaScreen(unidade: unidade)),
+                          builder: (context) =>
+                              ConfigClinicaScreen(unidade: unidade)),
                     ).then((_) => onRefresh());
                   }
                 : null,
@@ -148,7 +149,8 @@ class CustomDrawer extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => DiasEncerramentoScreen(unidade: unidade)),
+                          builder: (context) =>
+                              DiasEncerramentoScreen(unidade: unidade)),
                     ).then((_) => onRefresh());
                   }
                 : null,

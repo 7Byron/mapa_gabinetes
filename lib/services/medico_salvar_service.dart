@@ -5,6 +5,43 @@ import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../models/disponibilidade.dart'; // Corrigido: Importação do modelo Disponibilidade para evitar erro de referência.
 
+/// Busca todas as especialidades existentes dos médicos
+Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
+  final firestore = FirebaseFirestore.instance;
+  final List<String> especialidades = [];
+
+  try {
+    CollectionReference medicosRef;
+    if (unidade != null) {
+      // Busca médicos da unidade específica
+      medicosRef = firestore
+          .collection('unidades')
+          .doc(unidade.id)
+          .collection('ocupantes');
+    } else {
+      // Busca da coleção antiga (fallback)
+      medicosRef = firestore.collection('medicos');
+    }
+
+    final snapshot = await medicosRef.get();
+    
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final especialidade = data['especialidade'] as String?;
+      if (especialidade != null && especialidade.trim().isNotEmpty) {
+        especialidades.add(especialidade.trim());
+      }
+    }
+
+    // Remove duplicatas e ordena alfabeticamente
+    final especialidadesUnicas = especialidades.toSet().toList()..sort();
+    return especialidadesUnicas;
+  } catch (e) {
+    print('❌ Erro ao buscar especialidades: $e');
+    return [];
+  }
+}
+
 Future<void> salvarMedicoCompleto(Medico medico, {Unidade? unidade}) async {
   final firestore = FirebaseFirestore.instance;
 

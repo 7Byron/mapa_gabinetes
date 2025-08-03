@@ -1,9 +1,9 @@
 import '../models/disponibilidade.dart';
 
 /// Cria uma lista de disponibilidades, podendo ser únicas, semanais,
-/// quinzenais ou mensais. Todas associadas ao [medicoId].
+/// quinzenais, mensais ou consecutivas. Todas associadas ao [medicoId].
 /// [dataInicial] é a primeira data escolhida,
-/// [tipo] pode ser: 'Única', 'Semanal', 'Quinzenal', 'Mensal',
+/// [tipo] pode ser: 'Única', 'Semanal', 'Quinzenal', 'Mensal', 'Consecutivo:X' (onde X é o número de dias),
 /// [limitarAoAno] define se vamos criar apenas até o final do mesmo ano ou não.
 List<Disponibilidade> criarDisponibilidadesSerie(
     DateTime dataInicial,
@@ -110,6 +110,31 @@ List<Disponibilidade> criarDisponibilidadesSerie(
                 data: novaData,
                 horarios: [],
                 tipo: 'Mensal',
+              ),
+            );
+          }
+        }
+      }
+      break;
+
+    default:
+      // Verifica se é um tipo Consecutivo (formato: "Consecutivo:X")
+      if (tipo.startsWith('Consecutivo:')) {
+        final numeroDiasStr = tipo.split(':')[1];
+        final numeroDias = int.tryParse(numeroDiasStr) ?? 5;
+        
+        // Gera dias consecutivos a partir da data inicial
+        for (var i = 0; i < numeroDias; i++) {
+          final novaData = dataInicial.add(Duration(days: i));
+          if (!limitarAoAno || novaData.year == dataInicial.year) {
+            final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-$i';
+            lista.add(
+              Disponibilidade(
+                id: uniqueId,
+                medicoId: medicoId,
+                data: novaData,
+                horarios: [],
+                tipo: 'Consecutivo',
               ),
             );
           }

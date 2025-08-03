@@ -37,8 +37,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - banco_dados/mapa_gabinetes.db
-    - images/icon2.png
+    - images/am_icon.png
 
 fonts:
   - family: Montserrat

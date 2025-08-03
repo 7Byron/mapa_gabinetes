@@ -49,12 +49,16 @@ class MedicosDisponiveisSection extends StatelessWidget {
           final dispDoMedico = disponibilidades.where((d) {
             final dd = DateTime(d.data.year, d.data.month, d.data.day);
             return d.medicoId == medico.id &&
-                dd == DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+                dd ==
+                    DateTime(selectedDate.year, selectedDate.month,
+                        selectedDate.day);
           }).toList();
 
-          final horariosStr = dispDoMedico
-              .expand((d) => d.horarios)
-              .join(', ');
+          // Formatar horários no formato "12:00 - 17:00" em vez de "12:00, 17:00"
+          final horariosList = dispDoMedico.expand((d) => d.horarios).toList();
+          final horariosStr = horariosList.length >= 2
+              ? "${horariosList[0]} - ${horariosList[1]}"
+              : horariosList.join(', ');
 
           final isValido = dispDoMedico.any((d) => _validarDisponibilidade(d));
 
@@ -78,8 +82,6 @@ class MedicosDisponiveisSection extends StatelessWidget {
     );
   }
 
-
-
   Widget _buildMedicoCardContent(Medico medico, String horarios, bool isValid) {
     return Container(
       width: 160,
@@ -89,17 +91,23 @@ class MedicosDisponiveisSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Nome do médico centralizado
           Text(
             medico.nome,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 4),
+          // Horários e especialidade centralizados
           Text(
             "$horarios ${medico.especialidade}",
             style: const TextStyle(fontSize: 10, color: Colors.grey),
+            textAlign: TextAlign.center,
           ),
         ],
       ),

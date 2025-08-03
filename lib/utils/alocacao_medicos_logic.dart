@@ -106,9 +106,16 @@ class AlocacaoMedicosLogic {
     required List<String> pisosSelecionados,
     required String filtroOcupacao,
     required bool mostrarConflitos,
+    String? filtroEspecialidadeGabinete,
   }) {
-    final filtrados =
+    // Filtro por piso
+    final filtradosPiso =
         gabinetes.where((g) => pisosSelecionados.contains(g.setor)).toList();
+
+    // Filtro por especialidade do gabinete
+    final filtrados = filtroEspecialidadeGabinete != null && filtroEspecialidadeGabinete.isNotEmpty
+        ? filtradosPiso.where((g) => g.especialidadesPermitidas.contains(filtroEspecialidadeGabinete)).toList()
+        : filtradosPiso;
 
     List<Gabinete> filtradosOcupacao = [];
     for (final gab in filtrados) {
@@ -162,9 +169,26 @@ class AlocacaoMedicosLogic {
       return a.medicoId == medicoId && alocDate == dataAlvo;
     });
     if (indexAloc != -1) {
+      final alocacaoAnterior = alocacoes[indexAloc];
       alocacoes.removeAt(indexAloc);
-      // TODO: Refatorar lógica para usar Firestore diretamente.
-      // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+      
+      // Remover alocação anterior do Firebase
+      try {
+        final firestore = FirebaseFirestore.instance;
+        final ano = alocacaoAnterior.data.year.toString();
+        final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR'; // Fallback para compatibilidade
+        final alocacoesRef = firestore
+            .collection('unidades')
+            .doc(unidadeId)
+            .collection('alocacoes')
+            .doc(ano)
+            .collection('registos');
+        
+        await alocacoesRef.doc(alocacaoAnterior.id).delete();
+        print('✅ Alocação anterior removida do Firebase: ${alocacaoAnterior.id}');
+      } catch (e) {
+        print('❌ Erro ao remover alocação anterior do Firebase: $e');
+      }
     }
 
     final dispDoDia = disponibilidades.where((disp) {
@@ -304,9 +328,26 @@ class AlocacaoMedicosLogic {
       });
 
       if (indexAloc != -1) {
+        final alocacaoRemovida = alocacoes[indexAloc];
         alocacoes.removeAt(indexAloc);
-        // TODO: Refatorar lógica para usar Firestore diretamente.
-        // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
+        
+        // Remover do Firebase
+        try {
+          final firestore = FirebaseFirestore.instance;
+          final ano = alocacaoRemovida.data.year.toString();
+          final unidadeId = 'fyEj6kOXvCuL65sMfCaR'; // ID padrão para compatibilidade
+          final alocacoesRef = firestore
+              .collection('unidades')
+              .doc(unidadeId)
+              .collection('alocacoes')
+              .doc(ano)
+              .collection('registos');
+          
+          await alocacoesRef.doc(alocacaoRemovida.id).delete();
+          print('✅ Alocação removida do Firebase: ${alocacaoRemovida.id}');
+        } catch (e) {
+          print('❌ Erro ao remover alocação do Firebase: $e');
+        }
       }
 
       final temDisp = disponibilidades.any((disp2) {

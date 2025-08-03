@@ -55,10 +55,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (kDebugMode) {
       print('🔧 MODO DEBUG: Bypass da password ativado');
       setState(() => _isLoading = true);
-      
+
       // Simula um pequeno delay para mostrar o loading
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       // Login automático como administrador em modo debug
       Navigator.pushReplacement(
         context,
@@ -69,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -229,7 +229,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   // Indicador de modo debug
                   if (kDebugMode)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.orange,
                         borderRadius: BorderRadius.circular(20),
@@ -254,7 +255,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Logo/Ícone
                   Image.asset(
-                    'images/icon2.png',
+                    'images/am_icon.png',
                     height: 100,
                     fit: BoxFit.contain,
                   ),
@@ -262,7 +263,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Título
                   const Text(
-                    'Gestão Mapa Gabinetes',
+                    'AlocMap',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -382,7 +383,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 16),
                   Text(
-                    kDebugMode 
+                    kDebugMode
                         ? '🔧 Modo Debug: Login automático ativado\nNão é necessário introduzir password'
                         : 'Utilize a password do projeto para acesso normal\nou a password do administrador para acesso completo',
                     style: const TextStyle(

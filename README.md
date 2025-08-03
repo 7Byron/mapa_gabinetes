@@ -21,3 +21,10 @@ App para gerir dotações de gabinetes médicos
 ├── gabinetes/{gabineteId}
 ├── horarios_clinica/{horarioId}
 └── feriados/{feriadoId}
+
+
+
+## para deploy no firebase
+flutter build web --release
+firebase deploy --only hosting
+

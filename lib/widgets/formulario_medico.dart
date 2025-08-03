@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../main.dart';
+import '../services/medico_salvar_service.dart';
+import '../models/unidade.dart';
 
 class FormularioMedico extends StatefulWidget {
   final TextEditingController nomeController;
   final TextEditingController especialidadeController;
   final TextEditingController observacoesController;
+  final Unidade?
+      unidade; // Adiciona unidade para buscar especialidades específicas
 
   const FormularioMedico({
     super.key,
     required this.nomeController,
     required this.especialidadeController,
     required this.observacoesController,
+    this.unidade,
   });
 
   @override
@@ -20,25 +25,47 @@ class FormularioMedico extends StatefulWidget {
 
 class FormularioMedicoState extends State<FormularioMedico> {
   final List<String> especialidadesDisponiveis = [];
-  late TextEditingController typeAheadController; // Controller para TypeAheadField
+  bool isLoadingEspecialidades = true;
+  late TextEditingController localController;
 
   @override
   void initState() {
     super.initState();
-    carregarEspecialidades();
-
-    // Inicializa o TypeAheadField com o valor atual do especialidadeController
-    typeAheadController =
+    localController =
         TextEditingController(text: widget.especialidadeController.text);
+    carregarEspecialidades();
+  }
+
+  @override
+  void didUpdateWidget(FormularioMedico oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sincroniza quando o widget é atualizado
+    if (localController.text != widget.especialidadeController.text) {
+      localController.text = widget.especialidadeController.text;
+    }
   }
 
   Future<void> carregarEspecialidades() async {
-    // TODO: Refatorar formulário para usar Firestore diretamente.
-    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
     setState(() {
-      especialidadesDisponiveis.clear();
-      especialidadesDisponiveis.addAll([]); // Adapta conforme necessário
+      isLoadingEspecialidades = true;
     });
+
+    try {
+      final especialidades = await buscarEspecialidadesExistentes(
+        unidade: widget.unidade,
+      );
+
+      setState(() {
+        especialidadesDisponiveis.clear();
+        especialidadesDisponiveis.addAll(especialidades);
+        isLoadingEspecialidades = false;
+      });
+    } catch (e) {
+      print('❌ Erro ao carregar especialidades: $e');
+      setState(() {
+        isLoadingEspecialidades = false;
+      });
+    }
   }
 
   @override
@@ -57,9 +84,11 @@ class FormularioMedicoState extends State<FormularioMedico> {
                 labelText: 'Nome do Médico',
                 border: OutlineInputBorder(),
                 labelStyle: TextStyle(color: MyAppTheme.roxo), // Cor do rótulo
-                floatingLabelStyle: TextStyle(color: MyAppTheme.roxo), // Cor ao focar
+                floatingLabelStyle:
+                    TextStyle(color: MyAppTheme.roxo), // Cor ao focar
                 focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
+                  borderSide:
+                      BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                 ),
               ),
             ),
@@ -68,10 +97,16 @@ class FormularioMedicoState extends State<FormularioMedico> {
             // Campo Especialidade com lógica ajustada
             TypeAheadField<String>(
               suggestionsCallback: (pattern) async {
+                // Se ainda está carregando, retorna lista vazia
+                if (isLoadingEspecialidades) {
+                  return <String>[];
+                }
+
                 // Filtra as especialidades disponíveis com base no texto digitado
                 return especialidadesDisponiveis
-                    .where((especialidade) =>
-                    especialidade.toLowerCase().contains(pattern.toLowerCase()))
+                    .where((especialidade) => especialidade
+                        .toLowerCase()
+                        .contains(pattern.toLowerCase()))
                     .toList();
               },
               itemBuilder: (context, suggestion) {
@@ -81,29 +116,44 @@ class FormularioMedicoState extends State<FormularioMedico> {
                 );
               },
               onSelected: (suggestion) {
-                // Atualiza ambos os controllers ao selecionar uma sugestão
-                typeAheadController.text = suggestion;
+                // Atualiza ambos os controllers quando uma sugestão é selecionada
+                localController.text = suggestion;
                 widget.especialidadeController.text = suggestion;
+                // Força a atualização do estado para refletir a mudança
+                setState(() {});
               },
               builder: (context, controller, focusNode) {
-                // Sincroniza o typeAheadController
-                controller.text = typeAheadController.text;
-
                 return TextField(
-                  controller: controller,
+                  controller: localController,
                   focusNode: focusNode,
                   onChanged: (value) {
                     // Propaga alterações para o especialidadeController
                     widget.especialidadeController.text = value;
                   },
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Especialidade',
-                    border: OutlineInputBorder(),
-                    labelStyle: TextStyle(color: MyAppTheme.roxo), // Cor do rótulo
-                    floatingLabelStyle: TextStyle(color: MyAppTheme.roxo), // Cor ao focar
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
+                    border: const OutlineInputBorder(),
+                    labelStyle: const TextStyle(
+                        color: MyAppTheme.roxo), // Cor do rótulo
+                    floatingLabelStyle:
+                        const TextStyle(color: MyAppTheme.roxo), // Cor ao focar
+                    focusedBorder: const OutlineInputBorder(
+                      borderSide:
+                          BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                     ),
+                    suffixIcon: isLoadingEspecialidades
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
+                    hintText: isLoadingEspecialidades
+                        ? 'Carregando especialidades...'
+                        : 'Digite ou selecione uma especialidade',
                   ),
                 );
               },
@@ -114,9 +164,12 @@ class FormularioMedicoState extends State<FormularioMedico> {
                   child: child,
                 );
               },
-              itemSeparatorBuilder: (context, index) => const Divider(height: 1),
-              debounceDuration: const Duration(milliseconds: 300), // Evita chamadas rápidas
-              hideOnEmpty: true, // Esconde as sugestões quando o texto está vazio
+              itemSeparatorBuilder: (context, index) =>
+                  const Divider(height: 1),
+              debounceDuration:
+                  const Duration(milliseconds: 300), // Evita chamadas rápidas
+              hideOnEmpty:
+                  true, // Esconde as sugestões quando o texto está vazio
             ),
 
             const SizedBox(height: 16),
@@ -129,9 +182,11 @@ class FormularioMedicoState extends State<FormularioMedico> {
                 labelText: 'Observações',
                 border: OutlineInputBorder(),
                 labelStyle: TextStyle(color: MyAppTheme.roxo), // Cor do rótulo
-                floatingLabelStyle: TextStyle(color: Colors.black), // Cor ao focar
+                floatingLabelStyle:
+                    TextStyle(color: Colors.black), // Cor ao focar
                 focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
+                  borderSide:
+                      BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                 ),
               ),
             ),
@@ -143,7 +198,7 @@ class FormularioMedicoState extends State<FormularioMedico> {
 
   @override
   void dispose() {
-    typeAheadController.dispose(); // Libera o controller
+    localController.dispose();
     super.dispose();
   }
 }

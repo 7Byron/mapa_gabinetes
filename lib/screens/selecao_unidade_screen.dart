@@ -206,7 +206,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Selecionar Unidade'),
+        //title: const Text('AlocMap'),
         backgroundColor: MyAppTheme.azulEscuro,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -223,13 +223,13 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
             child: Column(
               children: [
                 Image.asset(
-                  'images/icon2.png',
+                  'images/am_icon.png',
                   height: 80,
                   fit: BoxFit.contain,
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Gestão Mapa Gabinetes',
+                  'AlocMap',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,

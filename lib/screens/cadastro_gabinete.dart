@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:mapa_gabinetes/main.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
 import '../services/gabinete_service.dart';
@@ -40,27 +40,15 @@ class CadastroGabineteState extends State<CadastroGabinete> {
     try {
       // Carrega setores existentes dos gabinetes
       final gabinetes = await buscarGabinetes(unidade: widget.unidade);
-      final setores = gabinetes
-          .map((gabinete) => gabinete.setor)
-          .toSet()
-          .toList();
+      final setores =
+          gabinetes.map((gabinete) => gabinete.setor).toSet().toList()..sort();
 
-      // Carrega especialidades existentes dos médicos
-      CollectionReference medicosRef;
-      if (widget.unidade != null) {
-        medicosRef = FirebaseFirestore.instance
-            .collection('unidades')
-            .doc(widget.unidade!.id)
-            .collection('ocupantes');
-      } else {
-        medicosRef = FirebaseFirestore.instance.collection('medicos');
-      }
-      
-      final medicosSnapshot = await medicosRef.get();
-      final especialidades = medicosSnapshot.docs
-          .map((doc) => (doc.data() as Map<String, dynamic>)['especialidade'] as String)
+      // Carrega especialidades existentes dos gabinetes
+      final especialidades = gabinetes
+          .expand((gabinete) => gabinete.especialidadesPermitidas)
           .toSet()
-          .toList();
+          .toList()
+        ..sort();
 
       setState(() {
         _setoresDisponiveis.clear();
@@ -116,15 +104,6 @@ class CadastroGabineteState extends State<CadastroGabinete> {
         // Salva no Firestore usando o serviço
         await salvarGabineteCompleto(gabinete, unidade: widget.unidade);
 
-        debugPrint('Gabinete salvo com sucesso no Firestore');
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Gabinete salvo com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
         // Volta para a tela anterior apenas se solicitado
         if (voltar) {
           Navigator.pop(context, true);
@@ -178,19 +157,40 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                   key: _formKey,
                   child: ListView(
                     children: [
-                      // Campo para Setor / Piso com TypeAheadField estilizado
-                      TextFormField(
-                        controller: _setorController,
-                        decoration: const InputDecoration(
-                          labelText: 'Setor / Piso',
-                          hintText: 'Exemplo: Piso 1, Andar Térreo',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Informe o setor/piso';
-                          }
-                          return null;
+                      // Campo para Setor / Piso com TypeAheadField
+                      TypeAheadField<String>(
+                        suggestionsCallback: (pattern) async {
+                          // Filtra os setores disponíveis com base no texto digitado
+                          return _setoresDisponiveis
+                              .where((setor) => setor
+                                  .toLowerCase()
+                                  .contains(pattern.toLowerCase()))
+                              .toList();
+                        },
+                        itemBuilder: (context, suggestion) {
+                          return ListTile(
+                            title: Text(suggestion),
+                          );
+                        },
+                        onSelected: (suggestion) {
+                          _setorController.text = suggestion;
+                        },
+                        builder: (context, controller, focusNode) {
+                          return TextFormField(
+                            controller: _setorController,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'Setor / Piso',
+                              hintText: 'Exemplo: Piso 1, Andar Térreo',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Informe o setor/piso';
+                              }
+                              return null;
+                            },
+                          );
                         },
                       ),
 
@@ -212,19 +212,41 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                       ),
                       const SizedBox(height: 16),
 
-                      TextFormField(
-                        controller: _especialidadesController,
-                        decoration: const InputDecoration(
-                          labelText: 'Especialidades Permitidas',
-                          hintText:
-                              'Exemplo: Ortopedia, ORL, Medicina Dentária',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Informe as especialidades permitidas';
-                          }
-                          return null;
+                      // Campo para Especialidades Permitidas com TypeAheadField
+                      TypeAheadField<String>(
+                        suggestionsCallback: (pattern) async {
+                          // Filtra as especialidades disponíveis com base no texto digitado
+                          return _especialidadesDisponiveis
+                              .where((especialidade) => especialidade
+                                  .toLowerCase()
+                                  .contains(pattern.toLowerCase()))
+                              .toList();
+                        },
+                        itemBuilder: (context, suggestion) {
+                          return ListTile(
+                            title: Text(suggestion),
+                          );
+                        },
+                        onSelected: (suggestion) {
+                          _especialidadesController.text = suggestion;
+                        },
+                        builder: (context, controller, focusNode) {
+                          return TextFormField(
+                            controller: _especialidadesController,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'Especialidades Permitidas',
+                              hintText:
+                                  'Exemplo: Ortopedia, ORL, Medicina Dentária',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Informe as especialidades permitidas';
+                              }
+                              return null;
+                            },
+                          );
                         },
                       ),
                       Padding(

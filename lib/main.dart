@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:mapa_gabinetes/screens/selecao_unidade_screen.dart';
-import 'debug_firebase.dart'; // Debug temporário
+import 'package:mapa_gabinetes/utils/web_gl_support.dart';
+import 'package:mapa_gabinetes/utils/network_utils.dart';
+import 'package:mapa_gabinetes/services/firebase_error_handler.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+// import 'debug_firebase.dart'; // Debug temporário - DESATIVADO
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,8 +18,30 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Inicializar verificação de rede e Firebase
+  await NetworkUtils.initialize();
+  await FirebaseErrorHandler.initialize();
+
+  // Verificar WebGL e logar o status
+  final webglAvailable = hasWebGL();
+  print('🌐 WebGL disponível: $webglAvailable');
+
+  if (!webglAvailable) {
+    print('⚠️ WebGL não disponível - aplicação em modo de compatibilidade');
+  }
+
+  // Verificar conectividade de rede (agora só detecta problemas reais)
+  if (NetworkUtils.hasNetworkIssues) {
+    print('⚠️ Problemas de rede detectados - aplicação em modo offline');
+  }
+
+  // Verificar Firebase (agora só detecta problemas reais)
+  if (FirebaseErrorHandler.hasFirebaseIssues) {
+    print('⚠️ Problemas com Firebase detectados - aplicação em modo offline');
+  }
+
   // Debug temporário - remover depois
-  await debugFirebase();
+  // await debugFirebase(); // DESATIVADO
 
   runApp(const MyApp());
 }
@@ -27,8 +55,170 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'AlocMap',
       theme: MyAppTheme.themeData, // Aplica o tema do MyAppTheme
-      home: const SelecaoUnidadeScreen(),
+      home: _buildHomeScreen(),
     );
+  }
+
+  Widget _buildHomeScreen() {
+    final canUseWebGL = !kIsWeb || hasWebGL();
+    final hasNetworkProblems = NetworkUtils.hasNetworkIssues;
+    final hasFirebaseProblems = FirebaseErrorHandler.hasFirebaseIssues;
+
+    // Se WebGL está disponível e não há problemas, usar tela normal
+    if (canUseWebGL && !hasNetworkProblems && !hasFirebaseProblems) {
+      return const SelecaoUnidadeScreen();
+    }
+
+    // Caso contrário, mostrar tela de fallback
+    return _FallbackScreen(
+      hasNetworkIssues: hasNetworkProblems,
+      hasFirebaseIssues: hasFirebaseProblems,
+      hasWebGLIssues: !canUseWebGL,
+    );
+  }
+}
+
+class _FallbackScreen extends StatelessWidget {
+  const _FallbackScreen({
+    required this.hasNetworkIssues,
+    required this.hasFirebaseIssues,
+    required this.hasWebGLIssues,
+  });
+
+  final bool hasNetworkIssues;
+  final bool hasFirebaseIssues;
+  final bool hasWebGLIssues;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _getIcon(),
+                color: _getIconColor(),
+                size: 64,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                _getTitle(),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: _getIconColor(),
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _getMessage(),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.blue.shade700,
+                      size: 32,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Modo de Compatibilidade Ativo',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade700,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'A aplicação está a funcionar com funcionalidades básicas.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.blue.shade600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // Tentar recarregar a aplicação
+                  if (kIsWeb) {
+                    html.window.location.reload();
+                  }
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tentar Novamente'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _getIcon() {
+    if (hasNetworkIssues) return Icons.wifi_off;
+    if (hasFirebaseIssues) return Icons.cloud_off;
+    if (hasWebGLIssues) return Icons.warning_amber_rounded;
+    return Icons.info_outline;
+  }
+
+  Color _getIconColor() {
+    if (hasNetworkIssues || hasFirebaseIssues) return Colors.red.shade700;
+    if (hasWebGLIssues) return Colors.orange.shade700;
+    return Colors.blue.shade700;
+  }
+
+  String _getTitle() {
+    if (hasNetworkIssues) return 'Problemas de Rede';
+    if (hasFirebaseIssues) return 'Problemas de Conectividade';
+    if (hasWebGLIssues) return 'Compatibilidade Limitada';
+    return 'Modo de Compatibilidade';
+  }
+
+  String _getMessage() {
+    if (hasNetworkIssues) {
+      return 'A aplicação está a funcionar em modo offline devido a restrições de rede corporativa. Alguns dados podem não estar atualizados.';
+    }
+    if (hasFirebaseIssues) {
+      return 'Não foi possível conectar aos serviços em nuvem. A aplicação está a funcionar em modo local.';
+    }
+    if (hasWebGLIssues) {
+      return 'Este navegador tem funcionalidades limitadas devido a restrições de segurança corporativa.';
+    }
+    return 'A aplicação está a funcionar em modo de compatibilidade.';
   }
 }
 

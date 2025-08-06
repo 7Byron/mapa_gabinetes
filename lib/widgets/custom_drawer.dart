@@ -46,16 +46,7 @@ class CustomDrawer extends StatelessWidget {
                     fit: BoxFit.contain,
                   ),
                 ),
-                Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Text(
-                    'AlocMap: ${unidade?.nomeAlocacao ?? ''}',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                ),
+              
               ],
             ),
           ),

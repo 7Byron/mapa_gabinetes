@@ -254,6 +254,156 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
     }
   }
 
+  Future<void> _editarDiaEncerramento(Map<String, dynamic> dia) async {
+    final dataAtual =
+        DateTime.tryParse(dia['data'] as String) ?? DateTime.now();
+    final descricaoAtual = dia['descricao'] as String? ?? '';
+    final motivoAtual = dia['motivo'] as String? ?? 'Encerramento';
+
+    DateTime? novaData = dataAtual;
+    String novaDescricao = descricaoAtual;
+    String novoMotivo = motivoAtual;
+
+    // Dialog para selecionar nova data
+    final dataSelecionada = await showDatePicker(
+      context: context,
+      initialDate: dataAtual,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (dataSelecionada != null) {
+      novaData = dataSelecionada;
+    } else {
+      return; // Se cancelou a seleção de data, cancela a edição
+    }
+
+    // Dialog para editar descrição e motivo
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Editar Dia de Encerramento'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Descrição (Opcional)',
+                  hintText: 'Ex.: Feriado Nacional',
+                ),
+                controller: TextEditingController(text: novaDescricao),
+                onChanged: (value) => novaDescricao = value,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(
+                  labelText: 'Motivo',
+                ),
+                value: novoMotivo,
+                items: const [
+                  DropdownMenuItem(
+                      value: 'Encerramento', child: Text('Encerramento')),
+                  DropdownMenuItem(value: 'Feriado', child: Text('Feriado')),
+                  DropdownMenuItem(
+                      value: 'Manutenção', child: Text('Manutenção')),
+                  DropdownMenuItem(value: 'Outro', child: Text('Outro')),
+                ],
+                onChanged: (value) => novoMotivo = value ?? 'Encerramento',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    try {
+      final diaId = dia['id'] as String?;
+      if (diaId == null) return;
+
+      CollectionReference encerramentosRef;
+      if (widget.unidade != null) {
+        encerramentosRef = FirebaseFirestore.instance
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('encerramentos');
+      } else {
+        encerramentosRef =
+            FirebaseFirestore.instance.collection('encerramentos');
+      }
+
+      // Se a data mudou, pode ser necessário mover para outro ano
+      final anoAnterior = dataAtual.year.toString();
+      final anoNovo = novaData.year.toString();
+
+      final anoRef = encerramentosRef.doc(anoNovo);
+      final registosRef = anoRef.collection('registos');
+
+      // Atualiza os dados
+      await registosRef.doc(diaId).set({
+        'data': novaData.toIso8601String(),
+        'descricao': novaDescricao.isNotEmpty ? novaDescricao : '',
+        'motivo': novoMotivo,
+      });
+
+      // Se mudou de ano, remove do ano anterior
+      if (anoAnterior != anoNovo) {
+        final anoAnteriorRef = encerramentosRef.doc(anoAnterior);
+        final registosAnteriorRef = anoAnteriorRef.collection('registos');
+        await registosAnteriorRef.doc(diaId).delete();
+      }
+
+      // Atualiza a lista local
+      setState(() {
+        final index = diasEncerramento.indexWhere((d) => d['id'] == diaId);
+        if (index != -1) {
+          diasEncerramento[index] = {
+            'id': diaId,
+            'data': novaData!.toIso8601String(),
+            'descricao': novaDescricao.isNotEmpty ? novaDescricao : '',
+            'motivo': novoMotivo,
+          };
+
+          // Reordena a lista
+          diasEncerramento.sort((a, b) {
+            final dateA =
+                DateTime.tryParse(a['data'] as String) ?? DateTime.now();
+            final dateB =
+                DateTime.tryParse(b['data'] as String) ?? DateTime.now();
+            return dateA.compareTo(dateB);
+          });
+        }
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dia de encerramento editado com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Erro ao editar dia de encerramento: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao editar dia de encerramento: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _removerDiaEncerramento(Map<String, dynamic> dia) async {
     try {
       final diaId = dia['id'] as String?;
@@ -434,12 +584,24 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
                                           ),
                                       ],
                                     ),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.delete,
-                                          color: Colors.red),
-                                      onPressed: () =>
-                                          _removerDiaEncerramento(dia),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.edit,
+                                              color: Colors.blue),
+                                          onPressed: () =>
+                                              _editarDiaEncerramento(dia),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              color: Colors.red),
+                                          onPressed: () =>
+                                              _removerDiaEncerramento(dia),
+                                        ),
+                                      ],
                                     ),
+                                    onTap: () => _editarDiaEncerramento(dia),
                                   ),
                                 );
                               },

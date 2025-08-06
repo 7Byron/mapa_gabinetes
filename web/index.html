@@ -17,22 +17,169 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="App para gerir dotações de gabinetes médicos">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="mapa_gabinetes">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>mapa_gabinetes</title>
   <link rel="manifest" href="manifest.json">
+  
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5079087452062016"
+     crossorigin="anonymous"></script>
+  
+  <!-- Scripts personalizados para anúncios -->
+  <script src="ads.js"></script>
+  
+  <!-- Detecção de Internet Explorer -->
+  <script>
+    // Detectar Internet Explorer
+    function isInternetExplorer() {
+      return navigator.userAgent.indexOf('MSIE') !== -1 || 
+             navigator.userAgent.indexOf('Trident') !== -1;
+    }
+    
+    // Se for Internet Explorer, mostrar mensagem de incompatibilidade
+    if (isInternetExplorer()) {
+      document.addEventListener('DOMContentLoaded', function() {
+        document.body.innerHTML = `
+          <div style="
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            text-align: center;
+          ">
+            <div style="
+              width: 80px;
+              height: 80px;
+              background: #ff6b6b;
+              border-radius: 50%;
+              margin: 0 auto 20px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 40px;
+              color: white;
+            ">⚠️</div>
+            
+            <h1 style="color: #333; margin-bottom: 20px;">Navegador Não Suportado</h1>
+            
+            <p style="color: #666; line-height: 1.6; margin-bottom: 25px;">
+              O Internet Explorer não é compatível com esta aplicação. 
+              Por favor, utilize um dos seguintes navegadores:
+            </p>
+            
+            <div style="
+              display: flex;
+              justify-content: center;
+              gap: 20px;
+              margin-bottom: 30px;
+              flex-wrap: wrap;
+            ">
+              <div style="text-align: center;">
+                <div style="
+                  width: 50px;
+                  height: 50px;
+                  background: #4285f4;
+                  border-radius: 8px;
+                  margin: 0 auto 10px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: white;
+                  font-weight: bold;
+                ">C</div>
+                <span style="font-size: 14px; color: #333;">Chrome</span>
+              </div>
+              
+              <div style="text-align: center;">
+                <div style="
+                  width: 50px;
+                  height: 50px;
+                  background: #0078d4;
+                  border-radius: 8px;
+                  margin: 0 auto 10px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: white;
+                  font-weight: bold;
+                ">E</div>
+                <span style="font-size: 14px; color: #333;">Edge</span>
+              </div>
+              
+              <div style="text-align: center;">
+                <div style="
+                  width: 50px;
+                  height: 50px;
+                  background: #ff6b35;
+                  border-radius: 8px;
+                  margin: 0 auto 10px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: white;
+                  font-weight: bold;
+                ">F</div>
+                <span style="font-size: 14px; color: #333;">Firefox</span>
+              </div>
+              
+              <div style="text-align: center;">
+                <div style="
+                  width: 50px;
+                  height: 50px;
+                  background: #000;
+                  border-radius: 8px;
+                  margin: 0 auto 10px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: white;
+                  font-weight: bold;
+                ">S</div>
+                <span style="font-size: 14px; color: #333;">Safari</span>
+              </div>
+            </div>
+            
+            <div style="
+              background: #f8f9fa;
+              padding: 20px;
+              border-radius: 8px;
+              border-left: 4px solid #0078d4;
+            ">
+              <p style="margin: 0; color: #666; font-size: 14px;">
+                <strong>Recomendado:</strong> Microsoft Edge (incluído no Windows 10/11)
+              </p>
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      // Para navegadores compatíveis, carregar Flutter normalmente
+      var script = document.createElement('script');
+      script.src = 'flutter_bootstrap.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  </script>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <!-- O conteúdo será carregado dinamicamente baseado no navegador -->
 </body>
 </html>

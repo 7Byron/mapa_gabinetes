@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.byronsd" "\0"
-            VALUE "FileDescription", "mapa_gabinetes" "\0"
+            VALUE "CompanyName", "ByronSD" "\0"
+            VALUE "FileDescription", "AlocMap - Gestão de Gabinetes Médicos" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "mapa_gabinetes" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2025 com.byronsd. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2024 ByronSD. All rights reserved." "\0"
             VALUE "OriginalFilename", "mapa_gabinetes.exe" "\0"
-            VALUE "ProductName", "mapa_gabinetes" "\0"
+            VALUE "ProductName", "AlocMap" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

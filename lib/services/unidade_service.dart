@@ -25,31 +25,23 @@ class UnidadeService {
       // Tentar buscar unidades ativas
       List<Unidade> unidades = [];
 
-      try {
-        final snapshot = await _firestore
-            .collection('unidades')
-            .where('ativa', isEqualTo: true)
-            .orderBy('nome')
-            .get();
+      // Buscar todas as unidades e filtrar no código para evitar problemas de índice
+      unidades = snapshotAll.docs.map((doc) {
+        final data = doc.data();
+        // Se não tiver campo 'ativa', considerar como ativa
+        if (data['ativa'] == null) {
+          data['ativa'] = true;
+        }
+        return Unidade.fromMap({...data, 'id': doc.id});
+      }).toList();
 
-        print(
-            '📊 Total de documentos ativos encontrados: ${snapshot.docs.length}');
-        unidades = snapshot.docs.map((doc) {
-          print('📄 Documento ativo ID: ${doc.id}');
-          print('📄 Dados ativo: ${doc.data()}');
-          return Unidade.fromMap({...doc.data(), 'id': doc.id});
-        }).toList();
-      } catch (e) {
-        print('⚠️ Erro na consulta com filtro, tentando sem filtro: $e');
-        // Se falhar, buscar todas as unidades
-        unidades = snapshotAll.docs.map((doc) {
-          final data = doc.data();
-          // Se não tiver campo 'ativa', considerar como ativa
-          if (data['ativa'] == null) {
-            data['ativa'] = true;
-          }
-          return Unidade.fromMap({...data, 'id': doc.id});
-        }).toList();
+      // Filtrar apenas unidades ativas e ordenar por nome
+      unidades = unidades.where((unidade) => unidade.ativa).toList();
+      unidades.sort((a, b) => a.nome.compareTo(b.nome));
+
+      print('📊 Total de documentos ativos encontrados: ${unidades.length}');
+      for (final unidade in unidades) {
+        print('📄 Unidade ativa: ${unidade.nome} - Ativa: ${unidade.ativa}');
       }
 
       print('✅ Unidades carregadas: ${unidades.length}');

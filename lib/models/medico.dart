@@ -8,6 +8,7 @@ class Medico {
   String especialidade;
   String? observacoes;
   final List<Disponibilidade> disponibilidades;
+  bool ativo; // Indica se o médico está ativo (true) ou inativo (false)
 
   Medico({
     required this.id,
@@ -15,6 +16,7 @@ class Medico {
     required this.especialidade,
     this.observacoes,
     required this.disponibilidades,
+    this.ativo = true, // Por padrão, médicos são ativos
   });
 
   Map<String, dynamic> toMap() {
@@ -24,6 +26,7 @@ class Medico {
       'especialidade': especialidade,
       'observacoes': observacoes,
       'disponibilidades': disponibilidades.map((d) => d.toMap()).toList(),
+      'ativo': ativo,
     };
   }
 
@@ -38,6 +41,7 @@ class Medico {
       disponibilidades: (disponList != null)
           ? (disponList as List).map((e) => Disponibilidade.fromMap(e)).toList()
           : [],
+      ativo: map['ativo'] ?? true, // Por padrão, assume ativo se não especificado
     );
   }
 }

@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+// Sem dependências de kIsWeb aqui; lógica de rede simplificada e neutra de plataforma
 
 class NetworkUtils {
   static bool _hasNetworkIssues = false;
@@ -20,28 +18,11 @@ class NetworkUtils {
   }
 
   /// Verifica conectividade de rede
-  static Future<void> _checkNetworkConnectivity() async {
-    // Esta função agora só é chamada quando há problemas específicos
-    // Por padrão, assumimos que a rede está funcionando
-  }
+  // Mantido para futura extensão; atualmente não utilizado de propósito
+  static Future<void> _checkNetworkConnectivity() async {}
 
   /// Verifica se o Firebase está acessível
-  static Future<bool> isFirebaseAccessible() async {
-    if (!kIsWeb) return true;
-
-    try {
-      // Tentar conectar ao Firebase
-      final response = await html.HttpRequest.request(
-        'https://firestore.googleapis.com',
-        method: 'HEAD',
-        sendData: null,
-      );
-
-      return response.status == 200;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> isFirebaseAccessible() async => true;
 
   /// Retorna uma mensagem de erro apropriada para problemas de rede
   static String getNetworkErrorMessage() {

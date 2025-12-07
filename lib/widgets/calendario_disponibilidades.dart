@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
+import 'package:intl/intl.dart';
 
-class CalendarioDisponibilidades extends StatelessWidget {
+class CalendarioDisponibilidades extends StatefulWidget {
   final List<DateTime> diasSelecionados;
 
   /// onAdicionarData recebe (DateTime date, String tipo)
@@ -10,12 +11,36 @@ class CalendarioDisponibilidades extends StatelessWidget {
   /// onRemoverData recebe (DateTime date, bool removeSerie)
   final Function(DateTime, bool) onRemoverData;
 
+  /// onViewChanged recebe (DateTime visibleDate) quando o usuário navega no calendário
+  final Function(DateTime)? onViewChanged;
+  
+  /// dataCalendario - data atual do calendário para forçar atualização visual
+  final DateTime? dataCalendario;
+  
+  /// Modo apenas seleção - se true, apenas seleciona a data sem mostrar diálogos
+  final bool modoApenasSelecao;
+  
+  /// Callback opcional para quando uma data é selecionada (usado no modo apenas seleção)
+  final Function(DateTime)? onDateSelected;
+
   const CalendarioDisponibilidades({
     super.key,
     required this.diasSelecionados,
     required this.onAdicionarData,
     required this.onRemoverData,
+    this.onViewChanged,
+    this.dataCalendario,
+    this.modoApenasSelecao = false,
+    this.onDateSelected,
   });
+
+  @override
+  State<CalendarioDisponibilidades> createState() => _CalendarioDisponibilidadesState();
+}
+
+class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades> {
+  late CalendarController _calendarController;
+  bool _isInitialBuild = true;
 
   Future<void> _mostrarDialogoTipoMarcacao(
       BuildContext context, DateTime date) async {
@@ -58,10 +83,10 @@ class CalendarioDisponibilidades extends StatelessWidget {
         // Se escolheu Consecutivo, perguntar quantos dias
         final int? numeroDias = await _mostrarDialogoNumeroDias(context);
         if (numeroDias != null) {
-          onAdicionarData(date, 'Consecutivo:$numeroDias');
+          widget.onAdicionarData(date, 'Consecutivo:$numeroDias');
         }
       } else {
-        onAdicionarData(date, tipoMarcacao);
+        widget.onAdicionarData(date, tipoMarcacao);
       }
     }
   }
@@ -166,24 +191,270 @@ class CalendarioDisponibilidades extends StatelessWidget {
     );
 
     if (escolha == 'single') {
-      onRemoverData(date, false); // remove só o dia
+      widget.onRemoverData(date, false); // remove só o dia
     } else if (escolha == 'all') {
-      onRemoverData(date, true); // remove toda a série
+      widget.onRemoverData(date, true); // remove toda a série
     }
   }
 
   @override
+  void initState() {
+    super.initState();
+    _calendarController = CalendarController();
+    // Se dataCalendario foi fornecida, navegar para ela após o build
+    if (widget.dataCalendario != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _calendarController.displayDate = widget.dataCalendario!;
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(CalendarioDisponibilidades oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Se a data do calendário mudou, atualizar a visualização
+    if (widget.dataCalendario != null && 
+        (oldWidget.dataCalendario == null || 
+         oldWidget.dataCalendario!.year != widget.dataCalendario!.year ||
+         oldWidget.dataCalendario!.month != widget.dataCalendario!.month)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _calendarController.displayDate = widget.dataCalendario!;
+        }
+      });
+    }
+  }
+
+  /// Capitaliza a primeira letra de uma string
+  String _capitalizarPrimeiraLetra(String texto) {
+    if (texto.isEmpty) return texto;
+    return texto[0].toUpperCase() + texto.substring(1);
+  }
+
+  @override
+  void dispose() {
+    _calendarController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Obter a data atual do calendário (usar o displayDate do controller ou a data do widget)
+    final displayDate = _calendarController.displayDate ?? widget.dataCalendario ?? DateTime.now();
+    
+    // Capitalizar primeira letra do mês em português
+    final mes = _capitalizarPrimeiraLetra(DateFormat('MMMM', 'pt_PT').format(displayDate));
+    final ano = displayDate.year.toString();
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            // Header customizado com mês em português e ano destacado
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Ano no topo (centralizado)
+                  DropdownButton<int>(
+                    value: int.parse(ano),
+                    underline: Container(), // Remove a linha padrão
+                    isDense: true,
+                    items: List.generate(10, (index) {
+                      final anoOpcao = DateTime.now().year - 2 + index; // 2 anos atrás até 7 anos à frente
+                      return DropdownMenuItem<int>(
+                        value: anoOpcao,
+                        child: Text(
+                          anoOpcao.toString(),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (int? novoAno) {
+                      if (novoAno != null) {
+                        final novaData = DateTime(novoAno, displayDate.month, 1);
+                        setState(() {});
+                        _calendarController.displayDate = novaData;
+                        _calendarController.forward!();
+                        // Notificar mudança
+                        if (widget.onViewChanged != null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              widget.onViewChanged!(novaData);
+                            }
+                          });
+                        }
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  // Mês com setas de navegação: < Mês > (setas nas margens)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        iconSize: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          final novaData = DateTime(displayDate.year, displayDate.month - 1, 1);
+                          setState(() {});
+                          _calendarController.displayDate = novaData;
+                          _calendarController.backward!();
+                        },
+                      ),
+                      // Dropdown para selecionar o mês (no centro)
+                      Expanded(
+                        child: Center(
+                          child: DropdownButton<String>(
+                            value: mes,
+                            underline: Container(), // Remove a linha padrão
+                            isDense: true,
+                            items: [
+                              'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                              'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                            ].map((String m) {
+                              return DropdownMenuItem<String>(
+                                value: m,
+                                child: Text(
+                                  m,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (String? novoMes) {
+                              if (novoMes != null) {
+                                final meses = [
+                                  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                                ];
+                                final indiceMes = meses.indexOf(novoMes) + 1;
+                                final novaData = DateTime(displayDate.year, indiceMes, 1);
+                                setState(() {});
+                                _calendarController.displayDate = novaData;
+                                _calendarController.forward!();
+                                // Notificar mudança
+                                if (widget.onViewChanged != null) {
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      widget.onViewChanged!(novaData);
+                                    }
+                                  });
+                                }
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        iconSize: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          final novaData = DateTime(displayDate.year, displayDate.month + 1, 1);
+                          setState(() {});
+                          _calendarController.displayDate = novaData;
+                          _calendarController.forward!();
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // Header customizado para os dias da semana em português
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              child: Row(
+                children: ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']
+                    .asMap()
+                    .entries
+                    .map((entry) {
+                      final index = entry.key;
+                      final day = entry.value;
+                      // Sábado (índice 5) e Domingo (índice 6) em azul
+                      final isWeekend = index == 5 || index == 6;
+                      return Expanded(
+                        child: Text(
+                          day,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: isWeekend ? Colors.blue : null,
+                          ),
+                        ),
+                      );
+                    })
+                    .toList(),
+              ),
+            ),
+            SizedBox(
+              height: 260, // Altura ajustada (300 - 40 do header dos dias)
         child: SfCalendar(
-          showNavigationArrow: true,
+                controller: _calendarController,
+                showNavigationArrow: false, // Desabilitar navegação padrão, usar a customizada
           view: CalendarView.month,
+                initialDisplayDate: widget.dataCalendario,
+                headerHeight: 0, // Ocultar header padrão do mês/ano
+                firstDayOfWeek: 1, // Começar na segunda-feira (1 = Monday)
+                monthViewSettings: const MonthViewSettings(
+                  dayFormat: ' ', // Espaço vazio para ocultar os dias da semana padrão
+                  showAgenda: false,
+                ),
+                onViewChanged: (ViewChangedDetails details) {
+                  // Ignorar o callback durante o build inicial (apenas na primeira vez)
+                  if (_isInitialBuild) {
+                    _isInitialBuild = false;
+                    return;
+                  }
+                  
+                  // Atualizar data de exibição quando o calendário navega
+                  if (details.visibleDates.isNotEmpty) {
+                    final visibleDate = details.visibleDates[details.visibleDates.length ~/ 2];
+                    
+                    // Quando o usuário navega no calendário, notificar a mudança
+                    if (widget.onViewChanged != null) {
+                      debugPrint('📅 Calendário navegou para: ${visibleDate.day}/${visibleDate.month}/${visibleDate.year}');
+                      
+                      // Atualizar o displayDate do controller imediatamente para sincronizar
+                      _calendarController.displayDate = visibleDate;
+                      
+                      // Usar WidgetsBinding para garantir que é executado após o build
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() {}); // Forçar rebuild para atualizar header
+                          widget.onViewChanged!(visibleDate);
+                        }
+                      });
+                    }
+                  }
+                },
           onTap: (details) {
             final date = details.date;
             if (date != null) {
-              final isSelected = diasSelecionados.any(
+              // Se está no modo apenas seleção, apenas chamar o callback
+              if (widget.modoApenasSelecao) {
+                if (widget.onDateSelected != null) {
+                  widget.onDateSelected!(date);
+                }
+                return;
+              }
+              
+              final isSelected = widget.diasSelecionados.any(
                     (d) =>
                 d.year == date.year &&
                     d.month == date.month &&
@@ -200,7 +471,7 @@ class CalendarioDisponibilidades extends StatelessWidget {
             }
           },
           monthCellBuilder: (context, details) {
-            final isSelected = diasSelecionados.any(
+            final isSelected = widget.diasSelecionados.any(
                   (d) =>
               d.year == details.date.year &&
                   d.month == details.date.month &&
@@ -235,6 +506,9 @@ class CalendarioDisponibilidades extends StatelessWidget {
               ),
             );
           },
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -171,11 +171,13 @@
         `;
       });
     } else {
-      // Para navegadores compatíveis, carregar Flutter normalmente
-      var script = document.createElement('script');
-      script.src = 'flutter_bootstrap.js';
-      script.async = true;
-      document.body.appendChild(script);
+      // Para navegadores compatíveis, aguardar DOM e carregar Flutter normalmente
+      document.addEventListener('DOMContentLoaded', function() {
+        var script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js';
+        script.defer = true; // garante execução após parse do HTML
+        document.body.appendChild(script);
+      });
     }
   </script>
 </head>

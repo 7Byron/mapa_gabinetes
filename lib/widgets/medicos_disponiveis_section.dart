@@ -40,12 +40,16 @@ class MedicosDisponiveisSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ordenar médicos disponíveis alfabeticamente por nome
+    final medicosOrdenados = List<Medico>.from(medicosDisponiveis)
+      ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+    
     return Container(
       padding: const EdgeInsets.all(8),
       child: Wrap(
         spacing: 8, // Espaçamento horizontal entre os cartões
         runSpacing: 8, // Espaçamento vertical entre as linhas
-        children: medicosDisponiveis.map((medico) {
+        children: medicosOrdenados.map((medico) {
           final dispDoMedico = disponibilidades.where((d) {
             final dd = DateTime(d.data.year, d.data.month, d.data.day);
             return d.medicoId == medico.id &&

@@ -24,7 +24,7 @@ Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
     }
 
     final snapshot = await medicosRef.get();
-    
+
     for (final doc in snapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
       final especialidade = data['especialidade'] as String?;
@@ -42,7 +42,11 @@ Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
   }
 }
 
-Future<void> salvarMedicoCompleto(Medico medico, {Unidade? unidade}) async {
+Future<void> salvarMedicoCompleto(
+  Medico medico, {
+  Unidade? unidade,
+  List<Disponibilidade>? disponibilidadesOriginais, // opcional: evita reler
+}) async {
   final firestore = FirebaseFirestore.instance;
 
   DocumentReference medicoRef;
@@ -58,61 +62,83 @@ Future<void> salvarMedicoCompleto(Medico medico, {Unidade? unidade}) async {
     medicoRef = firestore.collection('medicos').doc(medico.id);
   }
 
-  // Salva o médico (dados básicos)
+  // Salva o médico (dados básicos) — merge para evitar regravar igual
   await medicoRef.set({
     'id': medico.id,
     'nome': medico.nome,
     'especialidade': medico.especialidade,
     'observacoes': medico.observacoes,
-  });
-  
-  print('✅ Médico salvo: ${medico.nome} (ID: ${medico.id})');
-  print('📊 Total de disponibilidades a salvar: ${medico.disponibilidades.length}');
+    'ativo': medico.ativo, // Inclui o campo ativo
+    // Campos para pesquisa indexada
+    'nomeSearch': _normalize(medico.nome),
+    'searchTokens': _buildSearchTokens(medico.nome, medico.especialidade),
+  }, SetOptions(merge: true));
 
-  // Salva as disponibilidades como subcoleção por ano
+  print('✅ Médico salvo: ${medico.nome} (ID: ${medico.id})');
+  print('📊 Disps (novas): ${medico.disponibilidades.length}');
+
+  // Caminho base das disponibilidades
   final dispRef = medicoRef.collection('disponibilidades');
 
-  // Remove todas as disponibilidades antigas (todos os anos)
+  // 1) Ler existentes caso não tenham sido fornecidas
+  Map<String, Disponibilidade> existentes = {};
+  if (disponibilidadesOriginais != null) {
+    for (final d in disponibilidadesOriginais) {
+      existentes[d.id] = d;
+    }
+  } else {
+    final anosSnap =
+        await dispRef.get(const GetOptions(source: Source.serverAndCache));
+    for (final anoDoc in anosSnap.docs) {
+      final registosSnap = await anoDoc.reference
+          .collection('registos')
+          .get(const GetOptions(source: Source.serverAndCache));
+      for (final doc in registosSnap.docs) {
+        existentes[doc.id] = Disponibilidade.fromMap(doc.data());
+      }
+    }
+  }
+
+  // 2) Map das novas
+  final Map<String, Disponibilidade> novas = {
+    for (final d in medico.disponibilidades) d.id: d
+  };
+
+  // 3) Calcular diff
+  final idsExistentes = existentes.keys.toSet();
+  final idsNovas = novas.keys.toSet();
+  final idsParaApagar = idsExistentes.difference(idsNovas);
+  final idsParaCriar = idsNovas.difference(idsExistentes);
+  final idsPossiveisUpdates = idsExistentes.intersection(idsNovas);
+
+  // removido: comparação detalhada não é necessária com upsert completo
+
   final batch = firestore.batch();
-  final anosSnapshot = await dispRef.get();
-  for (final anoDoc in anosSnapshot.docs) {
-    final registosRef = anoDoc.reference.collection('registos');
-    final registosSnapshot = await registosRef.get();
-    for (final doc in registosSnapshot.docs) {
-      batch.delete(doc.reference);
-    }
-    // Remove o documento do ano se estiver vazio
-    batch.delete(anoDoc.reference);
+
+  // Deletes
+  for (final id in idsParaApagar) {
+    final d = existentes[id]!;
+    final ano = d.data.year.toString();
+    final ref = dispRef.doc(ano).collection('registos').doc(id);
+    batch.delete(ref);
   }
+
+  // Upsert de TODOS os registos atuais (garante gravação completa da série)
+  for (final d in medico.disponibilidades) {
+    final ano = d.data.year.toString();
+    final ref = dispRef.doc(ano).collection('registos').doc(d.id);
+    batch.set(ref, {
+      'id': d.id,
+      'medicoId': medico.id,
+      'data': d.data.toIso8601String(),
+      'horarios': d.horarios,
+      'tipo': d.tipo,
+    });
+  }
+
   await batch.commit();
-
-  // Agrupa disponibilidades por ano
-  final disponibilidadesPorAno = <String, List<Disponibilidade>>{};
-  for (final disp in medico.disponibilidades) {
-    final ano = disp.data.year.toString();
-    disponibilidadesPorAno.putIfAbsent(ano, () => []).add(disp);
-  }
-
-  // Adiciona as novas disponibilidades organizadas por ano
-  for (final entry in disponibilidadesPorAno.entries) {
-    final ano = entry.key;
-    final disponibilidadesDoAno = entry.value;
-    
-    final anoRef = dispRef.doc(ano);
-    final registosRef = anoRef.collection('registos');
-    
-    for (final disp in disponibilidadesDoAno) {
-      await registosRef.doc(disp.id).set({
-        'id': disp.id,
-        'medicoId': medico.id,
-        'data': disp.data.toIso8601String(),
-        'horarios': disp.horarios,
-        'tipo': disp.tipo,
-      });
-    }
-    
-    print('✅ Disponibilidades salvas para o ano $ano: ${disponibilidadesDoAno.length} registos');
-  }
+  print(
+      '✅ Diff aplicado: -${idsParaApagar.length} / +${idsParaCriar.length} / ~${idsPossiveisUpdates.length}');
 }
 
 Future<List<Medico>> buscarMedicos({Unidade? unidade}) async {
@@ -130,54 +156,40 @@ Future<List<Medico>> buscarMedicos({Unidade? unidade}) async {
     medicosRef = firestore.collection('medicos');
   }
 
-  final medicosSnap = await medicosRef.get();
-  List<Medico> medicos = [];
+  final medicosSnap =
+      await medicosRef.get(const GetOptions(source: Source.serverAndCache));
+  final medicos = <Medico>[];
   for (final doc in medicosSnap.docs) {
     final dados = doc.data() as Map<String, dynamic>;
-    // Busca disponibilidades da nova estrutura por ano
-    final dispRef = doc.reference.collection('disponibilidades');
-    final disponibilidades = <Map<String, dynamic>>[];
-    
-    // Carrega apenas o ano atual por padrão (otimização)
-    final anoAtual = DateTime.now().year.toString();
-    final anoRef = dispRef.doc(anoAtual);
-    final registosRef = anoRef.collection('registos');
-    
-    try {
-      final registosSnapshot = await registosRef.get();
-      for (final d in registosSnapshot.docs) {
-        final data = d.data();
-        disponibilidades.add({
-          ...data,
-          'horarios': data['horarios'] is List ? data['horarios'] : [],
-        });
-      }
-      print('📊 Disponibilidades carregadas para ${dados['nome']}: ${disponibilidades.length} (ano: $anoAtual)');
-    } catch (e) {
-      print('⚠️ Erro ao carregar disponibilidades do ano $anoAtual para ${dados['nome']}: $e');
-      // Fallback: tenta carregar de todos os anos
-      final anosSnapshot = await dispRef.get();
-      for (final anoDoc in anosSnapshot.docs) {
-        final registosRef = anoDoc.reference.collection('registos');
-        final registosSnapshot = await registosRef.get();
-        for (final d in registosSnapshot.docs) {
-          final data = d.data();
-          disponibilidades.add({
-            ...data,
-            'horarios': data['horarios'] is List ? data['horarios'] : [],
-          });
-        }
-      }
-      print('📊 Disponibilidades carregadas (fallback) para ${dados['nome']}: ${disponibilidades.length}');
-    }
+    // Buscar TODOS os médicos (ativos e inativos) para que os cartões antigos
+    // mostrem o nome correto mesmo quando o médico está inativo
+    final ativo = dados['ativo'] ?? true;
     medicos.add(Medico(
       id: dados['id'],
       nome: dados['nome'],
       especialidade: dados['especialidade'],
       observacoes: dados['observacoes'],
-      disponibilidades:
-          disponibilidades.map((e) => Disponibilidade.fromMap(e)).toList(),
+      // Não carregar disponibilidades aqui para evitar centenas de leituras no arranque
+      disponibilidades: const [],
+      ativo: ativo,
     ));
   }
   return medicos;
+}
+
+String _normalize(String s) => s
+    .toLowerCase()
+    .replaceAll(RegExp(r"[áàâã]"), 'a')
+    .replaceAll(RegExp(r"[éê]"), 'e')
+    .replaceAll(RegExp(r"[í]"), 'i')
+    .replaceAll(RegExp(r"[óôõ]"), 'o')
+    .replaceAll(RegExp(r"[ú]"), 'u')
+    .replaceAll(RegExp(r"[ç]"), 'c');
+
+List<String> _buildSearchTokens(String nome, String especialidade) {
+  final base = ('${_normalize(nome)} ${_normalize(especialidade)}')
+      .split(RegExp(r"\s+"))
+      .where((t) => t.isNotEmpty)
+      .toSet();
+  return base.toList();
 }

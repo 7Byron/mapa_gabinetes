@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,7 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/custom_drawer.dart';
 
 // Widgets locais
-import '../widgets/date_picker_section.dart';
+import '../widgets/calendario_disponibilidades.dart';
 import '../widgets/gabinetes_section.dart';
 import '../widgets/medicos_disponiveis_section.dart';
 import '../widgets/filtros_section.dart';
@@ -47,7 +48,9 @@ class AlocacaoMedicos extends StatefulWidget {
 
 class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   bool isCarregando = true;
+  Timer? _debounceTimer; // Timer para debounce das atualizações dos listeners
   DateTime selectedDate = DateTime.now();
+  bool _ignorarPrimeirasAtualizacoesListeners = false; // Flag para ignorar primeiras atualizações dos listeners
 
   // Controle de layout responsivo
   bool mostrarColunaEsquerda = true; // Para ecrãs pequenos
@@ -84,18 +87,169 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   bool mostrarConflitos = false;
   String? filtroEspecialidadeGabinete; // Filtro por especialidade do gabinete
 
+  // Listeners em tempo real do dia atual
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _dispSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _alocSub;
+
+  Future<void> _restartDayListeners() async {
+    await _dispSub?.cancel();
+    await _alocSub?.cancel();
+
+    final firestore = FirebaseFirestore.instance;
+    final inicio =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final fim = inicio.add(const Duration(days: 1));
+    final startIso = inicio.toIso8601String();
+    final endIso = fim.toIso8601String();
+
+    // Usar médicos já carregados em vez de fazer query novamente
+    // Isso evita queries desnecessárias ao mudar de dia
+    final medicoIds = medicos.map((m) => m.id).toSet();
+    
+    // Criar mapa de médicos para busca rápida
+    final medicosMap = <String, Medico>{};
+    for (final m in medicos) {
+      medicosMap[m.id] = m;
+    }
+
+    _dispSub = firestore
+        .collectionGroup('registos')
+        .where('data', isGreaterThanOrEqualTo: startIso)
+        .where('data', isLessThan: endIso)
+        .snapshots()
+        .listen((snap) async {
+      final dispDia = <Disponibilidade>[];
+      final novosMedicosIds = <String>{};
+      
+      for (final doc in snap.docs) {
+        final d = Disponibilidade.fromMap(doc.data());
+        // Verificar se o médico pertence à unidade
+        if (medicoIds.contains(d.medicoId)) {
+          dispDia.add(d);
+          // Se o médico não está na lista local, marcar para carregar
+          if (!medicosMap.containsKey(d.medicoId)) {
+            novosMedicosIds.add(d.medicoId);
+          }
+        }
+      }
+      
+      // Se houver novos médicos com disponibilidades, carregá-los
+      // Mas apenas se realmente necessário (evitar queries desnecessárias)
+      if (novosMedicosIds.isNotEmpty && mounted) {
+        // Carregar médicos em paralelo para melhor performance
+        final novosMedicos = <Medico>[];
+        final ocupantesRef = firestore
+            .collection('unidades')
+            .doc(widget.unidade.id)
+            .collection('ocupantes');
+        
+        final futures = novosMedicosIds.map((medicoId) async {
+          try {
+            final medicoDoc = await ocupantesRef.doc(medicoId).get();
+            if (medicoDoc.exists) {
+              final dados = medicoDoc.data() as Map<String, dynamic>;
+              return Medico(
+                id: dados['id'] ?? medicoId,
+                nome: dados['nome'] ?? '',
+                especialidade: dados['especialidade'] ?? '',
+                observacoes: dados['observacoes'],
+                disponibilidades: const [],
+                ativo: dados['ativo'] ?? true,
+              );
+            }
+          } catch (e) {
+            debugPrint('Erro ao carregar médico $medicoId: $e');
+          }
+          return null;
+        });
+        
+        final resultados = await Future.wait(futures);
+        novosMedicos.addAll(resultados.whereType<Medico>());
+        
+        if (novosMedicos.isNotEmpty && mounted) {
+      setState(() {
+            medicos.addAll(novosMedicos);
+            for (final m in novosMedicos) {
+              medicosMap[m.id] = m;
+            }
+          });
+        }
+      }
+      if (!mounted) return;
+      // Atualizar lista local sem setState imediato
+      // IMPORTANTE: Não remover disponibilidades geradas de séries (ID começa com 'serie_')
+      // Apenas remover disponibilidades do Firestore (que não são geradas de séries)
+        disponibilidades.removeWhere((d) =>
+            d.data.year == inicio.year &&
+            d.data.month == inicio.month &&
+          d.data.day == inicio.day &&
+          !d.id.startsWith('serie_')); // Preservar disponibilidades geradas de séries
+      
+      // Adicionar novas disponibilidades do Firestore
+        disponibilidades.addAll(dispDia);
+      
+      // NÃO recarregar disponibilidades de séries aqui - elas já são geradas dinamicamente
+      // em _carregarDisponibilidadesUnidade e são preservadas acima (não removidas)
+      // Recarregar aqui causaria múltiplas chamadas desnecessárias e lentidão
+      
+      final doDia = disponibilidades.where((d) {
+        final dd = DateTime(d.data.year, d.data.month, d.data.day);
+        return dd == inicio;
+      }).toList();
+      AlocacaoMedicosLogic.updateCacheForDay(
+          day: inicio, disponibilidades: doDia);
+      // Agendar atualização com debounce para evitar atualizações parciais
+      // quando disponibilidades e alocações chegam em momentos diferentes
+      // Ignorar se estamos no meio do carregamento inicial
+      if (!_ignorarPrimeirasAtualizacoesListeners) {
+        _agendarAtualizacaoMedicosDisponiveis();
+      }
+    });
+
+    final ano = inicio.year.toString();
+    _alocSub = firestore
+        .collection('unidades')
+        .doc(widget.unidade.id)
+        .collection('alocacoes')
+        .doc(ano)
+        .collection('registos')
+        .where('data', isGreaterThanOrEqualTo: startIso)
+        .where('data', isLessThan: endIso)
+        .snapshots()
+        .listen((snap) {
+      final alocDia = snap.docs.map((d) => Alocacao.fromMap(d.data())).toList();
+      if (!mounted) return;
+      // IMPORTANTE: Remover apenas alocações do Firestore para este dia, não as geradas dinamicamente
+      // Alocações geradas dinamicamente têm ID começando com "serie_"
+      alocacoes.removeWhere((a) =>
+          a.data.year == inicio.year &&
+          a.data.month == inicio.month &&
+          a.data.day == inicio.day &&
+          !a.id.startsWith('serie_')); // Manter alocações geradas dinamicamente
+      // Adicionar alocações do Firestore (têm prioridade sobre geradas dinamicamente)
+      alocacoes.addAll(alocDia);
+      
+      final doDia = alocacoes.where((a) {
+        final ad = DateTime(a.data.year, a.data.month, a.data.day);
+        return ad == inicio;
+      }).toList();
+      AlocacaoMedicosLogic.updateCacheForDay(day: inicio, alocacoes: doDia);
+      // Agendar atualização com debounce para evitar atualizações parciais
+      // quando disponibilidades e alocações chegam em momentos diferentes
+      // Ignorar se estamos no meio do carregamento inicial
+      if (!_ignorarPrimeirasAtualizacoesListeners) {
+        _agendarAtualizacaoMedicosDisponiveis();
+      }
+    });
+  }
+
   // Pesquisa
   String? pesquisaNome;
   String? pesquisaEspecialidade;
   Set<String> medicosDestacados =
       {}; // IDs dos médicos destacados pela pesquisa
 
-  // Método para alternar entre colunas em ecrãs pequenos
-  void _alternarColuna() {
-    setState(() {
-      mostrarColunaEsquerda = !mostrarColunaEsquerda;
-    });
-  }
+  // (removido) alternância manual não utilizada
 
   // Método para verificar se deve usar layout responsivo
   bool _deveUsarLayoutResponsivo(BuildContext context) {
@@ -106,6 +260,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   void initState() {
     super.initState();
     _carregarDadosIniciais();
+    // Carregar passwords em background (não bloqueia a UI)
     _carregarPasswordsDoFirebase();
   }
 
@@ -113,36 +268,88 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     try {
       // Carrega as passwords do Firebase para cache local
       await PasswordService.loadPasswordsFromFirebase(widget.unidade.id);
-      print(
-          '✅ Passwords carregadas do Firebase para unidade: ${widget.unidade.id}');
     } catch (e) {
-      print('⚠️ Erro ao carregar passwords do Firebase: $e');
+      // Silencioso - não é crítico para a UI
     }
   }
 
-  Future<void> _carregarDadosIniciais() async {
+  Future<void> _carregarDadosIniciais({bool recarregarMedicos = false}) async {
     try {
-      // Carrega do banco via logic
+      // FASE 1: Carregar dados essenciais primeiro (gabinetes, médicos, disponibilidades e alocações)
+      // NÃO chamar setState() nos callbacks individuais para evitar atualizações parciais
+      // que causam o efeito de cartões aparecendo na área branca e depois sendo movidos
       await AlocacaoMedicosLogic.carregarDadosIniciais(
         gabinetes: gabinetes,
         medicos: medicos,
         disponibilidades: disponibilidades,
         alocacoes: alocacoes,
-        onGabinetes: (g) => gabinetes = g,
-        onMedicos: (m) => medicos = m,
-        onDisponibilidades: (d) => disponibilidades = d,
+        onGabinetes: (g) {
+          gabinetes = g;
+          // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
+        },
+        onMedicos: (m) {
+          medicos = m;
+          // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
+        },
+        onDisponibilidades: (d) {
+          disponibilidades = d;
+          // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
+        },
         onAlocacoes: (a) {
           alocacoes = a;
-          setState(() {});
+          // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
         },
         unidade: widget.unidade,
+        dataFiltroDia: selectedDate,
+        reloadStatic: recarregarMedicos, // Força recarregar médicos se solicitado
       );
 
-      // Carregar feriados do Firestore (nova estrutura por ano)
-      debugPrint('Carregando feriados do Firestore...');
-      try {
-        CollectionReference feriadosRef;
-        feriadosRef = FirebaseFirestore.instance
+      // FASE 2: Carregar dados secundários em paralelo (não bloqueiam a UI)
+      // Carregar feriados, horários e configurações em paralelo
+      await Future.wait([
+        _carregarFeriados(),
+        _carregarHorariosEConfiguracoes(),
+      ]);
+
+      // Iniciar listeners ANTES de atualizar a UI
+      // Isso evita que os listeners disparem atualizações imediatamente após serem iniciados
+      _ignorarPrimeirasAtualizacoesListeners = true;
+      await _restartDayListeners();
+      
+      // Não aguardar - os listeners já têm os dados do cache ou do carregamento inicial
+      // O delay estava causando lentidão desnecessária
+      _ignorarPrimeirasAtualizacoesListeners = false;
+
+      // Atualizar UI UMA ÚNICA VEZ após TODOS os dados estarem carregados e listeners iniciados
+      // Isso evita múltiplas atualizações parciais que causam o efeito de cartões aparecendo/desaparecendo
+      if (mounted) {
+        setState(() {
+          // Inicializar filtros de piso com todos os setores selecionados por padrão
+          _inicializarFiltrosPiso();
+          // Verificar se a clínica está fechada
+          _verificarClinicaFechada();
+          // Desligar progress bar
+          isCarregando = false;
+        });
+        // Atualizar médicos disponíveis (agora com todos os dados carregados)
+        // Chamar fora do setState porque é assíncrono e atualiza o estado internamente
+        // IMPORTANTE: Sempre chamar, mesmo quando dados vêm do cache, para verificar exceções
+        debugPrint('🔄 Chamando _atualizarMedicosDisponiveis após carregar dados iniciais...');
+        await _atualizarMedicosDisponiveis();
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao carregar dados iniciais: $e');
+      if (mounted) {
+        setState(() {
+          isCarregando = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _carregarFeriados() async {
+    try {
+      final feriadosRef = FirebaseFirestore.instance
             .collection('unidades')
             .doc(widget.unidade.id)
             .collection('feriados');
@@ -154,6 +361,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
 
         try {
           final registosSnapshot = await registosRef.get();
+        if (mounted) {
+          setState(() {
           feriados = registosSnapshot.docs.map((doc) {
             final data = doc.data();
             return <String, String>{
@@ -162,61 +371,65 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
               'descricao': data['descricao'] as String? ?? '',
             };
           }).toList();
-          debugPrint(
-              'Feriados carregados do ano $anoAtual: ${feriados.length}');
+          });
+        }
         } catch (e) {
-          debugPrint('⚠️ Erro ao carregar feriados do ano $anoAtual: $e');
           // Fallback: tenta carregar de todos os anos
           final anosSnapshot = await feriadosRef.get();
-          feriados = [];
+        final feriadosTemp = <Map<String, String>>[];
           for (final anoDoc in anosSnapshot.docs) {
             final registosRef = anoDoc.reference.collection('registos');
             final registosSnapshot = await registosRef.get();
             for (final doc in registosSnapshot.docs) {
               final data = doc.data();
-              feriados.add(<String, String>{
+            feriadosTemp.add(<String, String>{
                 'id': doc.id,
                 'data': data['data'] as String? ?? '',
                 'descricao': data['descricao'] as String? ?? '',
               });
             }
           }
-          debugPrint('Feriados carregados (fallback): ${feriados.length}');
+        if (mounted) {
+          setState(() {
+            feriados = feriadosTemp;
+          });
+        }
         }
       } catch (e) {
-        debugPrint('⚠️ Erro ao carregar feriados: $e');
-        feriados = []; // Lista vazia se não conseguir carregar
+      if (mounted) {
+        setState(() {
+          feriados = [];
+        });
       }
+    }
+  }
 
-      // Carregar horários da clínica do Firestore (com tratamento de erro)
-      debugPrint('Carregando horários da clínica do Firestore...');
-      try {
-        CollectionReference horariosRef;
-        horariosRef = FirebaseFirestore.instance
+  Future<void> _carregarHorariosEConfiguracoes() async {
+    try {
+      final horariosRef = FirebaseFirestore.instance
             .collection('unidades')
             .doc(widget.unidade.id)
             .collection('horarios_clinica');
 
         final horariosSnapshot = await horariosRef.get();
-        horariosClinica = {};
+      final horariosTemp = <int, List<String>>{};
         for (final doc in horariosSnapshot.docs) {
-          final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
           final diaSemana = data['diaSemana'] as int? ?? 0;
           final horaAbertura = data['horaAbertura'] as String? ?? '';
           final horaFecho = data['horaFecho'] as String? ?? '';
           if (horaAbertura.isNotEmpty && horaFecho.isNotEmpty) {
-            horariosClinica[diaSemana] = [horaAbertura, horaFecho];
+          horariosTemp[diaSemana] = [horaAbertura, horaFecho];
           }
         }
-        debugPrint(
-            'Horários da clínica carregados: ${horariosClinica.length} dias');
 
         // Carregar configurações de encerramento
-        debugPrint('Carregando configurações de encerramento...');
         try {
           final configDoc = await horariosRef.doc('config').get();
-          if (configDoc.exists) {
+        if (configDoc.exists && mounted) {
             final configData = configDoc.data() as Map<String, dynamic>;
+          setState(() {
+            horariosClinica = horariosTemp;
             nuncaEncerra = configData['nuncaEncerra'] as bool? ?? false;
             encerraFeriados = configData['encerraFeriados'] as bool? ?? false;
 
@@ -224,33 +437,25 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
             for (int i = 1; i <= 7; i++) {
               encerraDias[i] = configData['encerraDia$i'] as bool? ?? false;
             }
-            debugPrint('Configurações de encerramento carregadas');
+          });
+        } else if (mounted) {
+          setState(() {
+            horariosClinica = horariosTemp;
+          });
           }
         } catch (e) {
-          debugPrint('⚠️ Erro ao carregar configurações de encerramento: $e');
+        if (mounted) {
+      setState(() {
+            horariosClinica = horariosTemp;
+      });
         }
-      } catch (e) {
-        debugPrint('⚠️ Erro ao carregar horários da clínica: $e');
-        horariosClinica = {}; // Mapa vazio se não conseguir carregar
       }
-
-      // Verificar se a clínica está fechada
-      _verificarClinicaFechada();
-
-      // Atualizar médicos disponíveis
-      _atualizarMedicosDisponiveis();
-
-      // Inicializar filtros de piso com todos os setores selecionados por padrão
-      _inicializarFiltrosPiso();
-
-      setState(() {
-        isCarregando = false;
-      });
     } catch (e) {
-      debugPrint('❌ Erro ao carregar dados iniciais: $e');
+      if (mounted) {
       setState(() {
-        isCarregando = false;
+          horariosClinica = {};
       });
+      }
     }
   }
 
@@ -309,12 +514,31 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     mensagemClinicaFechada = '';
   }
 
-  void _atualizarMedicosDisponiveis() {
-    debugPrint('🔄 Atualizando médicos disponíveis...');
-    debugPrint(
-        '📅 Data selecionada: ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
-    debugPrint('👥 Total de médicos: ${medicos.length}');
-    debugPrint('📋 Total de disponibilidades: ${disponibilidades.length}');
+  /// Agenda a atualização de médicos disponíveis com debounce
+  /// Isso evita atualizações parciais quando disponibilidades e alocações
+  /// chegam em momentos diferentes dos listeners
+  void _agendarAtualizacaoMedicosDisponiveis() {
+    // Cancelar timer anterior se existir
+    _debounceTimer?.cancel();
+    
+    // Agendar nova atualização após um delay maior
+    // Isso permite que ambos os listeners (disponibilidades e alocações)
+    // processem seus dados antes de atualizar a UI
+    // Aumentado para 400ms para evitar o comportamento de "piscar" quando alocamos séries
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) {
+        // Chamar assincronamente para não bloquear o listener
+        _atualizarMedicosDisponiveis().catchError((e) {
+          debugPrint('❌ Erro ao atualizar médicos disponíveis no listener: $e');
+        });
+      }
+    });
+  }
+
+  Future<void> _atualizarMedicosDisponiveis() async {
+    debugPrint('🔍 _atualizarMedicosDisponiveis chamado para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
+    debugPrint('  📊 Total de disponibilidades: ${disponibilidades.length}');
+    debugPrint('  📊 Total de médicos: ${medicos.length}');
 
     final medicosAlocados = alocacoes
         .where((a) =>
@@ -323,81 +547,59 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         .map((a) => a.medicoId)
         .toSet();
 
-    debugPrint('🚫 Médicos alocados: ${medicosAlocados.length}');
-    for (final medicoId in medicosAlocados) {
-      final medico = medicos.firstWhere((m) => m.id == medicoId,
-          orElse: () => Medico(
-              id: '',
-              nome: 'Desconhecido',
-              especialidade: '',
-              disponibilidades: []));
-      debugPrint('  - ${medico.nome}');
+    debugPrint('  📊 Médicos alocados: ${medicosAlocados.length}');
+
+    // Carregar exceções canceladas para o dia selecionado
+    // Isso garante que médicos com exceções canceladas não apareçam na caixa "para alocar"
+    debugPrint('  🔄 Carregando exceções canceladas...');
+    final datasComExcecoesCanceladas = await AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
+      widget.unidade.id,
+      selectedDate,
+    );
+    debugPrint('  🚫 Exceções canceladas encontradas: ${datasComExcecoesCanceladas.length}');
+    for (final key in datasComExcecoesCanceladas) {
+      debugPrint('    - $key');
     }
 
     // Filtra médicos que:
     // 1. Não estão alocados no dia selecionado
     // 2. Têm disponibilidade para o dia selecionado
+    // 3. NÃO têm exceção cancelada para esse dia
+    final selectedDateNormalized =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+
+    if (mounted) {
+      setState(() {
     medicosDisponiveis = medicos.where((m) {
+          // FILTRAR: Não mostrar médicos inativos
+          if (!m.ativo) {
+            return false;
+          }
+          
       // Verifica se não está alocado
       if (medicosAlocados.contains(m.id)) {
-        debugPrint('❌ ${m.nome} está alocado, removendo da lista');
         return false;
       }
+
+          // Verifica se tem exceção cancelada para esse dia
+          final dataKey = '${m.id}_${selectedDate.year}-${selectedDate.month}-${selectedDate.day}';
+          if (datasComExcecoesCanceladas.contains(dataKey)) {
+            debugPrint('🚫 Filtrando médico ${m.nome} (${m.id}) - tem exceção cancelada para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
+            return false; // Não mostrar se tem exceção cancelada
+          }
 
       // Verifica se tem disponibilidade para o dia selecionado
       final disponibilidadesDoMedico = disponibilidades.where((d) {
         final dd = DateTime(d.data.year, d.data.month, d.data.day);
-        final sd =
-            DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-        return d.medicoId == m.id && dd == sd;
+            return d.medicoId == m.id && dd == selectedDateNormalized;
       }).toList();
 
-      if (disponibilidadesDoMedico.isEmpty) {
-        debugPrint(
-            '❌ ${m.nome} não tem disponibilidade para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
-        return false;
-      }
-
-      debugPrint(
-          '✅ ${m.nome} tem ${disponibilidadesDoMedico.length} disponibilidade(s) para ${DateFormat('dd/MM/yyyy').format(selectedDate)}');
-      for (final disp in disponibilidadesDoMedico) {
-        debugPrint('  - Horários: ${disp.horarios.join(', ')}');
-      }
-
-      return true;
+          // FILTRAR: Só mostrar se tiver disponibilidade E o médico estiver ativo
+          return disponibilidadesDoMedico.isNotEmpty && m.ativo;
     }).toList();
 
-    debugPrint('🎯 Médicos disponíveis finais: ${medicosDisponiveis.length}');
-    for (final medico in medicosDisponiveis) {
-      debugPrint('- ${medico.nome} (${medico.especialidade})');
-    }
-
-    // Debug específico para o Dr. Francisco
-    final drFrancisco = medicosDisponiveis
-        .where((m) => m.nome.toLowerCase().contains('francisco'))
-        .toList();
-    if (drFrancisco.isNotEmpty) {
-      debugPrint('✅ Dr. Francisco está na lista de médicos disponíveis!');
-    } else {
-      debugPrint('❌ Dr. Francisco NÃO está na lista de médicos disponíveis!');
-      debugPrint('🔍 Verificando por que...');
-      final todosMedicos = medicos
-          .where((m) => m.nome.toLowerCase().contains('francisco'))
-          .toList();
-      if (todosMedicos.isNotEmpty) {
-        debugPrint('  - Dr. Francisco existe na lista geral de médicos');
-        final dispDrFrancisco = disponibilidades
-            .where((d) => d.medicoId == todosMedicos.first.id)
-            .toList();
-        debugPrint(
-            '  - Disponibilidades do Dr. Francisco: ${dispDrFrancisco.length}');
-        for (final disp in dispDrFrancisco) {
-          debugPrint(
-              '    - ${disp.data.day}/${disp.data.month}/${disp.data.year} - Horários: ${disp.horarios.join(', ')}');
-        }
-      } else {
-        debugPrint('  - Dr. Francisco NÃO existe na lista geral de médicos!');
-      }
+        debugPrint('  ✅ Médicos disponíveis após filtro: ${medicosDisponiveis.length}');
+      });
     }
   }
 
@@ -406,11 +608,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     if (gabinetes.isNotEmpty) {
       final todosSetores = gabinetes.map((g) => g.setor).toSet().toList();
       pisosSelecionados = List<String>.from(todosSetores);
-      debugPrint(
-          '✅ Filtros de piso inicializados: ${pisosSelecionados.join(', ')}');
-    } else {
-      debugPrint(
-          '⚠️ Nenhum gabinete encontrado para inicializar filtros de piso');
     }
   }
 
@@ -427,9 +624,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         final medico = medicos.firstWhere(
           (m) => m.id == alocacao.medicoId,
           orElse: () =>
-              Medico(id: '', nome: '', especialidade: '', disponibilidades: []),
+              Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false),
         );
+        // FILTRAR: Não mostrar médicos inativos ou médicos não encontrados
         if (medico.id.isNotEmpty &&
+            medico.ativo &&
             !medicosAlocados.any((m) => m.id == medico.id)) {
           medicosAlocados.add(medico);
         }
@@ -527,19 +726,17 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
   }
 
   void _onDateChanged(DateTime newDate) {
-    print(
-        '🔄 _onDateChanged chamado com data: ${newDate.day}/${newDate.month}/${newDate.year}');
     setState(() {
       selectedDate = newDate;
-      print(
-          '📅 Data selecionada atualizada para: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
-      _verificarClinicaFechada();
-      _atualizarMedicosDisponiveis();
+      isCarregando = true;
     });
+    _verificarClinicaFechada();
+    // Recarregar dados do dia (usa cache quando disponível)
+    _carregarDadosIniciais();
   }
 
   Future<void> _alocarMedico(String medicoId, String gabineteId,
-      {DateTime? dataEspecifica}) async {
+      {DateTime? dataEspecifica, List<String>? horarios}) async {
     try {
       await AlocacaoMedicosLogic.alocarMedico(
         selectedDate: dataEspecifica ?? selectedDate,
@@ -551,6 +748,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
           _carregarDadosIniciais();
         },
         unidade: widget.unidade,
+        horariosForcados: horarios,
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -564,7 +762,19 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
 
   Future<void> _desalocarMedicoComPergunta(String medicoId) async {
     final medico = medicos.firstWhere((m) => m.id == medicoId);
-    final alocacao = alocacoes.firstWhere((a) => a.medicoId == medicoId);
+    
+    // Encontrar todas as alocações do médico no dia selecionado
+    final dataAlvo = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final alocacoesDoDia = alocacoes.where((a) {
+      final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+      return a.medicoId == medicoId && aDate == dataAlvo;
+    }).toList();
+    
+    if (alocacoesDoDia.isEmpty) {
+      return; // Não há alocação para desalocar
+    }
+    
+    final alocacao = alocacoesDoDia.first;
 
     // Encontrar o nome do gabinete
     final gabinete = gabinetes.firstWhere(
@@ -578,23 +788,193 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     );
 
     // Encontrar a disponibilidade para verificar o tipo
-    final disponibilidade = disponibilidades.firstWhere(
+    // Primeiro tenta encontrar no dia selecionado
+    var disponibilidade = disponibilidades.where(
       (d) =>
           d.medicoId == medicoId &&
           d.data.year == selectedDate.year &&
           d.data.month == selectedDate.month &&
           d.data.day == selectedDate.day,
-      orElse: () => Disponibilidade(
+    ).isNotEmpty 
+        ? disponibilidades.where(
+            (d) =>
+                d.medicoId == medicoId &&
+                d.data.year == selectedDate.year &&
+                d.data.month == selectedDate.month &&
+                d.data.day == selectedDate.day,
+          ).first
+        : null;
+
+    // BUSCAR TODAS AS ALOCAÇÕES DO MÉDICO DO FIREBASE (não apenas a lista local)
+    // para verificar se há uma série completa
+    debugPrint('🔍 Buscando todas as alocações do médico $medicoId do Firebase...');
+    final alocacoesMedicoFirebase = await AlocacaoMedicosLogic.buscarAlocacoesMedico(
+      widget.unidade,
+      medicoId,
+      anoEspecifico: selectedDate.year,
+    );
+    debugPrint('  📊 Total de alocações do médico no Firebase: ${alocacoesMedicoFirebase.length}');
+    
+    // Verificar se há outras alocações do mesmo médico em datas futuras ou passadas
+    // que possam indicar uma série
+    final dataAlvoNormalizada = DateTime(dataAlvo.year, dataAlvo.month, dataAlvo.day);
+    
+    final alocacoesFuturas = alocacoesMedicoFirebase.where((a) {
+      final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+      final aDateNormalizada = DateTime(aDate.year, aDate.month, aDate.day);
+      return aDateNormalizada.isAfter(dataAlvoNormalizada);
+    }).toList();
+    
+    final alocacoesPassadas = alocacoesMedicoFirebase.where((a) {
+      final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+      final aDateNormalizada = DateTime(aDate.year, aDate.month, aDate.day);
+      return aDateNormalizada.isBefore(dataAlvoNormalizada);
+    }).toList();
+    
+    bool temAlocacoesFuturas = alocacoesFuturas.isNotEmpty;
+    bool temAlocacoesPassadas = alocacoesPassadas.isNotEmpty;
+    bool podeSerSerie = temAlocacoesFuturas || temAlocacoesPassadas;
+    
+    debugPrint('🔍 Verificando desalocação para médico $medicoId');
+    debugPrint('  📅 Data alvo: ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}');
+    debugPrint('  📊 Alocações futuras encontradas: ${alocacoesFuturas.length}');
+    debugPrint('  📊 Alocações passadas encontradas: ${alocacoesPassadas.length}');
+    debugPrint('  🔄 Pode ser série: $podeSerSerie');
+    if (alocacoesFuturas.isNotEmpty) {
+      debugPrint('  📅 Próximas alocações:');
+      for (var a in alocacoesFuturas.take(5)) {
+        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+        debugPrint('    - ${aDate.day}/${aDate.month}/${aDate.year}');
+      }
+    }
+    if (alocacoesPassadas.isNotEmpty) {
+      debugPrint('  📅 Alocações passadas:');
+      for (var a in alocacoesPassadas.take(5)) {
+        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+        debugPrint('    - ${aDate.day}/${aDate.month}/${aDate.year}');
+      }
+    }
+    
+    // Se pode ser série (há alocações futuras/passadas), buscar o tipo correto da série
+    // mesmo que a disponibilidade encontrada no dia seja "Única"
+    String tipoSerie = 'Única';
+    if (podeSerSerie) {
+      debugPrint('  🔍 Pode ser série, buscando tipo correto da série...');
+      // Tentar encontrar uma disponibilidade do médico que seja de série
+      final dispSerieList = disponibilidades.where((d) => 
+        d.medicoId == medicoId && 
+        (d.tipo == 'Semanal' || d.tipo == 'Quinzenal' || d.tipo == 'Mensal' || d.tipo.startsWith('Consecutivo'))
+      ).toList();
+      
+      if (dispSerieList.isNotEmpty) {
+        tipoSerie = dispSerieList.first.tipo;
+        debugPrint('  ✅ Tipo de série encontrado: $tipoSerie');
+        // Atualizar o tipo da disponibilidade para o tipo correto da série
+        if (disponibilidade == null) {
+          disponibilidade = Disponibilidade(
+            id: '',
+            medicoId: '',
+            data: DateTime(1900, 1, 1),
+            horarios: [],
+            tipo: tipoSerie,
+          );
+        } else if (disponibilidade.tipo == 'Única') {
+          // Se a disponibilidade encontrada é "Única" mas há uma série, usar o tipo da série
+          disponibilidade = Disponibilidade(
+            id: disponibilidade.id,
+            medicoId: disponibilidade.medicoId,
+            data: disponibilidade.data,
+            horarios: disponibilidade.horarios,
+            tipo: tipoSerie,
+          );
+          debugPrint('  🔄 Tipo atualizado de "Única" para "$tipoSerie"');
+        }
+      } else {
+        debugPrint('  ⚠️ Nenhuma disponibilidade de série encontrada, tentando inferir do padrão das alocações...');
+        // Tentar inferir o tipo da série analisando o padrão das alocações
+        if (alocacoesFuturas.isNotEmpty) {
+          final primeiraFutura = alocacoesFuturas.first;
+          final primeiraFuturaDate = DateTime(primeiraFutura.data.year, primeiraFutura.data.month, primeiraFutura.data.day);
+          final diasDiferenca = primeiraFuturaDate.difference(dataAlvoNormalizada).inDays;
+          
+          if (diasDiferenca == 7 || diasDiferenca % 7 == 0) {
+            tipoSerie = 'Semanal';
+            debugPrint('  ✅ Tipo inferido: Semanal (diferença de $diasDiferenca dias)');
+          } else if (diasDiferenca == 14 || diasDiferenca % 14 == 0) {
+            tipoSerie = 'Quinzenal';
+            debugPrint('  ✅ Tipo inferido: Quinzenal (diferença de $diasDiferenca dias)');
+          } else if (primeiraFuturaDate.day == dataAlvoNormalizada.day) {
+            tipoSerie = 'Mensal';
+            debugPrint('  ✅ Tipo inferido: Mensal (mesmo dia do mês)');
+          }
+          
+          // Atualizar a disponibilidade com o tipo inferido
+          if (tipoSerie != 'Única') {
+            disponibilidade = disponibilidade ?? Disponibilidade(
+              id: '',
+              medicoId: '',
+              data: DateTime(1900, 1, 1),
+              horarios: [],
+              tipo: tipoSerie,
+            );
+            if (disponibilidade.tipo == 'Única') {
+              disponibilidade = Disponibilidade(
+                id: disponibilidade.id,
+                medicoId: disponibilidade.medicoId,
+                data: disponibilidade.data,
+                horarios: disponibilidade.horarios,
+                tipo: tipoSerie,
+              );
+              debugPrint('  🔄 Tipo atualizado de "Única" para "$tipoSerie" (inferido)');
+            }
+          }
+        }
+      }
+    } else if (disponibilidade == null || disponibilidade.medicoId.isEmpty) {
+      debugPrint('  ⚠️ Disponibilidade não encontrada no dia selecionado');
+      disponibilidade = disponibilidade ?? Disponibilidade(
         id: '',
         medicoId: '',
         data: DateTime(1900, 1, 1),
         horarios: [],
         tipo: 'Única',
-      ),
+      );
+    } else {
+      debugPrint('  ✅ Disponibilidade encontrada no dia: tipo = ${disponibilidade.tipo}');
+    }
+    
+    // Garantir que disponibilidade não é null
+    final disponibilidadeFinal = disponibilidade ?? Disponibilidade(
+      id: '',
+      medicoId: '',
+      data: DateTime(1900, 1, 1),
+      horarios: [],
+      tipo: podeSerSerie ? tipoSerie : 'Única',
     );
 
     String? escolha;
-    if (disponibilidade.tipo == 'Única') {
+    final tipoDisponibilidade = disponibilidadeFinal.tipo;
+    debugPrint('  📋 Tipo final da disponibilidade: $tipoDisponibilidade');
+    debugPrint('  🔄 Tem alocações futuras: $temAlocacoesFuturas');
+    
+    // Verificar se é um tipo de série
+    final eTipoSerie = tipoDisponibilidade == 'Semanal' || 
+                       tipoDisponibilidade == 'Quinzenal' || 
+                       tipoDisponibilidade == 'Mensal' || 
+                       tipoDisponibilidade.startsWith('Consecutivo');
+    
+    debugPrint('  🔄 É tipo de série: $eTipoSerie');
+    debugPrint('  📊 Total de alocações do médico: ${alocacoes.where((a) => a.medicoId == medicoId).length}');
+    debugPrint('  📊 Todas as alocações do médico:');
+    for (var a in alocacoes.where((a) => a.medicoId == medicoId).take(10)) {
+      final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+      debugPrint('    - ${aDate.day}/${aDate.month}/${aDate.year} (gabinete: ${a.gabineteId})');
+    }
+    
+    // Se é tipo único E não há alocações futuras/passadas (não pode ser série), apenas confirmar
+    // Caso contrário (tipo série OU pode ser série), sempre perguntar se quer desalocar apenas o dia ou toda a série
+    if (!eTipoSerie && tipoDisponibilidade == 'Única' && !podeSerSerie) {
+      debugPrint('  ℹ️ Disponibilidade única sem alocações futuras/passadas - apenas confirmar');
       // Para disponibilidade única, apenas confirmar
       final confirmacao = await showDialog<bool>(
         context: context,
@@ -623,16 +1003,24 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         escolha = '1dia';
       }
     } else {
-      // Para disponibilidade em série, perguntar se quer desalocar apenas um dia ou toda a série
+      debugPrint('  ❓ Mostrando diálogo para escolher entre desalocar apenas o dia ou toda a série');
+      // Para disponibilidade em série ou quando há alocações futuras/passadas, perguntar se quer desalocar apenas um dia ou toda a série
+      String mensagem;
+      if (podeSerSerie && tipoDisponibilidade == 'Única') {
+        mensagem = 'Este médico tem outras alocações em datas futuras ou passadas.\n'
+            'Deseja desalocar apenas este dia (${selectedDate.day}/${selectedDate.month}) '
+            'ou todos os dias da série?';
+      } else {
+        mensagem = 'Esta disponibilidade é do tipo "$tipoDisponibilidade".\n'
+            'Deseja desalocar apenas este dia (${selectedDate.day}/${selectedDate.month}) '
+            'ou todos os dias da série a partir deste?';
+      }
+      
       escolha = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Confirmar Desalocação'),
-          content: Text(
-            'Esta disponibilidade é do tipo "${disponibilidade.tipo}".\n'
-            'Deseja desalocar apenas este dia (${selectedDate.day}/${selectedDate.month}) '
-            'ou todos os dias da série a partir deste?',
-          ),
+          content: Text(mensagem),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, '1dia'),
@@ -654,7 +1042,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     if (escolha == '1dia') {
       await _desalocarMedicoDiaUnico(medicoId);
     } else if (escolha == 'serie') {
-      await _desalocarMedicoSerie(medicoId, disponibilidade.tipo);
+      await _desalocarMedicoSerie(medicoId, tipoDisponibilidade);
     }
   }
 
@@ -669,7 +1057,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         medicosDisponiveis: medicosDisponiveis,
         onAlocacoesChanged: () {
           _carregarDadosIniciais();
-          
         },
         unidade: widget.unidade,
       );
@@ -695,8 +1082,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
         medicosDisponiveis: medicosDisponiveis,
         onAlocacoesChanged: () {
           _carregarDadosIniciais();
-          
         },
+        unidade: widget.unidade,
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -857,6 +1244,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
               onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
               isAdmin: widget.isAdmin,
               medicosDestacados: medicosDestacados,
+              unidade: widget.unidade,
             ),
           ),
         ),
@@ -866,15 +1254,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
 
   @override
   Widget build(BuildContext context) {
-    if (isCarregando) {
-      return Scaffold(
-        appBar: CustomAppBar(
-            title:
-                'Mapa de ${widget.unidade.nomeAlocacao} - ${DateFormat('dd/MM/yyyy').format(selectedDate)}'),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
       // AppBar já vem estilizado pelo theme
       appBar: CustomAppBar(
@@ -882,16 +1261,29 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
             'Mapa de ${widget.unidade.nomeAlocacao} - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
       ),
       drawer: CustomDrawer(
-        onRefresh: _carregarDadosIniciais, // Passa o callback para o drawer
+        onRefresh: () => _carregarDadosIniciais(recarregarMedicos: true), // Recarrega tudo, incluindo médicos
         unidade: widget.unidade, // Passa a unidade para personalizar o drawer
         isAdmin: widget.isAdmin, // Passa informação se é administrador
       ),
       // Corpo com cor de fundo suave e layout responsivo
-      body: Container(
-        color: Colors.grey.shade200,
-        child: _deveUsarLayoutResponsivo(context)
-            ? _buildLayoutResponsivo()
-            : _buildLayoutDesktop(),
+      body: Stack(
+        children: [
+          Container(
+            color: Colors.grey.shade200,
+            child: _deveUsarLayoutResponsivo(context)
+                ? _buildLayoutResponsivo()
+                : _buildLayoutDesktop(),
+          ),
+          if (isCarregando)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.35),
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1064,9 +1456,27 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
               ],
             ),
             margin: const EdgeInsets.only(bottom: 12),
-            child: DatePickerSection(
-              selectedDate: selectedDate,
-              onDateChanged: _onDateChanged,
+            child: CalendarioDisponibilidades(
+              diasSelecionados: [selectedDate],
+              onAdicionarData: (date, tipo) {
+                // Não usado no modo apenas seleção
+              },
+              onRemoverData: (date, removeSerie) {
+                // Não usado no modo apenas seleção
+              },
+              dataCalendario: selectedDate,
+              modoApenasSelecao: true,
+              onDateSelected: (date) {
+                // Quando uma data é selecionada, atualizar a data selecionada
+                _onDateChanged(date);
+              },
+              onViewChanged: (visibleDate) {
+                // Quando o usuário navega no calendário, atualizar a data selecionada
+                setState(() {
+                  selectedDate = visibleDate;
+                });
+                _onDateChanged(visibleDate);
+              },
             ),
           ),
 
@@ -1171,5 +1581,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos> {
     }
 
     return _buildEmptyStateOrContent();
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _dispSub?.cancel();
+    _alocSub?.cancel();
+    super.dispose();
   }
 }

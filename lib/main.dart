@@ -3,20 +3,38 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:mapa_gabinetes/screens/selecao_unidade_screen.dart';
 import 'package:mapa_gabinetes/utils/web_gl_support.dart';
 import 'package:mapa_gabinetes/utils/network_utils.dart';
 import 'package:mapa_gabinetes/services/firebase_error_handler.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:syncfusion_localizations/syncfusion_localizations.dart';
 // import 'debug_firebase.dart'; // Debug temporário - DESATIVADO
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+  
+  // Inicializar dados de locale para português
+  await initializeDateFormatting('pt_PT', null);
+  if (!kIsWeb) {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+  }
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Ativa cache offline do Firestore (com sync entre abas no Web)
+  try {
+    await FirebaseFirestore.instance.enablePersistence(
+      const PersistenceSettings(synchronizeTabs: true),
+    );
+    print('✅ Firestore persistence habilitada.');
+  } catch (e) {
+    // Em alguns ambientes pode já estar ativa ou não ser suportada; apenas loga
+    print('ℹ️ Não foi possível ativar persistence (ignorado): $e');
+  }
 
   // Inicializar verificação de rede e Firebase
   await NetworkUtils.initialize();
@@ -55,6 +73,16 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'AlocMap',
       theme: MyAppTheme.themeData, // Aplica o tema do MyAppTheme
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        SfGlobalLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('pt', 'PT'), // Português de Portugal
+      ],
+      locale: const Locale('pt', 'PT'),
       home: _buildHomeScreen(),
     );
   }
@@ -102,7 +130,7 @@ class _FallbackScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
+                color: Colors.black.withOpacity(0.1),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -167,10 +195,8 @@ class _FallbackScreen extends StatelessWidget {
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: () {
-                  // Tentar recarregar a aplicação
-                  if (kIsWeb) {
-                    html.window.location.reload();
-                  }
+                  // No web, peça ao utilizador para recarregar manualmente a página.
+                  // Em plataformas móveis, este botão não faz ação especial.
                 },
                 icon: const Icon(Icons.refresh),
                 label: const Text('Tentar Novamente'),

@@ -160,7 +160,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Motivo',
                 ),
-                value: motivo,
+                initialValue: motivo,
                 items: const [
                   DropdownMenuItem(
                       value: 'Encerramento', child: Text('Encerramento')),
@@ -300,7 +300,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Motivo',
                 ),
-                value: novoMotivo,
+                initialValue: novoMotivo,
                 items: const [
                   DropdownMenuItem(
                       value: 'Encerramento', child: Text('Encerramento')),

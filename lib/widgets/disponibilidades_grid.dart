@@ -6,12 +6,16 @@ class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
   final Function(DateTime, bool) onRemoverData;
   final Function(Disponibilidade)? onEditarDisponibilidade;
+  final VoidCallback? onChanged; // notifica alterações (horários etc.)
+  final Function(Disponibilidade, List<String>)? onAtualizarSerie; // callback para atualizar série quando horários são editados
 
   const DisponibilidadesGrid({
     super.key,
     required this.disponibilidades,
     required this.onRemoverData,
     this.onEditarDisponibilidade,
+    this.onChanged,
+    this.onAtualizarSerie,
   });
 
   @override
@@ -50,9 +54,9 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   }
 
   Future<void> _mostrarDialogoRemocaoSeries(
-      BuildContext context,
-      Disponibilidade disponibilidade,
-      ) async {
+    BuildContext context,
+    Disponibilidade disponibilidade,
+  ) async {
     final isSerie = disponibilidade.tipo != 'Única';
 
     if (isSerie) {
@@ -95,7 +99,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             title: const Text('Remover disponibilidade'),
             content: Text(
               'Tem certeza que deseja remover o dia '
-                  '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}?',
+              '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}?',
             ),
             actions: [
               TextButton(
@@ -117,7 +121,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
   }
 
-  Future<void> _selecionarHorario(BuildContext context, DateTime data, bool isInicio) async {
+  Future<void> _selecionarHorario(
+      BuildContext context, DateTime data, bool isInicio) async {
     final TimeOfDay? time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
@@ -130,23 +135,24 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     );
 
     if (time != null) {
-      final horario = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+      final horario =
+          '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
       setState(() {
         // Acha a disponibilidade do dia
         final disponibilidade = widget.disponibilidades.firstWhere(
-              (d) => d.data == data,
+          (d) => d.data == data,
           orElse: () => Disponibilidade(
             id: '',
             medicoId: '',
-            data: DateTime(1900,1,1),
+            data: DateTime(1900, 1, 1),
             horarios: [],
             tipo: 'Única',
           ),
         );
 
         // Se não encontrou uma real, não faz nada
-        if (disponibilidade.data == DateTime(1900,1,1)) return;
+        if (disponibilidade.data == DateTime(1900, 1, 1)) return;
 
         // Ajusta horário
         if (isInicio) {
@@ -176,8 +182,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                   title: const Text('Aplicar horário a toda a série?'),
                   content: Text(
                     'Deseja usar este horário de '
-                        '${isInicio ? 'início' : 'fim'} '
-                        'em todos os dias da série (${disponibilidade.tipo})?',
+                    '${isInicio ? 'início' : 'fim'} '
+                    'em todos os dias da série (${disponibilidade.tipo})?',
                   ),
                   actions: [
                     TextButton(
@@ -194,30 +200,69 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             );
 
             if (aplicarEmTodos == true) {
+              // Construir lista completa de horários ANTES de atualizar os cartões
+              final horariosCompletos = <String>[];
+              
+              // Pegar horários atuais da disponibilidade
+              if (isInicio) {
+                // Editando horário de início
+                horariosCompletos.add(horario);
+                // Manter o horário de fim se existir, senão usar o mesmo
+                if (disponibilidade.horarios.length >= 2) {
+                  horariosCompletos.add(disponibilidade.horarios[1]);
+                } else if (disponibilidade.horarios.length == 1) {
+                  horariosCompletos.add(disponibilidade.horarios[0]); // Usar o mesmo temporariamente
+                } else {
+                  horariosCompletos.add(horario); // Se não tinha horários, usar o mesmo
+                }
+              } else {
+                // Editando horário de fim
+                // Manter o horário de início se existir
+                if (disponibilidade.horarios.isNotEmpty) {
+                  horariosCompletos.add(disponibilidade.horarios[0]);
+                } else {
+                  horariosCompletos.add(''); // Se não tinha início, deixar vazio
+                }
+                horariosCompletos.add(horario);
+              }
+              
+              // Atualizar todos os cartões locais
               setState(() {
-                for (final disp in widget.disponibilidades.where((d) => d.tipo == disponibilidade.tipo)) {
-                  if (isInicio) {
-                    if (disp.horarios.isEmpty) {
-                      disp.horarios.add(horario);
-                    } else {
-                      disp.horarios[0] = horario;
-                    }
-                  } else {
-                    if (disp.horarios.isEmpty) {
-                      disp.horarios = ['', horario];
-                    } else if (disp.horarios.length == 1) {
-                      disp.horarios.add(horario);
-                    } else {
-                      disp.horarios[1] = horario;
-                    }
-                  }
+                for (final disp in widget.disponibilidades
+                    .where((d) => d.tipo == disponibilidade.tipo)) {
+                  disp.horarios = List.from(horariosCompletos);
                 }
               });
+              
+              // Notificar para atualizar a série no Firestore
+              if (horariosCompletos.length >= 2 && widget.onAtualizarSerie != null) {
+                widget.onAtualizarSerie!(disponibilidade, horariosCompletos);
+              }
+              
+              // notificar alterações em série
+              widget.onChanged?.call();
             }
           });
         }
       });
+
+      // notificar alteração deste cartão
+      widget.onChanged?.call();
     }
+  }
+
+  /// Traduz dia da semana de inglês para português
+  String _traduzirDiaSemana(String diaIngles) {
+    const traducoes = {
+      'Monday': '2ª feira',
+      'Tuesday': '3ª feira',
+      'Wednesday': '4ª feira',
+      'Thursday': '5ª feira',
+      'Friday': '6ª feira',
+      'Saturday': 'Sábado',
+      'Sunday': 'Domingo',
+    };
+    return traducoes[diaIngles] ?? diaIngles;
   }
 
   void _verDisponibilidade(Disponibilidade disponibilidade) {
@@ -230,6 +275,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final int crossAxisCount = (constraints.maxWidth / 200).floor();
+        // Ordena por data para garantir ordem cronológica na grelha
+        widget.disponibilidades.sort((a, b) => a.data.compareTo(b.data));
         return GridView.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
@@ -242,8 +289,9 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           itemCount: widget.disponibilidades.length,
           itemBuilder: (context, index) {
             final disponibilidade = widget.disponibilidades[index];
-            final diaSemana =
-            DateFormat('EEEE').format(disponibilidade.data);
+            // Traduzir dia da semana para português
+            final diaSemanaIngles = DateFormat('EEEE', 'en_US').format(disponibilidade.data);
+            final diaSemana = _traduzirDiaSemana(diaSemanaIngles);
 
             final horarioInicio = disponibilidade.horarios.isNotEmpty
                 ? disponibilidade.horarios[0]
@@ -259,7 +307,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 margin: const EdgeInsets.all(8),
                 color: _determinarCorDoCartao(disponibilidade),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0, vertical: 4.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,

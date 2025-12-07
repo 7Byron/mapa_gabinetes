@@ -6,11 +6,11 @@ import '../models/disponibilidade.dart';
 /// [tipo] pode ser: 'Única', 'Semanal', 'Quinzenal', 'Mensal', 'Consecutivo:X' (onde X é o número de dias),
 /// [limitarAoAno] define se vamos criar apenas até o final do mesmo ano ou não.
 List<Disponibilidade> criarDisponibilidadesSerie(
-    DateTime dataInicial,
-    String tipo, {
-      required String medicoId,      // <--- agora exigimos medicoId
-      bool limitarAoAno = true,
-    }) {
+  DateTime dataInicial,
+  String tipo, {
+  required String medicoId, // <--- agora exigimos medicoId
+  bool limitarAoAno = true,
+}) {
   final List<Disponibilidade> lista = [];
 
   switch (tipo) {
@@ -32,15 +32,19 @@ List<Disponibilidade> criarDisponibilidadesSerie(
 
     case 'Semanal':
       {
-        // Gera 52 semanas a partir de dataInicial (aprox. 1 ano)
+        // Normaliza para o início do dia para evitar desvios por DST
+        final base =
+            DateTime(dataInicial.year, dataInicial.month, dataInicial.day);
         for (var i = 0; i < 52; i++) {
-          final novaData = dataInicial.add(Duration(days: i * 7));
-          if (!limitarAoAno || novaData.year == dataInicial.year) {
+          // Usa aritmética em UTC para evitar saltos por DST
+          final novaData =
+              DateTime.utc(base.year, base.month, base.day + (i * 7)).toLocal();
+          if (!limitarAoAno || novaData.year == base.year) {
             final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-$i';
             lista.add(
               Disponibilidade(
                 id: uniqueId,
-                medicoId: medicoId, // <---
+                medicoId: medicoId,
                 data: novaData,
                 horarios: [],
                 tipo: 'Semanal',
@@ -53,10 +57,14 @@ List<Disponibilidade> criarDisponibilidadesSerie(
 
     case 'Quinzenal':
       {
+        final base =
+            DateTime(dataInicial.year, dataInicial.month, dataInicial.day);
         // Gera 26 quinzenais (52 semanas / 2)
         for (var i = 0; i < 26; i++) {
-          final novaData = dataInicial.add(Duration(days: i * 14));
-          if (!limitarAoAno || novaData.year == dataInicial.year) {
+          final novaData =
+              DateTime.utc(base.year, base.month, base.day + (i * 14))
+                  .toLocal();
+          if (!limitarAoAno || novaData.year == base.year) {
             final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-$i';
             lista.add(
               Disponibilidade(
@@ -76,7 +84,7 @@ List<Disponibilidade> criarDisponibilidadesSerie(
       {
         // Lógica: repete a mesma "ocorrência" no mês.
         // Ex: se dataInicial é a 2ª terça do mês, gerar também a 2ª terça
-        // dos próximos meses, até 12 vezes (ou até acabar o ano se limitarAoAno=true)
+        // dos meses restantes do ano (do mês atual até dezembro)
         final weekdayDesejado = dataInicial.weekday;
         final anoInicial = dataInicial.year;
         final mesInicial = dataInicial.month;
@@ -84,14 +92,19 @@ List<Disponibilidade> criarDisponibilidadesSerie(
         // Descobre "qual ocorrência" do weekday no mês (ex.: 2ª terça).
         final n = _descobrirOcorrenciaNoMes(dataInicial);
 
-        for (int i = 0; i < 12; i++) {
-          // Calcula o mês alvo
+        // Se limitarAoAno=true, criar apenas até dezembro do ano atual
+        // Se limitarAoAno=false, criar 12 meses a partir de janeiro do ano da data inicial
+        // (para importação de ano anterior, a data inicial já deve ser janeiro do novo ano)
+        if (limitarAoAno) {
+          // Criar apenas os meses restantes do ano atual
+          final mesesParaCriar = 13 - mesInicial;
+          for (int i = 0; i < mesesParaCriar; i++) {
           final mesAlvo = mesInicial + i;
           final anoAlvo = anoInicial + ((mesAlvo - 1) ~/ 12);
           final mesCorreto = ((mesAlvo - 1) % 12) + 1;
 
-          // Se for para limitar ao mesmo ano e mudou de ano, paramos
-          if (limitarAoAno && anoAlvo != anoInicial) break;
+            // Se mudou de ano, parar
+            if (anoAlvo != anoInicial) break;
 
           // Tenta descobrir a data exata do n-ésimo weekday
           final novaData = _pegarNthWeekdayDoMes(
@@ -106,12 +119,39 @@ List<Disponibilidade> criarDisponibilidadesSerie(
             lista.add(
               Disponibilidade(
                 id: uniqueId,
-                medicoId: medicoId, // <---
+                  medicoId: medicoId,
+                  data: novaData,
+                  horarios: [],
+                  tipo: 'Mensal',
+                ),
+              );
+            }
+          }
+        } else {
+          // Para importação: criar 12 meses a partir de janeiro do ano da data inicial
+          // (a data inicial já deve ser janeiro do novo ano)
+          final anoAlvo = dataInicial.year;
+          for (int mes = 1; mes <= 12; mes++) {
+            // Tenta descobrir a data exata do n-ésimo weekday
+            final novaData = _pegarNthWeekdayDoMes(
+              anoAlvo,
+              mes,
+              weekdayDesejado,
+              n,
+            );
+
+            if (novaData != null) {
+              final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-$mes';
+              lista.add(
+                Disponibilidade(
+                  id: uniqueId,
+                  medicoId: medicoId,
                 data: novaData,
                 horarios: [],
                 tipo: 'Mensal',
               ),
             );
+            }
           }
         }
       }
@@ -122,11 +162,14 @@ List<Disponibilidade> criarDisponibilidadesSerie(
       if (tipo.startsWith('Consecutivo:')) {
         final numeroDiasStr = tipo.split(':')[1];
         final numeroDias = int.tryParse(numeroDiasStr) ?? 5;
-        
+
         // Gera dias consecutivos a partir da data inicial
+        final base =
+            DateTime(dataInicial.year, dataInicial.month, dataInicial.day);
         for (var i = 0; i < numeroDias; i++) {
-          final novaData = dataInicial.add(Duration(days: i));
-          if (!limitarAoAno || novaData.year == dataInicial.year) {
+          final novaData =
+              DateTime.utc(base.year, base.month, base.day + i).toLocal();
+          if (!limitarAoAno || novaData.year == base.year) {
             final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-$i';
             lista.add(
               Disponibilidade(
@@ -169,11 +212,11 @@ int _descobrirOcorrenciaNoMes(DateTime data) {
 /// Retorna a data do n-ésimo [weekdayDesejado] do mês [ano, mes].
 /// Se não existir (ex.: 5ª terça), retorna null.
 DateTime? _pegarNthWeekdayDoMes(
-    int ano,
-    int mes,
-    int weekdayDesejado,
-    int n,
-    ) {
+  int ano,
+  int mes,
+  int weekdayDesejado,
+  int n,
+) {
   final weekdayDia1 = DateTime(ano, mes, 1).weekday;
   final offset = (weekdayDesejado - weekdayDia1 + 7) % 7;
   final primeiroNoMes = 1 + offset;

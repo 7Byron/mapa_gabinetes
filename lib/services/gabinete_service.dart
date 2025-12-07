@@ -45,7 +45,8 @@ Future<List<Gabinete>> buscarGabinetes({Unidade? unidade}) async {
     gabinetesRef = firestore.collection('gabinetes');
   }
 
-  final gabinetesSnap = await gabinetesRef.get();
+  final gabinetesSnap =
+      await gabinetesRef.get(const GetOptions(source: Source.serverAndCache));
   List<Gabinete> gabinetes = [];
 
   for (final doc in gabinetesSnap.docs) {

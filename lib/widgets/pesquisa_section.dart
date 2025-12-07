@@ -68,7 +68,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
 
           // Pesquisa por Nome do Médico
           DropdownButtonFormField<String>(
-            value: widget.pesquisaNome,
+            initialValue: widget.pesquisaNome,
             decoration: const InputDecoration(
               labelText: 'Pesquisar por Nome',
               border: OutlineInputBorder(),
@@ -95,7 +95,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
 
           // Pesquisa por Especialidade
           DropdownButtonFormField<String>(
-            value: widget.pesquisaEspecialidade,
+            initialValue: widget.pesquisaEspecialidade,
             decoration: const InputDecoration(
               labelText: 'Pesquisar por Especialidade',
               border: OutlineInputBorder(),

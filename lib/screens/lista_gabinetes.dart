@@ -66,6 +66,38 @@ class ListaGabinetesState extends State<ListaGabinetes> {
     }
   }
 
+  /// Extrai o número do nome do gabinete para ordenação
+  /// Exemplos: "Gabinete 101" -> 101, "103" -> 103, "Sala A" -> null
+  int? _extrairNumeroGabinete(String nome) {
+    // Procura por sequências de dígitos no nome
+    final regex = RegExp(r'\d+');
+    final match = regex.firstMatch(nome);
+    if (match != null) {
+      return int.tryParse(match.group(0) ?? '');
+    }
+    return null;
+  }
+
+  /// Ordena gabinetes por número (se disponível) ou alfabeticamente
+  void _ordenarGabinetesPorNumero(List<Gabinete> gabinetes) {
+    gabinetes.sort((a, b) {
+      final numA = _extrairNumeroGabinete(a.nome);
+      final numB = _extrairNumeroGabinete(b.nome);
+      
+      // Se ambos têm números, ordena numericamente
+      if (numA != null && numB != null) {
+        return numA.compareTo(numB);
+      }
+      
+      // Se apenas um tem número, ele vem primeiro
+      if (numA != null) return -1;
+      if (numB != null) return 1;
+      
+      // Se nenhum tem número, ordena alfabeticamente
+      return a.nome.compareTo(b.nome);
+    });
+  }
+
   // Função para agrupar e ordenar os gabinetes por setor
   Map<String, List<Gabinete>> agruparPorSetor(List<Gabinete> gabinetes) {
     Map<String, List<Gabinete>> gabinetesPorSetor = {};
@@ -76,9 +108,9 @@ class ListaGabinetesState extends State<ListaGabinetes> {
       gabinetesPorSetor[gabinete.setor]!.add(gabinete);
     }
 
-    // Ordenar os gabinetes em cada setor
+    // Ordenar os gabinetes em cada setor por número
     gabinetesPorSetor.forEach((setor, lista) {
-      lista.sort((a, b) => a.nome.compareTo(b.nome)); // Ordenação por nome
+      _ordenarGabinetesPorNumero(lista);
     });
 
     return gabinetesPorSetor;

@@ -16,7 +16,7 @@ class SerieService {
   }) async {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-      
+
       final serieRef = _firestore
           .collection('unidades')
           .doc(unidadeId)
@@ -42,7 +42,7 @@ class SerieService {
   }) async {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-      
+
       final seriesRef = _firestore
           .collection('unidades')
           .doc(unidadeId)
@@ -62,18 +62,18 @@ class SerieService {
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
-        
+
         // Filtrar séries inativas
         if (!serie.ativo) {
           continue;
         }
-        
+
         // Filtrar por período se fornecido
         // IMPORTANTE: Para séries infinitas (dataFim == null), sempre incluir se começaram antes ou no período
         if (dataFim != null && serie.dataInicio.isAfter(dataFim)) {
           continue;
         }
-        
+
         // Filtrar séries que já terminaram antes do período
         // Se dataFim é null, a série é infinita e deve ser incluída se começou antes ou no período
         if (dataInicio != null) {
@@ -84,7 +84,7 @@ class SerieService {
           // incluir se a série começou antes ou no início do período
           // (já verificado acima com isAfter)
         }
-        
+
         series.add(serie);
       }
 
@@ -105,7 +105,7 @@ class SerieService {
   }) async {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-      
+
       final serieRef = _firestore
           .collection('unidades')
           .doc(unidadeId)
@@ -136,7 +136,7 @@ class SerieService {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
       final ano = excecao.data.year.toString();
-      
+
       final excecaoRef = _firestore
           .collection('unidades')
           .doc(unidadeId)
@@ -162,6 +162,8 @@ class SerieService {
     DateTime? dataInicio,
     DateTime? dataFim,
     String? serieId,
+    bool forcarServidor =
+        false, // Novo parâmetro para forçar carregamento do servidor
   }) async {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
@@ -172,6 +174,11 @@ class SerieService {
       if (dataInicio != null && dataFim != null) {
         for (int ano = dataInicio.year; ano <= dataFim.year; ano++) {
           anos.add(ano);
+        }
+        // Debug: mostrar anos que serão carregados
+        if (forcarServidor) {
+          print(
+              '🔍 Carregando exceções do servidor (sem cache) para anos: $anos (período: ${dataInicio.day}/${dataInicio.month}/${dataInicio.year} até ${dataFim.day}/${dataFim.month}/${dataFim.year})');
         }
       } else {
         anos.add(DateTime.now().year);
@@ -189,33 +196,57 @@ class SerieService {
             .collection('registos');
 
         // Buscar todas as exceções e filtrar localmente para evitar índices compostos
-        // Usar cache do Firestore quando disponível
-        final snapshot = await excecoesRef
-            .get(const GetOptions(source: Source.serverAndCache));
-        
+        // Se forçarServidor for true, carregar apenas do servidor (sem cache)
+        // Isso é necessário quando uma exceção foi criada recentemente
+        final source = forcarServidor ? Source.server : Source.serverAndCache;
+        if (forcarServidor) {
+          print(
+              '🔍 Carregando exceções do ano $ano do servidor (sem cache) para médico $medicoId');
+        }
+        final snapshot = await excecoesRef.get(GetOptions(source: source));
+
+        if (forcarServidor) {
+          print(
+              '📋 Exceções carregadas do ano $ano: ${snapshot.docs.length} documentos');
+        }
+
         for (final doc in snapshot.docs) {
           final data = doc.data();
           final excecao = ExcecaoSerie.fromMap({...data, 'id': doc.id});
-          
+
           // Filtrar por serieId se fornecido
           if (serieId != null && excecao.serieId != serieId) {
             continue;
           }
-          
+
           // Filtrar por período se fornecido
           if (dataInicio != null && excecao.data.isBefore(dataInicio)) {
             continue;
           }
-          
+
           if (dataFim != null && excecao.data.isAfter(dataFim)) {
             continue;
           }
-          
+
           excecoes.add(excecao);
         }
       }
 
-      print('✅ Exceções carregadas: ${excecoes.length}');
+      // Debug: mostrar exceções com gabineteId para séries mensais
+      final excecoesComGabinete =
+          excecoes.where((e) => e.gabineteId != null).toList();
+      if (excecoesComGabinete.isNotEmpty) {
+        print(
+            '✅ Exceções carregadas: ${excecoes.length} total, ${excecoesComGabinete.length} com gabinete');
+        for (final ex in excecoesComGabinete) {
+          final dataKey =
+              '${ex.data.year}-${ex.data.month.toString().padLeft(2, '0')}-${ex.data.day.toString().padLeft(2, '0')}';
+          print(
+              '   📋 Exceção: série=${ex.serieId}, data=$dataKey, gabinete=${ex.gabineteId}');
+        }
+      } else {
+        print('✅ Exceções carregadas: ${excecoes.length}');
+      }
       return excecoes;
     } catch (e) {
       print('❌ Erro ao carregar exceções: $e');
@@ -233,7 +264,7 @@ class SerieService {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
       final ano = data.year.toString();
-      
+
       final excecaoRef = _firestore
           .collection('unidades')
           .doc(unidadeId)
@@ -281,4 +312,3 @@ class SerieService {
     }
   }
 }
-

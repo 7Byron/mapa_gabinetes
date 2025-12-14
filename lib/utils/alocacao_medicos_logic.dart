@@ -11,9 +11,9 @@ import '../services/gabinete_service.dart';
 import '../services/medico_salvar_service.dart';
 import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
+import '../services/disponibilidade_serie_service.dart';
 import '../utils/conflict_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 
 class AlocacaoMedicosLogic {
   // Cache simples em memória por dia (chave yyyy-MM-dd)
@@ -21,13 +21,32 @@ class AlocacaoMedicosLogic {
   static final Map<String, List<Alocacao>> _cacheAlocPorDia = {};
   // Cache de séries por médico e período (chave: medicoId_ano)
   static final Map<String, Map<String, dynamic>> _cacheSeriesPorMedico = {};
+  // Flag para indicar que o cache de séries foi invalidado e precisa ler do servidor
+  static final Set<String> _cacheSeriesInvalidado = {};
   // Cache de médicos ativos por unidade (chave: unidadeId)
   static final Map<String, List<String>> _cacheMedicosAtivos = {};
+  // Flag para indicar que o cache foi invalidado recentemente e precisa ler do servidor
+  static final Set<String> _cacheMedicosAtivosInvalidado = {};
   // Cache de exceções canceladas por dia (chave: unidadeId_yyyy-MM-dd)
   static final Map<String, Set<String>> _cacheExcecoesCanceladasPorDia = {};
 
   static String _keyDia(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Descobre qual ocorrência do weekday no mês (ex: 1ª terça, 2ª terça)
+  /// Retorna 1 para primeira ocorrência, 2 para segunda, etc.
+  static int _descobrirOcorrenciaNoMes(DateTime data) {
+    final weekday = data.weekday;
+    final ano = data.year;
+    final mes = data.month;
+    final dia = data.day;
+
+    final weekdayDia1 = DateTime(ano, mes, 1).weekday;
+    final offset = (weekday - weekdayDia1 + 7) % 7;
+    final primeiroDesteMes = 1 + offset;
+    final dif = dia - primeiroDesteMes;
+    return 1 + (dif ~/ 7);
+  }
 
   /// Atualiza (ou invalida) o cache do dia.
   static void updateCacheForDay({
@@ -58,7 +77,7 @@ class AlocacaoMedicosLogic {
   static void invalidateCacheFromDate(DateTime fromDate) {
     final fromKey = _keyDia(fromDate);
     final keysToRemove = <String>[];
-    
+
     // Encontra todas as chaves de cache que são >= fromDate
     // As chaves estão no formato "yyyy-MM-dd", então comparação de strings funciona
     for (final key in _cacheDispPorDia.keys) {
@@ -66,51 +85,110 @@ class AlocacaoMedicosLogic {
         keysToRemove.add(key);
       }
     }
-    
+
     // Remove as chaves encontradas
     for (final key in keysToRemove) {
       _cacheDispPorDia.remove(key);
       _cacheAlocPorDia.remove(key);
     }
-    
+
     // Limpar cache de séries também (será recarregado quando necessário)
     _cacheSeriesPorMedico.clear();
     // Não limpar cache de médicos - eles mudam raramente
   }
-  
+
+  /// Retorna lista de médicos que têm séries alocadas (com gabineteId) no cache
+  /// Útil para otimizar processamento e evitar carregar séries de todos os médicos
+  static List<String> obterMedicosComSeriesAlocadasNoCache(int ano) {
+    final medicosComSeriesAlocadas = <String>[];
+    for (final entry in _cacheSeriesPorMedico.entries) {
+      final parts = entry.key.split('_');
+      if (parts.length >= 2) {
+        final anoCache = int.tryParse(parts[1]);
+        if (anoCache == ano || anoCache == ano - 1) {
+          final medicoId = parts[0];
+          final cachedData = entry.value;
+          final series =
+              (cachedData['series'] as List).cast<SerieRecorrencia>();
+          // Só incluir se tem séries ativas COM gabineteId (alocadas)
+          if (series.any((s) => s.ativo && s.gabineteId != null)) {
+            medicosComSeriesAlocadas.add(medicoId);
+          }
+        }
+      }
+    }
+    return medicosComSeriesAlocadas.toSet().toList();
+  }
+
+  /// Obtém séries e exceções do cache para um médico específico
+  /// Retorna null se não há cache ou se foi invalidado
+  static Map<String, dynamic>? obterSeriesDoCache(String medicoId, int ano) {
+    final cacheKey = '${medicoId}_$ano';
+    if (_cacheSeriesInvalidado.contains(cacheKey)) {
+      return null; // Cache foi invalidado
+    }
+    return _cacheSeriesPorMedico[cacheKey];
+  }
+
+  /// Verifica se o cache de séries foi invalidado para um médico específico
+  static bool cacheFoiInvalidado(String medicoId, int ano) {
+    final cacheKey = '${medicoId}_$ano';
+    return _cacheSeriesInvalidado.contains(cacheKey);
+  }
+
   /// Limpa o cache de séries de um médico específico
   static void invalidateSeriesCacheForMedico(String medicoId, int? ano) {
     if (ano != null) {
       final cacheKey = '${medicoId}_$ano';
       _cacheSeriesPorMedico.remove(cacheKey);
+      _cacheSeriesInvalidado.add(cacheKey); // Marcar como invalidado
     } else {
       // Remover todas as entradas deste médico
-      _cacheSeriesPorMedico.removeWhere((key, value) => key.startsWith('${medicoId}_'));
+      final keysToRemove = _cacheSeriesPorMedico.keys
+          .where((key) => key.startsWith('${medicoId}_'))
+          .toList();
+      for (final key in keysToRemove) {
+        _cacheSeriesPorMedico.remove(key);
+        _cacheSeriesInvalidado.add(key); // Marcar como invalidado
+      }
     }
   }
-  
+
+  /// Invalida o cache de médicos ativos para uma unidade
+  /// Útil quando um novo médico é criado ou quando o status ativo de um médico muda
+  static void invalidateMedicosAtivosCache({String? unidadeId}) {
+    if (unidadeId != null) {
+      _cacheMedicosAtivos.remove(unidadeId);
+      _cacheMedicosAtivosInvalidado.add(unidadeId); // Marcar como invalidado
+    } else {
+      // Se não especificou unidade, limpar todo o cache
+      _cacheMedicosAtivos.clear();
+      _cacheMedicosAtivosInvalidado.clear(); // Marcar todos como invalidados
+    }
+  }
+
   /// Extrai datas com exceções canceladas do cache para um dia específico
   /// Retorna um Set com chaves no formato: medicoId_ano-mes-dia
   /// Se o cache não estiver disponível, carrega diretamente do Firestore
-  static Future<Set<String>> extrairExcecoesCanceladasParaDia(String unidadeId, DateTime data) async {
+  /// OTIMIZADO: Usa collectionGroup para carregar exceções de todos os médicos de uma vez
+  static Future<Set<String>> extrairExcecoesCanceladasParaDia(
+      String unidadeId, DateTime data) async {
     // Verificar cache primeiro (muito mais rápido)
     final cacheKey = '${unidadeId}_${_keyDia(data)}';
     if (_cacheExcecoesCanceladasPorDia.containsKey(cacheKey)) {
-      debugPrint('⚡ Exceções canceladas carregadas do cache para ${data.day}/${data.month}/${data.year}');
       return _cacheExcecoesCanceladasPorDia[cacheKey]!;
     }
-    
+
     final datasComExcecoesCanceladas = <String>{};
     try {
       final anoParaCache = data.year;
-      debugPrint('🔍 extrairExcecoesCanceladasParaDia: unidade=$unidadeId, data=${data.day}/${data.month}/${data.year}');
-      
-      final medicoIds = _cacheMedicosAtivos[unidadeId] ?? [];
-      debugPrint('  📊 Médicos no cache: ${medicoIds.length}');
-      
+
+      // OTIMIZAÇÃO 1: Carregar exceções apenas para médicos que têm séries ativas
+      // Primeiro, identificar médicos com séries no cache
+      final medicoIds = _cacheMedicosAtivos[unidadeId] ?? <String>[];
+
       // Se não há médicos no cache, tentar carregar do Firestore
       if (medicoIds.isEmpty) {
-        debugPrint('  🔄 Cache de médicos vazio, carregando do Firestore...');
         final firestore = FirebaseFirestore.instance;
         final medicosRef = firestore
             .collection('unidades')
@@ -121,174 +199,143 @@ class AlocacaoMedicosLogic {
             .get(const GetOptions(source: Source.serverAndCache));
         medicoIds.addAll(medicosSnapshot.docs.map((d) => d.id).toList());
         _cacheMedicosAtivos[unidadeId] = medicoIds;
-        debugPrint('  ✅ Médicos carregados do Firestore: ${medicoIds.length}');
       }
-      
+
+      // OTIMIZAÇÃO CRÍTICA: Verificar apenas médicos que têm séries no cache
+      // Médicos sem séries não precisam ter exceções carregadas
+      final medicosParaVerificar = <String>[];
       for (final medicoId in medicoIds) {
-        final cacheKey = '${medicoId}_$anoParaCache';
-        debugPrint('  🔍 Verificando médico $medicoId (cacheKey: $cacheKey)');
-        
-        // Se o cache não tem dados para este médico, OU se o cache existe mas não tem exceções para este dia específico,
-        // carregar do Firestore
-        final cacheExiste = _cacheSeriesPorMedico.containsKey(cacheKey);
-        final cacheTemExcecoes = cacheExiste && 
-            (_cacheSeriesPorMedico[cacheKey]!['excecoes'] as List).isNotEmpty;
-        
+        final cacheKeyMedico = '${medicoId}_$anoParaCache';
+        final cacheExiste = _cacheSeriesPorMedico.containsKey(cacheKeyMedico);
+
+        // Se não tem cache, pular (não tem séries, então não precisa verificar exceções)
+        if (!cacheExiste) {
+          continue;
+        }
+
+        final cachedData = _cacheSeriesPorMedico[cacheKeyMedico]!;
+        final series = cachedData['series'] as List<SerieRecorrencia>;
+
+        // Se não tem séries, não precisa verificar exceções
+        if (series.isEmpty) {
+          continue;
+        }
+
+        final cacheTemExcecoes = (cachedData['excecoes'] as List).isNotEmpty;
+
         // Verificar se o cache tem exceções para o dia específico
         bool cacheTemExcecoesParaEsteDia = false;
         if (cacheTemExcecoes) {
-          final excecoesCache = _cacheSeriesPorMedico[cacheKey]!['excecoes'] as List<ExcecaoSerie>;
+          final excecoesCache = cachedData['excecoes'] as List<ExcecaoSerie>;
           cacheTemExcecoesParaEsteDia = excecoesCache.any((e) =>
-            e.cancelada &&
-            e.data.year == data.year &&
-            e.data.month == data.month &&
-            e.data.day == data.day
-          );
-        }
-        
-        if (!cacheExiste || !cacheTemExcecoes || !cacheTemExcecoesParaEsteDia) {
-          if (!cacheExiste) {
-            debugPrint('  🔄 Cache não encontrado para $medicoId, carregando exceções do Firestore...');
-          } else if (!cacheTemExcecoes) {
-            debugPrint('  🔄 Cache existe mas não tem exceções para $medicoId, recarregando do Firestore...');
-          } else {
-            debugPrint('  🔄 Cache existe mas não tem exceções para ${data.day}/${data.month}/${data.year}, recarregando do Firestore...');
-          }
-          
-          try {
-            // Carregar apenas exceções para o dia específico
-            final dataInicio = DateTime(data.year, data.month, data.day);
-            final dataFim = dataInicio.add(const Duration(days: 1));
-            
-            // Buscar unidade do Firestore para passar como parâmetro
-            final firestore = FirebaseFirestore.instance;
-            final unidadeDoc = await firestore.collection('unidades').doc(unidadeId).get();
-            Unidade? unidadeObj;
-            if (unidadeDoc.exists) {
-              final unidadeData = unidadeDoc.data()!;
-              // Tratar dataCriacao que pode vir como Timestamp ou string
-              DateTime? dataCriacao;
-              final dataCriacaoValue = unidadeData['dataCriacao'];
-              if (dataCriacaoValue != null) {
-                if (dataCriacaoValue is Timestamp) {
-                  dataCriacao = dataCriacaoValue.toDate();
-                } else if (dataCriacaoValue is String) {
-                  try {
-                    dataCriacao = DateTime.parse(dataCriacaoValue);
-                  } catch (e) {
-                    dataCriacao = DateTime.now();
-                  }
-                } else {
-                  dataCriacao = DateTime.now();
-                }
-              } else {
-                dataCriacao = DateTime.now();
+              e.cancelada &&
+              e.data.year == data.year &&
+              e.data.month == data.month &&
+              e.data.day == data.day);
+
+          // Se tem no cache, processar diretamente
+          if (cacheTemExcecoesParaEsteDia) {
+            for (final excecao in excecoesCache) {
+              if (excecao.cancelada &&
+                  excecao.data.year == data.year &&
+                  excecao.data.month == data.month &&
+                  excecao.data.day == data.day) {
+                final dataKey =
+                    '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+                datasComExcecoesCanceladas.add(dataKey);
               }
-              
-              unidadeObj = Unidade(
-                id: unidadeId,
-                nome: unidadeData['nome'] ?? '',
-                tipo: unidadeData['tipo'] ?? '',
-                ativa: unidadeData['ativa'] ?? true,
-                endereco: unidadeData['endereco'] ?? '',
-                dataCriacao: dataCriacao,
-                nomeOcupantes: unidadeData['nomeOcupantes'] ?? '',
-                nomeAlocacao: unidadeData['nomeAlocacao'] ?? '',
-              );
-            } else {
-              // Criar unidade mínima se não existir
-              unidadeObj = Unidade(
-                id: unidadeId,
-                nome: '',
-                tipo: '',
-                ativa: true,
-                endereco: '',
-                dataCriacao: DateTime.now(),
-                nomeOcupantes: '',
-                nomeAlocacao: '',
-              );
             }
-            
-            final excecoes = await SerieService.carregarExcecoes(
-              medicoId,
-              unidade: unidadeObj,
-              dataInicio: dataInicio,
-              dataFim: dataFim,
-            );
-            
-            debugPrint('  📊 Exceções carregadas do Firestore para $medicoId: ${excecoes.length}');
-            
-            // Atualizar ou criar cache
-            if (cacheExiste) {
-              // Se o cache já existe, mesclar exceções (não sobrescrever)
-              final cachedData = _cacheSeriesPorMedico[cacheKey]!;
-              final excecoesExistentes = (cachedData['excecoes'] as List<ExcecaoSerie>).toList();
+          }
+        }
+
+        // Se não tem exceções no cache ou não tem para este dia específico, adicionar à lista
+        if (!cacheTemExcecoes || !cacheTemExcecoesParaEsteDia) {
+          medicosParaVerificar.add(medicoId);
+        }
+      }
+
+      // OTIMIZAÇÃO 2: Carregar exceções em paralelo apenas para médicos que precisam
+      if (medicosParaVerificar.isNotEmpty) {
+        final firestore = FirebaseFirestore.instance;
+
+        // Carregar exceções em paralelo para todos os médicos que precisam
+        final futures = medicosParaVerificar.map((medicoId) async {
+          try {
+            final medicoExcecoesRef = firestore
+                .collection('unidades')
+                .doc(unidadeId)
+                .collection('ocupantes')
+                .doc(medicoId)
+                .collection('excecoes')
+                .doc(anoParaCache.toString())
+                .collection('registos');
+
+            final snapshot = await medicoExcecoesRef
+                .get(const GetOptions(source: Source.serverAndCache));
+
+            final excecoes = <ExcecaoSerie>[];
+            for (final doc in snapshot.docs) {
+              final excecao =
+                  ExcecaoSerie.fromMap({...doc.data(), 'id': doc.id});
+              if (excecao.cancelada &&
+                  excecao.data.year == data.year &&
+                  excecao.data.month == data.month &&
+                  excecao.data.day == data.day) {
+                excecoes.add(excecao);
+                final dataKey =
+                    '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+                datasComExcecoesCanceladas.add(dataKey);
+              }
+            }
+
+            return {'medicoId': medicoId, 'excecoes': excecoes};
+          } catch (e) {
+            return {'medicoId': medicoId, 'excecoes': <ExcecaoSerie>[]};
+          }
+        });
+
+        final resultados = await Future.wait(futures);
+
+        // Atualizar cache com exceções carregadas
+        for (final resultado in resultados) {
+          final medicoId = resultado['medicoId'] as String;
+          final excecoes = resultado['excecoes'] as List<ExcecaoSerie>;
+
+          if (excecoes.isNotEmpty) {
+            final cacheKeyMedico = '${medicoId}_$anoParaCache';
+            if (_cacheSeriesPorMedico.containsKey(cacheKeyMedico)) {
+              final cachedData = _cacheSeriesPorMedico[cacheKeyMedico]!;
+              final excecoesExistentes =
+                  (cachedData['excecoes'] as List<ExcecaoSerie>).toList();
               final todasExcecoes = <ExcecaoSerie>[...excecoesExistentes];
-              
-              // Adicionar novas exceções que não existem
+
               for (final novaExcecao in excecoes) {
                 if (!todasExcecoes.any((e) => e.id == novaExcecao.id)) {
                   todasExcecoes.add(novaExcecao);
                 }
               }
-              
-              _cacheSeriesPorMedico[cacheKey] = {
+
+              _cacheSeriesPorMedico[cacheKeyMedico] = {
                 'series': cachedData['series'],
                 'excecoes': todasExcecoes,
               };
-              debugPrint('  💾 Cache mesclado para $medicoId: ${todasExcecoes.length} exceções');
             } else {
-              // Criar novo cache
-              _cacheSeriesPorMedico[cacheKey] = {
+              _cacheSeriesPorMedico[cacheKeyMedico] = {
                 'series': <SerieRecorrencia>[],
                 'excecoes': excecoes,
               };
-              debugPrint('  💾 Cache criado para $medicoId: ${excecoes.length} exceções');
-            }
-            
-            // Processar exceções carregadas
-            for (final excecao in excecoes) {
-              debugPrint('    - Exceção: ${excecao.serieId} - ${excecao.data.day}/${excecao.data.month}/${excecao.data.year} - Cancelada: ${excecao.cancelada}');
-              if (excecao.cancelada && 
-                  excecao.data.year == data.year &&
-                  excecao.data.month == data.month &&
-                  excecao.data.day == data.day) {
-                final dataKey = '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
-                datasComExcecoesCanceladas.add(dataKey);
-                debugPrint('    🚫 Exceção cancelada encontrada no Firestore: $medicoId, data ${data.day}/${data.month}/${data.year}');
-              }
-            }
-          } catch (e) {
-            debugPrint('    ❌ Erro ao carregar exceções do Firestore para $medicoId: $e');
-          }
-        } else {
-          // Usar dados do cache
-          final cachedData = _cacheSeriesPorMedico[cacheKey]!;
-          final excecoes = cachedData['excecoes'] as List<ExcecaoSerie>;
-          debugPrint('  📊 Exceções no cache para $medicoId: ${excecoes.length}');
-          
-          for (final excecao in excecoes) {
-            debugPrint('    - Exceção no cache: ${excecao.serieId} - ${excecao.data.day}/${excecao.data.month}/${excecao.data.year} - Cancelada: ${excecao.cancelada}');
-            if (excecao.cancelada && 
-                excecao.data.year == data.year &&
-                excecao.data.month == data.month &&
-                excecao.data.day == data.day) {
-              final dataKey = '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
-              datasComExcecoesCanceladas.add(dataKey);
-              debugPrint('    🚫 Exceção cancelada encontrada no cache: $medicoId, data ${data.day}/${data.month}/${data.year}');
             }
           }
         }
       }
-      
-      debugPrint('  ✅ Total de exceções canceladas encontradas: ${datasComExcecoesCanceladas.length}');
-      
+
       // Guardar no cache para evitar queries futuras
       _cacheExcecoesCanceladasPorDia[cacheKey] = datasComExcecoesCanceladas;
     } catch (e) {
-      debugPrint('❌ Erro ao extrair exceções canceladas: $e');
+      // Em caso de erro, retornar conjunto vazio
+      return <String>{};
     }
-    
+
     return datasComExcecoesCanceladas;
   }
 
@@ -305,6 +352,7 @@ class AlocacaoMedicosLogic {
     DateTime? dataFiltroDia,
     bool reloadStatic =
         false, // evita recarregar gabinetes/medicos quando só muda o dia
+    Set<String>? excecoesCanceladas, // Exceções já carregadas (otimização)
   }) async {
     try {
       // Carrega dados estáticos (gabinetes/medicos) apenas quando solicitado
@@ -331,66 +379,141 @@ class AlocacaoMedicosLogic {
 
       if (!precisaDisps) {
         disps = _cacheDispPorDia[keyDia] ?? const [];
-        debugPrint('⚡ Disponibilidades carregadas do cache para $keyDia');
-        
-        // IMPORTANTE: Filtrar disponibilidades do cache baseado em exceções canceladas
-        // Isso garante que mesmo quando os dados vêm do cache, as exceções sejam respeitadas
+
+        // IMPORTANTE: Filtrar disponibilidades baseado em exceções canceladas
+        // O cache já deve conter disponibilidades de séries, mas precisamos garantir
+        // que exceções canceladas sejam respeitadas
         if (unidade != null && dataFiltroDia != null) {
           try {
-            final datasComExcecoesCanceladas = await extrairExcecoesCanceladasParaDia(
-              unidade.id,
-              dataFiltroDia,
-            );
-            
+            // Usar exceções já carregadas ou carregar se não foram fornecidas
+            final datasComExcecoesCanceladas = excecoesCanceladas ??
+                await extrairExcecoesCanceladasParaDia(
+                    unidade.id, dataFiltroDia);
+
             if (datasComExcecoesCanceladas.isNotEmpty) {
               final dispsAntes = disps.length;
               disps = disps.where((disp) {
-                final dataKey = '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
+                final dataKey =
+                    '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
                 if (datasComExcecoesCanceladas.contains(dataKey)) {
-                  debugPrint('🚫 Filtrando disponibilidade do cache com exceção: ${disp.id} - ${disp.data.day}/${disp.data.month}/${disp.data.year}');
                   return false;
                 }
                 return true;
               }).toList();
-              
-              if (disps.length < dispsAntes) {
-                debugPrint('  🗑️ Removidas ${dispsAntes - disps.length} disponibilidades do cache devido a exceções');
+            }
+
+            // IMPORTANTE: Verificar se há novas séries que não estão no cache
+            // Se o cache não contém disponibilidades de séries (nenhuma com ID começando com "serie_"),
+            // então precisamos gerar novamente
+            final temDispsDeSeriesNoCache =
+                disps.any((d) => d.id.startsWith('serie_'));
+            if (!temDispsDeSeriesNoCache) {
+              final anoEspecifico = dataFiltroDia.year.toString();
+              final dispsDeSeries = await carregarDisponibilidadesDeSeries(
+                unidade: unidade,
+                anoEspecifico: anoEspecifico,
+                dataFiltroDia: dataFiltroDia,
+              );
+
+              // Mesclar apenas se houver novas disponibilidades de séries
+              if (dispsDeSeries.isNotEmpty) {
+                final dispsUnicas = <String, Disponibilidade>{};
+
+                // CORREÇÃO: Filtrar disponibilidades antigas do cache
+                // Manter apenas séries e únicas válidas
+                final dispsAntigasFiltradas = disps
+                    .where(
+                        (d) => d.id.startsWith('serie_') || d.tipo == 'Única')
+                    .toList();
+
+                // Adicionar apenas disponibilidades de séries do cache (filtrar antigas)
+                for (final disp in dispsAntigasFiltradas) {
+                  final chave =
+                      '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                  dispsUnicas[chave] = disp;
+                }
+
+                // Adicionar disponibilidades geradas de séries (sobrescrevem se houver duplicata)
+                for (final disp in dispsDeSeries) {
+                  final chave =
+                      '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                  dispsUnicas[chave] = disp;
+                }
+
+                disps = dispsUnicas.values.toList();
+              } else {
+                // Se não há disponibilidades de séries, filtrar disponibilidades antigas do cache
+                // Mas manter únicas válidas
+                final dispsAntigasFiltradas = disps
+                    .where(
+                        (d) => d.id.startsWith('serie_') || d.tipo == 'Única')
+                    .toList();
+                disps = dispsAntigasFiltradas;
+              }
+
+              // Carregar disponibilidades "Única" do Firestore e mesclar
+              List<Disponibilidade> dispsUnicas = [];
+              try {
+                final firestore = FirebaseFirestore.instance;
+                final diasRef = firestore
+                    .collection('unidades')
+                    .doc(unidade.id)
+                    .collection('dias')
+                    .doc(keyDia)
+                    .collection('disponibilidades');
+
+                final snapshot = await diasRef.get();
+                dispsUnicas = snapshot.docs
+                    .map((doc) => Disponibilidade.fromMap(doc.data()))
+                    .where((d) => d.tipo == 'Única')
+                    .toList();
+
+                // Mesclar com disponibilidades do cache
+                final dispsUnicasMap = <String, Disponibilidade>{};
+                for (final disp in disps) {
+                  final chave =
+                      '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                  dispsUnicasMap[chave] = disp;
+                }
+                for (final disp in dispsUnicas) {
+                  final chave =
+                      '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                  dispsUnicasMap[chave] = disp;
+                }
+                disps = dispsUnicasMap.values.toList();
+              } catch (e) {
+                // Em caso de erro, manter disponibilidades do cache
               }
             }
           } catch (e) {
-            debugPrint('❌ Erro ao filtrar disponibilidades do cache por exceções: $e');
+            // Em caso de erro, continuar com disponibilidades do cache
           }
         }
       }
+
       if (!precisaAlocs) {
         alocs = _cacheAlocPorDia[keyDia] ?? const [];
-        debugPrint('⚡ Alocações carregadas do cache para $keyDia');
-        
+
         // IMPORTANTE: Filtrar alocações do cache baseado em exceções canceladas
         if (unidade != null && dataFiltroDia != null) {
           try {
-            final datasComExcecoesCanceladas = await extrairExcecoesCanceladasParaDia(
-              unidade.id,
-              dataFiltroDia,
-            );
-            
+            // Usar exceções já carregadas ou carregar se não foram fornecidas
+            final datasComExcecoesCanceladas = excecoesCanceladas ??
+                await extrairExcecoesCanceladasParaDia(
+                    unidade.id, dataFiltroDia);
+
             if (datasComExcecoesCanceladas.isNotEmpty) {
-              final alocsAntes = alocs.length;
               alocs = alocs.where((aloc) {
-                final dataKey = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
+                final dataKey =
+                    '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
                 if (datasComExcecoesCanceladas.contains(dataKey)) {
-                  debugPrint('🚫 Filtrando alocação do cache com exceção: ${aloc.id} - ${aloc.data.day}/${aloc.data.month}/${aloc.data.year}');
                   return false;
                 }
                 return true;
               }).toList();
-              
-              if (alocs.length < alocsAntes) {
-                debugPrint('  🗑️ Removidas ${alocsAntes - alocs.length} alocações do cache devido a exceções');
-              }
             }
           } catch (e) {
-            debugPrint('❌ Erro ao filtrar alocações do cache por exceções: $e');
+            // Em caso de erro, manter alocações do cache
           }
         }
       }
@@ -404,8 +527,6 @@ class AlocacaoMedicosLogic {
         ]);
         disps = results[0] as List<Disponibilidade>;
         alocs = results[1] as List<Alocacao>;
-        
-        debugPrint('⚡ Dados carregados do Firestore (não havia cache)');
       } else if (precisaDisps) {
         disps = await _carregarDisponibilidadesUnidade(unidade,
             dataFiltroDia: dataFiltroDia);
@@ -416,10 +537,154 @@ class AlocacaoMedicosLogic {
         // Ambos em cache: evita trabalho extra e garante mudança de dia instantânea
         disps = _cacheDispPorDia[keyDia] ?? const [];
         alocs = _cacheAlocPorDia[keyDia] ?? const [];
-        debugPrint('⚡ Todos os dados carregados do cache para $keyDia (mudança instantânea)');
+      }
+
+      // Aplicar exceções canceladas aos dados carregados (se fornecidas e não foram aplicadas antes)
+      if (excecoesCanceladas != null &&
+          excecoesCanceladas.isNotEmpty &&
+          unidade != null &&
+          dataFiltroDia != null) {
+        // Filtrar disponibilidades
+        final dispsAntes = disps.length;
+        disps = disps.where((disp) {
+          final dataKey =
+              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
+          return !excecoesCanceladas.contains(dataKey);
+        }).toList();
+
+        // Filtrar alocações
+        final alocsAntes = alocs.length;
+        alocs = alocs.where((aloc) {
+          final dataKey =
+              '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
+          return !excecoesCanceladas.contains(dataKey);
+        }).toList();
       }
 
       if (keyDia != null) {
+        // CORREÇÃO: Carregar disponibilidades "Única" do Firestore (coleção dias)
+        // e mesclar com disponibilidades de séries
+        List<Disponibilidade> dispsUnicas = [];
+        if (unidade != null && dataFiltroDia != null) {
+          try {
+            final firestore = FirebaseFirestore.instance;
+            final diasRef = firestore
+                .collection('unidades')
+                .doc(unidade.id)
+                .collection('dias')
+                .doc(keyDia)
+                .collection('disponibilidades');
+
+            final snapshot = await diasRef.get();
+            dispsUnicas = snapshot.docs
+                .map((doc) => Disponibilidade.fromMap(doc.data()))
+                .where(
+                    (d) => d.tipo == 'Única') // Apenas disponibilidades "Única"
+                .toList();
+          } catch (e) {}
+        }
+
+        // Filtrar disponibilidades antigas (que não são séries nem únicas válidas)
+        // Manter apenas séries (começam com "serie_") e únicas válidas (tipo "Única")
+        final dispsAntesFiltro = disps.length;
+        disps = disps
+            .where((d) => d.id.startsWith('serie_') || d.tipo == 'Única')
+            .toList();
+
+        // Mesclar com disponibilidades "Única" do Firestore
+        final dispsUnicasMap = <String, Disponibilidade>{};
+        for (final disp in disps) {
+          final chave =
+              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+          dispsUnicasMap[chave] = disp;
+        }
+        for (final disp in dispsUnicas) {
+          final chave =
+              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+          dispsUnicasMap[chave] = disp;
+        }
+        disps = dispsUnicasMap.values.toList();
+
+        // IMPORTANTE: Garantir que o cache sempre inclui disponibilidades de séries
+        // Mas apenas se ainda não estiverem no cache para evitar duplicação
+        if (unidade != null && dataFiltroDia != null) {
+          try {
+            // Verificar se o cache já contém disponibilidades de séries
+            final temDispsDeSeriesNoCache =
+                disps.any((d) => d.id.startsWith('serie_'));
+
+            // CORREÇÃO: Sempre gerar disponibilidades de séries se o cache está vazio
+            // ou se não contém disponibilidades de séries para o dia específico
+            if (!temDispsDeSeriesNoCache || disps.isEmpty) {
+              // Se não há disponibilidades de séries no cache, gerar e mesclar
+              final anoEspecifico = dataFiltroDia.year.toString();
+              final dispsDeSeries = await carregarDisponibilidadesDeSeries(
+                unidade: unidade,
+                anoEspecifico: anoEspecifico,
+                dataFiltroDia: dataFiltroDia,
+              );
+
+              // Mesclar com disponibilidades existentes usando mapa para evitar duplicatas
+              final dispsUnicas = <String, Disponibilidade>{};
+              for (final disp in disps) {
+                final chave =
+                    '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                dispsUnicas[chave] = disp;
+              }
+              for (final disp in dispsDeSeries) {
+                final chave =
+                    '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                dispsUnicas[chave] = disp;
+              }
+
+              // CORREÇÃO: Manter apenas séries e únicas válidas
+              // Não filtrar disponibilidades "Única" válidas
+              final dispsFiltradas = dispsUnicas.values
+                  .where((d) => d.id.startsWith('serie_') || d.tipo == 'Única')
+                  .toList();
+              disps = dispsFiltradas;
+            } else {
+              // CORREÇÃO: Mesmo quando cache já tem séries, filtrar antigas mas manter únicas válidas
+              final dispsAntes = disps.length;
+              disps = disps
+                  .where((d) => d.id.startsWith('serie_') || d.tipo == 'Única')
+                  .toList();
+
+              // Carregar disponibilidades "Única" do Firestore e mesclar
+              List<Disponibilidade> dispsUnicas = [];
+              try {
+                final firestore = FirebaseFirestore.instance;
+                final diasRef = firestore
+                    .collection('unidades')
+                    .doc(unidade.id)
+                    .collection('dias')
+                    .doc(keyDia)
+                    .collection('disponibilidades');
+
+                final snapshot = await diasRef.get();
+                dispsUnicas = snapshot.docs
+                    .map((doc) => Disponibilidade.fromMap(doc.data()))
+                    .where((d) => d.tipo == 'Única')
+                    .toList();
+
+                // Mesclar com disponibilidades do cache
+                final dispsUnicasMap = <String, Disponibilidade>{};
+                for (final disp in disps) {
+                  final chave =
+                      '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                  dispsUnicasMap[chave] = disp;
+                }
+                for (final disp in dispsUnicas) {
+                  final chave =
+                      '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+                  dispsUnicasMap[chave] = disp;
+                }
+                disps = dispsUnicasMap.values.toList();
+              } catch (e) {}
+            }
+          } catch (e) {}
+        }
+
         _cacheDispPorDia[keyDia] = List.from(disps);
         _cacheAlocPorDia[keyDia] = List.from(alocs);
       }
@@ -430,7 +695,6 @@ class AlocacaoMedicosLogic {
       onDisponibilidades(List<Disponibilidade>.from(disps));
       onAlocacoes(List<Alocacao>.from(alocs));
     } catch (e) {
-      debugPrint('❌ Erro ao carregar dados iniciais: $e');
       // Em caso de erro, inicializar com listas vazias
       onGabinetes(<Gabinete>[]);
       onMedicos(<Medico>[]);
@@ -533,44 +797,58 @@ class AlocacaoMedicosLogic {
     required List<Disponibilidade> disponibilidades,
     required Function() onAlocacoesChanged,
     Unidade? unidade,
-    List<String>? horariosForcados, // Novo parâmetro opcional para forçar horários
+    List<String>?
+        horariosForcados, // Novo parâmetro opcional para forçar horários
   }) async {
     final dataAlvo =
         DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
 
-    final indexAloc = alocacoes.indexWhere((a) {
+    // CORREÇÃO: Remover TODAS as alocações do mesmo médico no mesmo dia
+    // Isso garante que mesmo se houver duplicações, todas sejam removidas
+    final alocacoesAnteriores = alocacoes.where((a) {
       final alocDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId && alocDate == dataAlvo;
-    });
-    if (indexAloc != -1) {
-      final alocacaoAnterior = alocacoes[indexAloc];
-      alocacoes.removeAt(indexAloc);
+    }).toList();
 
-      // Remover alocação anterior do Firebase
-      try {
-        final firestore = FirebaseFirestore.instance;
-        final ano = alocacaoAnterior.data.year.toString();
-        final unidadeId = unidade?.id ??
-            'fyEj6kOXvCuL65sMfCaR'; // Fallback para compatibilidade
-        final alocacoesRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('alocacoes')
-            .doc(ano)
-            .collection('registos');
+    if (alocacoesAnteriores.isNotEmpty) {
+      print(
+          '🔄 Removendo ${alocacoesAnteriores.length} alocação(ões) anterior(es) do médico $medicoId no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}');
 
-        await alocacoesRef.doc(alocacaoAnterior.id).delete();
-        print(
-            '✅ Alocação anterior removida do Firebase: ${alocacaoAnterior.id}');
-      } catch (e) {
-        print('❌ Erro ao remover alocação anterior do Firebase: $e');
+      // Remover da lista local
+      for (final alocacaoAnterior in alocacoesAnteriores) {
+        alocacoes.remove(alocacaoAnterior);
+      }
+
+      // Remover todas as alocações anteriores do Firebase
+      final firestore = FirebaseFirestore.instance;
+      final unidadeId = unidade?.id ??
+          'fyEj6kOXvCuL65sMfCaR'; // Fallback para compatibilidade
+
+      for (final alocacaoAnterior in alocacoesAnteriores) {
+        try {
+          final ano = alocacaoAnterior.data.year.toString();
+          final alocacoesRef = firestore
+              .collection('unidades')
+              .doc(unidadeId)
+              .collection('alocacoes')
+              .doc(ano)
+              .collection('registos');
+
+          await alocacoesRef.doc(alocacaoAnterior.id).delete();
+          print(
+              '✅ Alocação anterior removida do Firebase: ${alocacaoAnterior.id}');
+        } catch (e) {
+          print(
+              '⚠️ Erro ao remover alocação anterior ${alocacaoAnterior.id} do Firebase (pode já ter sido removida): $e');
+          // Continuar mesmo se houver erro (pode já ter sido removida)
+        }
       }
     }
 
     // Se horários foram forçados, usar esses. Senão, buscar das disponibilidades
     String horarioInicio;
     String horarioFim;
-    
+
     if (horariosForcados != null && horariosForcados.length >= 2) {
       horarioInicio = horariosForcados[0];
       horarioFim = horariosForcados[1];
@@ -583,13 +861,13 @@ class AlocacaoMedicosLogic {
 
       horarioInicio =
           dispDoDia.isNotEmpty ? dispDoDia.first.horarios[0] : '00:00';
-      horarioFim =
-          dispDoDia.isNotEmpty ? dispDoDia.first.horarios[1] : '00:00';
+      horarioFim = dispDoDia.isNotEmpty ? dispDoDia.first.horarios[1] : '00:00';
     }
 
     // Gerar ID único baseado em timestamp + microsegundos + data + médico + gabinete
     final timestamp = DateTime.now().microsecondsSinceEpoch;
-    final dataStr = '${dataAlvo.year}${dataAlvo.month.toString().padLeft(2, '0')}${dataAlvo.day.toString().padLeft(2, '0')}';
+    final dataStr =
+        '${dataAlvo.year}${dataAlvo.month.toString().padLeft(2, '0')}${dataAlvo.day.toString().padLeft(2, '0')}';
     final novaAloc = Alocacao(
       id: '${timestamp}_${medicoId}_${gabineteId}_$dataStr',
       medicoId: medicoId,
@@ -635,7 +913,7 @@ class AlocacaoMedicosLogic {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId && aDate == dataAlvo;
     });
-    
+
     if (indexExistente != -1) {
       // Se já existe, substituir
       alocacoes[indexExistente] = novaAloc;
@@ -643,13 +921,13 @@ class AlocacaoMedicosLogic {
       // Se não existe, adicionar
       alocacoes.add(novaAloc);
     }
-    
+
     // Invalidar cache para o dia selecionado - será recarregado quando onAlocacoesChanged() for chamado
     invalidateCacheForDay(dataAlvo);
-    
+
     // Atualizar cache local também
     updateCacheForDay(day: dataAlvo, alocacoes: alocacoes);
-    
+
     // Chamar onAlocacoesChanged() que recarrega tudo do Firebase
     // Mas como já adicionamos localmente, o cartão aparece imediatamente
     onAlocacoesChanged();
@@ -672,7 +950,9 @@ class AlocacaoMedicosLogic {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId && aDate == dataAlvo;
     });
-    if (indexAloc == -1) return;
+    if (indexAloc == -1) {
+      return;
+    }
 
     final alocacaoRemovida = alocacoes[indexAloc];
     alocacoes.removeAt(indexAloc);
@@ -697,6 +977,9 @@ class AlocacaoMedicosLogic {
       print('❌ Erro ao remover alocação do Firebase: $e');
     }
 
+    // Invalidar cache IMEDIATAMENTE para garantir que a próxima verificação seja correta
+    invalidateCacheForDay(dataAlvo);
+
     final temDisp = disponibilidades.any((disp) {
       final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
       return disp.medicoId == medicoId && dd == dataAlvo;
@@ -717,15 +1000,16 @@ class AlocacaoMedicosLogic {
       }
     }
 
-    onAlocacoesChanged();
-
-    // Atualiza cache para o dia afetado
+    // Atualiza cache para o dia afetado (com a lista já atualizada)
     final diaKey = _keyDia(dataAlvo);
     final alocDoDiaAtualizadas = alocacoes.where((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return aDate == dataAlvo;
     }).toList();
     _cacheAlocPorDia[diaKey] = alocDoDiaAtualizadas;
+
+    // Chamar onAlocacoesChanged() DEPOIS de invalidar cache e atualizar lista local
+    onAlocacoesChanged();
   }
 
   static Future<void> desalocarMedicoSerie({
@@ -739,145 +1023,235 @@ class AlocacaoMedicosLogic {
     required Function() onAlocacoesChanged,
     Unidade? unidade,
   }) async {
-    debugPrint('🗑️ Desalocando série do médico $medicoId');
-    debugPrint('  📅 Data de referência: ${dataRef.day}/${dataRef.month}/${dataRef.year}');
-    debugPrint('  📋 Tipo: $tipo');
-    
-    // BUSCAR TODAS AS ALOCAÇÕES DO MÉDICO DO FIREBASE
-    // Buscar do ano atual e do próximo ano (caso a série cruze anos)
-    final anoAtual = dataRef.year;
-    final anoProximo = anoAtual + 1;
-    
-    debugPrint('  🔍 Buscando alocações do ano $anoAtual...');
-    final alocacoesAnoAtual = await buscarAlocacoesMedico(
-      unidade,
+    // OTIMIZAÇÃO: Buscar a série primeiro, depois buscar apenas as alocações necessárias
+    // Isso evita buscar todas as alocações do médico quando só precisamos das da série
+    final tipoNormalizado =
+        tipo.startsWith('Consecutivo') ? 'Consecutivo' : tipo;
+    final dataRefNormalizada =
+        DateTime(dataRef.year, dataRef.month, dataRef.day);
+
+    // Invalidar cache antes de buscar para garantir dados atualizados
+    invalidateSeriesCacheForMedico(medicoId, dataRef.year);
+    final series = await SerieService.carregarSeries(
       medicoId,
-      anoEspecifico: anoAtual,
+      unidade: unidade,
     );
-    
-    debugPrint('  🔍 Buscando alocações do ano $anoProximo...');
-    final alocacoesAnoProximo = await buscarAlocacoesMedico(
-      unidade,
-      medicoId,
-      anoEspecifico: anoProximo,
-    );
-    
-    final todasAlocacoesMedico = [...alocacoesAnoAtual, ...alocacoesAnoProximo];
-    
-    debugPrint('  📊 Total de alocações do médico no Firebase: ${todasAlocacoesMedico.length} (${alocacoesAnoAtual.length} do ano $anoAtual + ${alocacoesAnoProximo.length} do ano $anoProximo)');
-    
-    // Normalizar o tipo para comparação
-    final tipoNormalizado = tipo.startsWith('Consecutivo') ? 'Consecutivo' : tipo;
-    final dataRefNormalizada = DateTime(dataRef.year, dataRef.month, dataRef.day);
-    
-    debugPrint('  🔍 Filtrando alocações da série...');
-    debugPrint('    Tipo normalizado: $tipoNormalizado');
-    debugPrint('    Data referência normalizada: ${dataRefNormalizada.day}/${dataRefNormalizada.month}/${dataRefNormalizada.year}');
-    
-    // Filtrar todas as alocações que fazem parte da série (a partir da data de referência)
-    final alocacoesDaSerie = todasAlocacoesMedico.where((a) {
-      final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-      final aDateNormalizada = DateTime(aDate.year, aDate.month, aDate.day);
-      
-      // Verificar se a alocação é do mesmo médico e está na mesma data ou depois da data de referência
-      if (a.medicoId != medicoId) return false;
-      if (aDateNormalizada.isBefore(dataRefNormalizada)) {
-        debugPrint('    ❌ ${aDateNormalizada.day}/${aDateNormalizada.month}/${aDateNormalizada.year} - Antes da data de referência');
-        return false;
+    for (final s in series) {}
+
+    // Encontrar a série correspondente
+    SerieRecorrencia? serieEncontrada;
+    for (final serie in series) {
+      if (!serie.ativo || serie.tipo != tipoNormalizado) continue;
+
+      // Verificar se a data está dentro do período da série
+      if (dataRefNormalizada.isBefore(serie.dataInicio)) continue;
+      if (serie.dataFim != null && dataRefNormalizada.isAfter(serie.dataFim!)) {
+        continue;
       }
-      
-      // Verificar se a data corresponde ao padrão da série
-      bool correspondeAoPadrao = false;
-      final diasDiferenca = aDateNormalizada.difference(dataRefNormalizada).inDays;
-      
+
+      // Verificar padrão da série
+      bool corresponde = false;
       if (tipoNormalizado == 'Semanal') {
-        // Verificar se a diferença em dias é múltiplo de 7
-        correspondeAoPadrao = diasDiferenca % 7 == 0;
-        debugPrint('    📅 ${aDateNormalizada.day}/${aDateNormalizada.month}/${aDateNormalizada.year} - Diferença: $diasDiferenca dias - Múltiplo de 7: ${diasDiferenca % 7 == 0} - ${correspondeAoPadrao ? "✅ MATCH" : "❌"}');
+        final diasDiferenca =
+            dataRefNormalizada.difference(serie.dataInicio).inDays;
+        corresponde = diasDiferenca % 7 == 0;
       } else if (tipoNormalizado == 'Quinzenal') {
-        // Verificar se a diferença em dias é múltiplo de 14
-        correspondeAoPadrao = diasDiferenca % 14 == 0;
-        debugPrint('    📅 ${aDateNormalizada.day}/${aDateNormalizada.month}/${aDateNormalizada.year} - Diferença: $diasDiferenca dias - Múltiplo de 14: ${diasDiferenca % 14 == 0} - ${correspondeAoPadrao ? "✅ MATCH" : "❌"}');
+        final diasDiferenca =
+            dataRefNormalizada.difference(serie.dataInicio).inDays;
+        corresponde = diasDiferenca % 14 == 0;
       } else if (tipoNormalizado == 'Mensal') {
-        // Verificar se é o mesmo dia do mês
-        correspondeAoPadrao = aDateNormalizada.day == dataRefNormalizada.day;
-        debugPrint('    📅 ${aDateNormalizada.day}/${aDateNormalizada.month}/${aDateNormalizada.year} - Mesmo dia do mês: ${aDateNormalizada.day == dataRefNormalizada.day} - ${correspondeAoPadrao ? "✅ MATCH" : "❌"}');
+        corresponde = dataRefNormalizada.day == serie.dataInicio.day;
       } else if (tipoNormalizado == 'Consecutivo') {
-        // Para consecutivo, verificar se está dentro do intervalo
-        final match = RegExp(r'Consecutivo:(\d+)').firstMatch(tipo);
-        final dias = match != null ? int.tryParse(match.group(1) ?? '') ?? 1 : 1;
-        correspondeAoPadrao = diasDiferenca >= 0 && diasDiferenca < dias;
-        debugPrint('    📅 ${aDateNormalizada.day}/${aDateNormalizada.month}/${aDateNormalizada.year} - Diferença: $diasDiferenca dias - Dentro do intervalo (0-$dias): $correspondeAoPadrao - ${correspondeAoPadrao ? "✅ MATCH" : "❌"}');
-      } else {
-        // Para tipo "Única" ou desconhecido, apenas remover a data exata
-        correspondeAoPadrao = aDateNormalizada == dataRefNormalizada;
-        debugPrint('    📅 ${aDateNormalizada.day}/${aDateNormalizada.month}/${aDateNormalizada.year} - Data exata: $correspondeAoPadrao - ${correspondeAoPadrao ? "✅ MATCH" : "❌"}');
+        final diasDiferenca =
+            dataRefNormalizada.difference(serie.dataInicio).inDays;
+        final numeroDias = serie.parametros['numeroDias'] as int? ?? 5;
+        corresponde = diasDiferenca >= 0 && diasDiferenca < numeroDias;
       }
-      
-      return correspondeAoPadrao;
-    }).toList();
-    
-    debugPrint('  📋 Alocações da série encontradas: ${alocacoesDaSerie.length}');
-    for (final a in alocacoesDaSerie) {
-      final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-      debugPrint('    - ${aDate.day}/${aDate.month}/${aDate.year} (ID: ${a.id})');
+
+      if (corresponde) {
+        serieEncontrada = serie;
+        break;
+      }
     }
-    
-    // Remover todas as alocações da série
-    for (final alocacao in alocacoesDaSerie) {
-      final dataAlvo = DateTime(alocacao.data.year, alocacao.data.month, alocacao.data.day);
-      
-      // Remover da lista local
-      final indexAloc = alocacoes.indexWhere((a) {
+
+    // OTIMIZAÇÃO CRÍTICA: Para séries, não existem alocações individuais no Firestore!
+    // As alocações são geradas dinamicamente a partir da série quando se lê.
+    // Portanto, apenas precisamos:
+    // 1. Remover o gabineteId da série (já feito acima)
+    // 2. Invalidar o cache (já feito acima)
+    // 3. Remover da lista local apenas as alocações geradas dinamicamente
+
+    if (serieEncontrada == null) {
+      // Se não encontrou a série, pode haver alocação individual para este dia
+      // Buscar e remover apenas este dia específico
+      final alocacoesDoDia = await buscarAlocacoesMedico(
+        unidade,
+        medicoId,
+        dataInicio: dataRefNormalizada,
+        dataFim: dataRefNormalizada.add(const Duration(days: 1)),
+      );
+      final alocacoesParaRemover = alocacoesDoDia.where((a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-        return a.medicoId == medicoId && aDate == dataAlvo;
-      });
-      
-      if (indexAloc != -1) {
-        alocacoes.removeAt(indexAloc);
-      }
+        final aDateNormalizada = DateTime(aDate.year, aDate.month, aDate.day);
+        return a.medicoId == medicoId && aDateNormalizada == dataRefNormalizada;
+      }).toList();
 
-      // Remover do Firebase
-      try {
-        final firestore = FirebaseFirestore.instance;
-        final ano = alocacao.data.year.toString();
-        final unidadeId = unidade?.id ??
-            'fyEj6kOXvCuL65sMfCaR'; // Fallback para compatibilidade
-        final alocacoesRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('alocacoes')
-            .doc(ano)
-            .collection('registos');
-
-        await alocacoesRef.doc(alocacao.id).delete();
-        debugPrint('✅ Alocação removida do Firebase: ${alocacao.id} (${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, ano: $ano, unidade: $unidadeId)');
-      } catch (e) {
-        debugPrint('❌ Erro ao remover alocação do Firebase: $e');
-      }
-      
-      // Adicionar médico de volta à lista de disponíveis se houver disponibilidade
-      final temDisp = disponibilidades.any((disp2) {
-        final dd = DateTime(disp2.data.year, disp2.data.month, disp2.data.day);
-        return disp2.medicoId == medicoId && dd == dataAlvo;
-      });
-      if (temDisp) {
-        final medico = medicos.firstWhere(
-          (m) => m.id == medicoId,
-          orElse: () => Medico(
-            id: medicoId,
-            nome: 'Médico não identificado',
-            especialidade: '',
-            disponibilidades: [],
-          ),
-        );
-        if (!medicosDisponiveis.contains(medico)) {
-          medicosDisponiveis.add(medico);
+      // Remover da lista local
+      for (final alocacao in alocacoesParaRemover) {
+        final indexAloc = alocacoes.indexWhere((a) => a.id == alocacao.id);
+        if (indexAloc != -1) {
+          alocacoes.removeAt(indexAloc);
         }
       }
+
+      // Remover do Firestore (apenas se existir alocação individual)
+      if (alocacoesParaRemover.isNotEmpty) {
+        try {
+          final firestore = FirebaseFirestore.instance;
+          final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+          final batch = firestore.batch();
+
+          for (final alocacao in alocacoesParaRemover) {
+            final ano = alocacao.data.year.toString();
+            final alocacoesRef = firestore
+                .collection('unidades')
+                .doc(unidadeId)
+                .collection('alocacoes')
+                .doc(ano)
+                .collection('registos');
+            batch.delete(alocacoesRef.doc(alocacao.id));
+          }
+
+          await batch.commit();
+        } catch (e) {
+          // Em caso de erro, continuar
+        }
+      }
+    } else {
+      // Para séries: remover o gabineteId da série no Firestore e da lista local
+      final serie = serieEncontrada; // Já verificado que não é null no if acima
+
+      // CORREÇÃO CRÍTICA: Salvar o gabineteId ANTES de desalocar para poder remover da lista local
+      final gabineteIdAntigo = serie.gabineteId;
+
+      // Remover o gabineteId da série no Firestore IMEDIATAMENTE
+      try {
+        await DisponibilidadeSerieService.desalocarSerie(
+          serieId: serie.id,
+          medicoId: medicoId,
+          unidade: unidade,
+        );
+
+        // CORREÇÃO: Invalidar cache ANTES e DEPOIS de desalocar para garantir dados atualizados
+        invalidateSeriesCacheForMedico(medicoId, dataRef.year);
+
+        // Verificar se foi realmente removido buscando novamente do servidor
+        final seriesVerificacao = await SerieService.carregarSeries(
+          medicoId,
+          unidade: unidade,
+        );
+        final serieVerificada = seriesVerificacao.firstWhere(
+          (s) => s.id == serie.id,
+          orElse: () => serie,
+        );
+      } catch (e) {
+        // Em caso de erro, continuar
+      }
+
+      // CORREÇÃO: Com a nova arquitetura, séries não criam mais alocações individuais no Firestore
+      // Mas pode haver alocações antigas de versões anteriores que precisam ser removidas
+      // As alocações antigas têm ID no formato: 'serie_${serie.id}_${dataKey}' onde dataKey é 'YYYY-MM-DD'
+      final serieIdPrefix = 'serie_${serie.id}_';
+
+      // Remover TODAS as alocações que têm ID começando com 'serie_${serie.id}_'
+      final alocacoesRemovidas = alocacoes.where((a) {
+        if (a.id.startsWith(serieIdPrefix)) {
+          return true;
+        }
+        return false;
+      }).toList();
+
+      // Remover da lista local
+      for (final alocacao in alocacoesRemovidas) {
+        final antes = alocacoes.length;
+        alocacoes.removeWhere((a) => a.id == alocacao.id);
+        final depois = alocacoes.length;
+      }
+
+      // CORREÇÃO: Deletar alocações antigas do Firestore (se existirem)
+      // Com a nova arquitetura, séries não criam mais alocações individuais
+      // Mas pode haver alocações antigas de versões anteriores que precisam ser limpas
+      // IMPORTANTE: Buscar TODAS as alocações da série do Firestore para limpeza
+      try {
+        final firestore = FirebaseFirestore.instance;
+        final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+        final batch = firestore.batch();
+        int totalParaDeletar = 0;
+
+        // Buscar alocações da série em todos os anos possíveis (ano atual + próximos 2 anos)
+        // porque quando aloca, cria alocações para 90 dias, mas séries infinitas podem cruzar anos
+        final anoAtual = dataRef.year;
+        final anoLimite = anoAtual + 2; // Buscar até 2 anos no futuro
+
+        for (int ano = anoAtual; ano <= anoLimite; ano++) {
+          final alocacoesRef = firestore
+              .collection('unidades')
+              .doc(unidadeId)
+              .collection('alocacoes')
+              .doc(ano.toString())
+              .collection('registos');
+
+          // Buscar todas as alocações do médico neste ano
+          final snapshot = await alocacoesRef
+              .where('medicoId', isEqualTo: medicoId)
+              .get(const GetOptions(source: Source.server));
+
+          // Filtrar apenas as que têm ID começando com o prefixo da série
+          for (final doc in snapshot.docs) {
+            final alocId = doc.id;
+            if (alocId.startsWith(serieIdPrefix)) {
+              batch.delete(alocacoesRef.doc(alocId));
+              totalParaDeletar++;
+              if (totalParaDeletar <= 10) {
+                // Log apenas as primeiras 10 para não poluir
+                final data = doc.data();
+                final alocData = (data['data'] as Timestamp).toDate();
+              }
+            }
+          }
+        }
+
+        if (totalParaDeletar > 0) {
+          await batch.commit();
+        } else {}
+      } catch (e) {}
+
+      // Invalidar cache para o dia atual e próximos dias (as alocações serão regeneradas dinamicamente)
+      invalidateCacheForDay(dataRef);
+      // Invalidar também para os próximos 90 dias (mesmo período que foi criado quando alocou)
+      for (int i = 1; i <= 90; i++) {
+        invalidateCacheForDay(dataRef.add(Duration(days: i)));
+      }
     }
-    
-    debugPrint('✅ Série desalocada: ${alocacoesDaSerie.length} alocações removidas');
+
+    // Garantir que o médico seja adicionado de volta à lista de disponíveis
+    // mesmo que não haja disponibilidade no momento (será regenerada)
+    final medico = medicos.firstWhere(
+      (m) => m.id == medicoId,
+      orElse: () => Medico(
+        id: medicoId,
+        nome: 'Médico não identificado',
+        especialidade: '',
+        disponibilidades: [],
+        ativo: true,
+      ),
+    );
+
+    // Adicionar médico de volta à lista de disponíveis
+    // A disponibilidade será regenerada quando o cache for recarregado
+    if (!medicosDisponiveis.contains(medico)) {
+      medicosDisponiveis.add(medico);
+    }
 
     onAlocacoesChanged();
 
@@ -904,306 +1278,80 @@ class AlocacaoMedicosLogic {
   static Future<List<Disponibilidade>> _carregarDisponibilidadesUnidadePorAno(
       Unidade? unidade, String? anoEspecifico,
       {DateTime? dataFiltroDia}) async {
-    final firestore = FirebaseFirestore.instance;
-    final disponibilidades = <Disponibilidade>[];
-    
-    // Carregar séries e gerar cartões dinamicamente PRIMEIRO
-    // Isso garante que as exceções sejam aplicadas corretamente
+    // NOVO MODELO: Carregar séries e gerar cartões dinamicamente
+    // As exceções já são aplicadas automaticamente na geração
     final disponibilidadesDeSeries = await carregarDisponibilidadesDeSeries(
       unidade: unidade,
       anoEspecifico: anoEspecifico,
       dataFiltroDia: dataFiltroDia,
     );
-    
-    // Extrair exceções canceladas do cache de séries (já carregado em carregarDisponibilidadesDeSeries)
-    // Criar um mapa de datas com exceções canceladas: chave = (medicoId, data)
-    final datasComExcecoesCanceladas = <String>{};
+
+    // CORREÇÃO: Também carregar disponibilidades "Única" do Firestore
+    // Elas são salvas em unidades/{unidadeId}/dias/{dayKey}/disponibilidades
+    List<Disponibilidade> dispsUnicas = [];
     if (unidade != null && dataFiltroDia != null) {
       try {
-        // Reutilizar as exceções já carregadas no cache de séries (populado em carregarDisponibilidadesDeSeries)
-        // Isso evita carregar exceções novamente do Firestore
-        final anoParaCache = dataFiltroDia.year;
-        
-        // Iterar sobre o cache de séries para extrair exceções canceladas
-        // Usar a lista de médicos do cache para garantir que temos os IDs corretos
-        final medicoIds = _cacheMedicosAtivos[unidade.id] ?? [];
-        for (final medicoId in medicoIds) {
-          final cacheKey = '${medicoId}_$anoParaCache';
-          if (_cacheSeriesPorMedico.containsKey(cacheKey)) {
-            final cachedData = _cacheSeriesPorMedico[cacheKey]!;
-            final excecoes = cachedData['excecoes'] as List<ExcecaoSerie>;
-            
-            // Adicionar datas com exceções canceladas do cache
-            for (final excecao in excecoes) {
-              if (excecao.cancelada && 
-                  excecao.data.year == dataFiltroDia.year &&
-                  excecao.data.month == dataFiltroDia.month &&
-                  excecao.data.day == dataFiltroDia.day) {
-                final dataKey = '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
-                datasComExcecoesCanceladas.add(dataKey);
-              }
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('❌ Erro ao extrair exceções do cache: $e');
-      }
-    }
-    
-    // Usar um Map para evitar duplicatas: chave = (medicoId, data, tipo)
-    final disponibilidadesMap = <String, Disponibilidade>{};
-    
-    // Primeiro, adicionar disponibilidades geradas de séries (com exceções aplicadas)
-    for (final disp in disponibilidadesDeSeries) {
-      final chave = '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
-      disponibilidadesMap[chave] = disp;
-    }
-
-    try {
-      if (unidade != null) {
-        // Caminho preferencial: vista diária materializada
-        if (dataFiltroDia != null) {
-          final dayKey = _keyDia(dataFiltroDia);
-          try {
-            final daySnap = await firestore
-                .collection('unidades')
-                .doc(unidade.id)
-                .collection('dias')
-                .doc(dayKey)
-                .collection('disponibilidades')
-                .get(const GetOptions(source: Source.serverAndCache));
-            if (daySnap.docs.isNotEmpty) {
-              for (final doc in daySnap.docs) {
-                final disp = Disponibilidade.fromMap(doc.data());
-                // Só adicionar se não for gerada de série (para evitar duplicatas)
-                if (!disp.id.startsWith('serie_')) {
-                  // Verificar se esta data tem uma exceção cancelada
-                  final dataKey = '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
-                  if (datasComExcecoesCanceladas.contains(dataKey)) {
-                    debugPrint('🚫 Filtrando disponibilidade individual do Firestore com exceção: ${disp.id} - ${disp.data.day}/${disp.data.month}/${disp.data.year}');
-                    continue; // Não adicionar se há exceção cancelada
-                  }
-                  
-                  final chave = '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
-                  // Só adicionar se não houver já uma disponibilidade gerada de série para esta data/tipo
-                  if (!disponibilidadesMap.containsKey(chave)) {
-                    disponibilidadesMap[chave] = disp;
-                  }
-                }
-              }
-              // Adicionar disponibilidades do Map (geradas de séries têm prioridade)
-              disponibilidades.addAll(disponibilidadesMap.values);
-              return disponibilidades;
-            }
-          } catch (e) {
-            // Vista diária indisponível, continuar com fallback
-          }
-        }
-
-        // Caminho rápido: se houver filtro de dia, tentar usar collectionGroup numa única query
-        if (dataFiltroDia != null) {
-          try {
-            final inicio = DateTime(
-                dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
-            final fim = inicio.add(const Duration(days: 1));
-
-            // Buscar IDs dos médicos pertencentes à unidade (para filtrar resultados)
-            final ocupantesSnapshot = await firestore
-                .collection('unidades')
-                .doc(unidade.id)
-                .collection('ocupantes')
-                .get();
-            final medicoIdsDaUnidade =
-                ocupantesSnapshot.docs.map((d) => d.id).toSet();
-
-            // Uma query global que encontra todos os registos daquele dia, em qualquer árvore .../registos
-            final cgQuery = firestore
-                .collectionGroup('registos')
-                .where('data', isGreaterThanOrEqualTo: inicio.toIso8601String())
-                .where('data', isLessThan: fim.toIso8601String());
-            final cgSnapshot = await cgQuery
-                .get(const GetOptions(source: Source.serverAndCache));
-
-            for (final doc in cgSnapshot.docs) {
-              final data = doc.data();
-              final medicoId = data['medicoId']?.toString();
-              if (medicoId != null && medicoIdsDaUnidade.contains(medicoId)) {
-                final disp = Disponibilidade.fromMap(data);
-                // Só adicionar se não for gerada de série (para evitar duplicatas)
-                if (!disp.id.startsWith('serie_')) {
-                  // Verificar se esta data tem uma exceção cancelada
-                  final dataKey = '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
-                  if (datasComExcecoesCanceladas.contains(dataKey)) {
-                    debugPrint('🚫 Filtrando disponibilidade individual do Firestore com exceção: ${disp.id} - ${disp.data.day}/${disp.data.month}/${disp.data.year}');
-                    continue; // Não adicionar se há exceção cancelada
-                  }
-                  
-                  final chave = '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
-                  // Só adicionar se não houver já uma disponibilidade gerada de série para esta data/tipo
-                  if (!disponibilidadesMap.containsKey(chave)) {
-                    disponibilidadesMap[chave] = disp;
-                  }
-                }
-              }
-            }
-
-            disponibilidades.addAll(disponibilidadesMap.values);
-            return disponibilidades;
-          } catch (e) {
-            // Se collectionGroup não estiver disponível/sem índice, continuar com o fallback por médico
-          }
-        }
-
-        // Carrega disponibilidades da unidade específica por ano
-        final medicosRef = firestore
+        final firestore = FirebaseFirestore.instance;
+        final keyDia =
+            '${dataFiltroDia.year}-${dataFiltroDia.month.toString().padLeft(2, '0')}-${dataFiltroDia.day.toString().padLeft(2, '0')}';
+        final diasRef = firestore
             .collection('unidades')
             .doc(unidade.id)
-            .collection('ocupantes');
+            .collection('dias')
+            .doc(keyDia)
+            .collection('disponibilidades');
 
-        // IMPORTANTE: Quando há filtro de dia, usar médicos do cache (já carregados)
-        // Isso evita carregar todos os médicos novamente
-        final medicosIdsParaProcessar = dataFiltroDia != null && _cacheMedicosAtivos.containsKey(unidade.id)
-            ? _cacheMedicosAtivos[unidade.id]!
-            : null;
-        
-        final medicosSnapshot = medicosIdsParaProcessar == null
-            ? await medicosRef.get()
-            : null;
-
-        // Processar médicos (do cache ou da query)
-        final medicosIds = medicosIdsParaProcessar ?? 
-            (medicosSnapshot?.docs.map((doc) => doc.id).toList() ?? []);
-
-        for (final medicoId in medicosIds) {
-          final medicoRef = medicosRef.doc(medicoId);
-          final disponibilidadesRef = medicoRef.collection('disponibilidades');
-
-          if (anoEspecifico != null) {
-            // Carrega apenas o ano específico (mais eficiente)
-            final registosRef =
-                disponibilidadesRef.doc(anoEspecifico).collection('registos');
-            Query<Map<String, dynamic>> query = registosRef;
-
-            // Otimização: se dataFiltroDia informado, carregar só esse dia
-            if (dataFiltroDia != null) {
-              final inicio = DateTime(
-                  dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
-              final fim = inicio.add(const Duration(days: 1));
-              query = query
-                  .where('data',
-                      isGreaterThanOrEqualTo: inicio.toIso8601String())
-                  .where('data', isLessThan: fim.toIso8601String());
-            }
-
-            final registosSnapshot = await query
-                .get(const GetOptions(source: Source.serverAndCache));
-
-              for (final dispDoc in registosSnapshot.docs) {
-                final data = dispDoc.data();
-                final disponibilidade = Disponibilidade.fromMap(data);
-                // Só adicionar se não for gerada de série (para evitar duplicatas)
-                if (!disponibilidade.id.startsWith('serie_')) {
-                  // Verificar se esta data tem uma exceção cancelada
-                  final dataKey = '${disponibilidade.medicoId}_${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}';
-                  if (datasComExcecoesCanceladas.contains(dataKey)) {
-                    debugPrint('🚫 Filtrando disponibilidade individual do Firestore com exceção: ${disponibilidade.id} - ${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
-                    continue; // Não adicionar se há exceção cancelada
-                  }
-                  
-                  final chave = '${disponibilidade.medicoId}_${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}_${disponibilidade.tipo}';
-                  // Só adicionar se não houver já uma disponibilidade gerada de série para esta data/tipo
-                  if (!disponibilidadesMap.containsKey(chave)) {
-                    disponibilidadesMap[chave] = disponibilidade;
-                  }
-                }
-              }
-          } else {
-            // Carrega todos os anos (para relatórios ou histórico)
-            final anosSnapshot = await disponibilidadesRef.get();
-
-            for (final anoDoc in anosSnapshot.docs) {
-              final registosRef = anoDoc.reference.collection('registos');
-              Query<Map<String, dynamic>> query = registosRef;
-              if (dataFiltroDia != null &&
-                  anoDoc.id == dataFiltroDia.year.toString()) {
-                final inicio = DateTime(
-                    dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
-                final fim = inicio.add(const Duration(days: 1));
-                query = query
-                    .where('data',
-                        isGreaterThanOrEqualTo: inicio.toIso8601String())
-                    .where('data', isLessThan: fim.toIso8601String());
-              }
-              final registosSnapshot = await query
-                  .get(const GetOptions(source: Source.serverAndCache));
-
-              for (final dispDoc in registosSnapshot.docs) {
-                final data = dispDoc.data();
-                final disponibilidade = Disponibilidade.fromMap(data);
-                // Só adicionar se não for gerada de série (para evitar duplicatas)
-                if (!disponibilidade.id.startsWith('serie_')) {
-                  // Verificar se esta data tem uma exceção cancelada
-                  final dataKey = '${disponibilidade.medicoId}_${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}';
-                  if (datasComExcecoesCanceladas.contains(dataKey)) {
-                    debugPrint('🚫 Filtrando disponibilidade individual do Firestore com exceção: ${disponibilidade.id} - ${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
-                    continue; // Não adicionar se há exceção cancelada
-                  }
-                  
-                  final chave = '${disponibilidade.medicoId}_${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}_${disponibilidade.tipo}';
-                  // Só adicionar se não houver já uma disponibilidade gerada de série para esta data/tipo
-                  if (!disponibilidadesMap.containsKey(chave)) {
-                    disponibilidadesMap[chave] = disponibilidade;
-                  }
-                }
-              }
-            }
-          }
-        }
-      } else {
-        // Carrega disponibilidades globais (fallback)
-        final medicosRef = firestore.collection('medicos');
-        final medicosSnapshot = await medicosRef.get();
-
-        for (final medicoDoc in medicosSnapshot.docs) {
-          final disponibilidadesRef =
-              medicoDoc.reference.collection('disponibilidades');
-          final dispSnapshot = await disponibilidadesRef.get();
-
-          for (final dispDoc in dispSnapshot.docs) {
-            final data = dispDoc.data();
-            final disponibilidade = Disponibilidade.fromMap(data);
-            // Só adicionar se não for gerada de série (para evitar duplicatas)
-            if (!disponibilidade.id.startsWith('serie_')) {
-              // Verificar se esta data tem uma exceção cancelada
-              final dataKey = '${disponibilidade.medicoId}_${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}';
-              if (datasComExcecoesCanceladas.contains(dataKey)) {
-                debugPrint('🚫 Filtrando disponibilidade individual do Firestore com exceção: ${disponibilidade.id} - ${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
-                continue; // Não adicionar se há exceção cancelada
-              }
-              
-              final chave = '${disponibilidade.medicoId}_${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}_${disponibilidade.tipo}';
-              // Só adicionar se não houver já uma disponibilidade gerada de série para esta data/tipo
-              if (!disponibilidadesMap.containsKey(chave)) {
-                disponibilidadesMap[chave] = disponibilidade;
-              }
-            }
-          }
-        }
-
-      }
-    } catch (e) {
-      debugPrint('❌ Erro ao carregar disponibilidades: $e');
+        // CORREÇÃO CRÍTICA: Sempre usar Source.server para garantir dados atualizados da Cloud Function
+        // A Cloud Function pode levar alguns milissegundos para atualizar a vista diária
+        // Usar Source.server garante que obtemos os dados mais recentes
+        final snapshot =
+            await diasRef.get(const GetOptions(source: Source.server));
+        dispsUnicas = snapshot.docs
+            .map((doc) => Disponibilidade.fromMap(doc.data()))
+            .where((d) => d.tipo == 'Única')
+            .toList();
+      } catch (e) {}
     }
 
-    // Se já retornamos antes (quando havia filtro de dia e encontramos dados), não chegamos aqui
-    // Se chegamos aqui, todas as disponibilidades (do Firestore e geradas de séries) já estão no disponibilidadesMap
-    // As disponibilidades geradas de séries têm prioridade porque foram adicionadas primeiro ao Map
-    
-    // Retornar diretamente do Map (que já contém tudo mesclado corretamente)
-    disponibilidades.clear();
-    disponibilidades.addAll(disponibilidadesMap.values);
+    // Mesclar séries e únicas
+    final todasDisps = <String, Disponibilidade>{};
+    int seriesFiltradas = 0;
+    int unicasFiltradas = 0;
 
-    return disponibilidades;
+    for (final disp in disponibilidadesDeSeries) {
+      // CORREÇÃO: Se há filtro de dia, incluir apenas disponibilidades desse dia
+      if (dataFiltroDia != null) {
+        final dispData =
+            DateTime(disp.data.year, disp.data.month, disp.data.day);
+        final filtroData = DateTime(
+            dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+        if (dispData != filtroData) {
+          seriesFiltradas++;
+          continue; // Pular disponibilidades de outros dias
+        }
+      }
+      final chave =
+          '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+      todasDisps[chave] = disp;
+    }
+    for (final disp in dispsUnicas) {
+      // CORREÇÃO: Se há filtro de dia, incluir apenas disponibilidades desse dia
+      if (dataFiltroDia != null) {
+        final dispData =
+            DateTime(disp.data.year, disp.data.month, disp.data.day);
+        final filtroData = DateTime(
+            dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+        if (dispData != filtroData) {
+          unicasFiltradas++;
+          continue; // Pular disponibilidades de outros dias
+        }
+      }
+      final chave =
+          '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+      todasDisps[chave] = disp;
+    }
+
+    return todasDisps.values.toList();
   }
 
   /// Carrega séries de recorrência e gera disponibilidades dinamicamente
@@ -1214,18 +1362,28 @@ class AlocacaoMedicosLogic {
   }) async {
     if (unidade == null) return [];
 
-    final disponibilidades = <Disponibilidade>[];
+    // Usar Map para evitar duplicatas: chave = (medicoId, data, tipo)
+    final disponibilidadesMap = <String, Disponibilidade>{};
     final firestore = FirebaseFirestore.instance;
-    
+
+    // Variável para rastrear médicos com séries (fora do try para estar acessível)
+    final medicosComSeries = <String>[];
+
     try {
       // Determinar período para gerar cartões
       DateTime dataInicio;
       DateTime dataFim;
-      final anoParaCache = dataFiltroDia?.year ?? (anoEspecifico != null ? int.tryParse(anoEspecifico) ?? DateTime.now().year : DateTime.now().year);
-      
+      final anoParaCache = dataFiltroDia?.year ??
+          (anoEspecifico != null
+              ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+              : DateTime.now().year);
+
       if (dataFiltroDia != null) {
-        // Se há filtro de dia, gerar apenas para esse dia
-        dataInicio = DateTime(dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+        // OTIMIZAÇÃO: Gerar apenas para o dia atual quando há filtro de dia
+        // Isso evita gerar disponibilidades desnecessárias para todo o ano
+        // Séries que começam depois do dia selecionado serão geradas quando necessário
+        dataInicio = DateTime(
+            dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
         dataFim = dataInicio.add(const Duration(days: 1));
       } else if (anoEspecifico != null) {
         // Se há ano específico, gerar para o ano inteiro
@@ -1239,80 +1397,315 @@ class AlocacaoMedicosLogic {
         dataFim = DateTime(ano + 1, 1, 1);
       }
 
-      // Carregar médicos da unidade (apenas ativos) - usar cache se disponível
+      // OTIMIZAÇÃO CRÍTICA: Carregar médicos apenas se realmente necessário
+      // Se há dataFiltroDia, podemos usar cache de médicos que já têm séries
+      // Isso evita carregar TODOS os médicos quando só precisa de alguns
       List<String> medicoIds;
-      if (_cacheMedicosAtivos.containsKey(unidade.id)) {
+      final cacheFoiInvalidado =
+          _cacheMedicosAtivosInvalidado.contains(unidade.id);
+
+      // OTIMIZAÇÃO: Se há dataFiltroDia, tentar usar apenas médicos que já têm séries no cache
+      // Isso reduz drasticamente o número de médicos para processar
+      if (dataFiltroDia != null) {
+        final anoParaCache = dataFiltroDia.year;
+        final medicosComSeriesNoCache = <String>[];
+
+        // Verificar quais médicos já têm séries em cache para este ano
+        // E que se aplicam ao dia específico
+        final dataFiltroNormalizada = DateTime(
+            dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+        for (final entry in _cacheSeriesPorMedico.entries) {
+          final parts = entry.key.split('_');
+          if (parts.length >= 2) {
+            final anoCache = int.tryParse(parts[1]);
+            if (anoCache == anoParaCache || anoCache == anoParaCache - 1) {
+              final medicoId = parts[0];
+              final cacheKey = '${medicoId}_$anoParaCache';
+              // Verificar se o cache não foi invalidado
+              if (!_cacheSeriesInvalidado.contains(cacheKey)) {
+                final cachedData = entry.value;
+                final series =
+                    (cachedData['series'] as List).cast<SerieRecorrencia>();
+                // Verificar se alguma série ativa se aplica ao dia específico
+                bool temSerieAplicavel = false;
+                for (final serie in series) {
+                  if (!serie.ativo) continue;
+
+                  final serieDataInicioNormalizada = DateTime(
+                      serie.dataInicio.year,
+                      serie.dataInicio.month,
+                      serie.dataInicio.day);
+
+                  if (serieDataInicioNormalizada
+                      .isAfter(dataFiltroNormalizada)) {
+                    continue; // Série começa depois do dia
+                  }
+                  if (serie.dataFim != null) {
+                    final serieDataFimNormalizada = DateTime(
+                        serie.dataFim!.year,
+                        serie.dataFim!.month,
+                        serie.dataFim!.day);
+                    if (serieDataFimNormalizada
+                        .isBefore(dataFiltroNormalizada)) {
+                      continue; // Série já terminou antes do dia
+                    }
+                  }
+
+                  // Verificar se a série realmente se aplica ao dia específico
+                  bool serieSeAplicaAoDia = false;
+                  switch (serie.tipo) {
+                    case 'Semanal':
+                      final diasDiferenca = dataFiltroNormalizada
+                          .difference(serieDataInicioNormalizada)
+                          .inDays;
+                      serieSeAplicaAoDia =
+                          diasDiferenca >= 0 && diasDiferenca % 7 == 0;
+                      break;
+                    case 'Quinzenal':
+                      final diasDiferenca = dataFiltroNormalizada
+                          .difference(serieDataInicioNormalizada)
+                          .inDays;
+                      serieSeAplicaAoDia =
+                          diasDiferenca >= 0 && diasDiferenca % 14 == 0;
+                      break;
+                    case 'Mensal':
+                      if (dataFiltroNormalizada.weekday ==
+                          serie.dataInicio.weekday) {
+                        final ocorrenciaSerie =
+                            _descobrirOcorrenciaNoMes(serie.dataInicio);
+                        final ocorrenciaDia =
+                            _descobrirOcorrenciaNoMes(dataFiltroNormalizada);
+                        serieSeAplicaAoDia = ocorrenciaSerie == ocorrenciaDia;
+                      }
+                      break;
+                    case 'Consecutivo':
+                      final numeroDias =
+                          serie.parametros['numeroDias'] as int? ?? 5;
+                      final diasDiferenca = dataFiltroNormalizada
+                          .difference(serieDataInicioNormalizada)
+                          .inDays;
+                      serieSeAplicaAoDia =
+                          diasDiferenca >= 0 && diasDiferenca < numeroDias;
+                      break;
+                    case 'Única':
+                      serieSeAplicaAoDia =
+                          serieDataInicioNormalizada == dataFiltroNormalizada;
+                      break;
+                    default:
+                      serieSeAplicaAoDia = true;
+                  }
+
+                  if (serieSeAplicaAoDia) {
+                    temSerieAplicavel = true;
+                    break; // Já encontrou uma série aplicável, não precisa verificar mais
+                  }
+                }
+
+                if (temSerieAplicavel) {
+                  medicosComSeriesNoCache.add(medicoId);
+                }
+              }
+            }
+          }
+        }
+
+        // Se encontrou médicos com séries no cache, usar apenas esses
+        // Senão, carregar todos os médicos ativos
+        if (medicosComSeriesNoCache.isNotEmpty && !cacheFoiInvalidado) {
+          medicoIds = medicosComSeriesNoCache.toSet().toList();
+        } else if (_cacheMedicosAtivos.containsKey(unidade.id) &&
+            !cacheFoiInvalidado) {
+          medicoIds = _cacheMedicosAtivos[unidade.id]!;
+        } else {
+          // Carregar todos os médicos ativos apenas se necessário
+          final medicosRef = firestore
+              .collection('unidades')
+              .doc(unidade.id)
+              .collection('ocupantes');
+          final source =
+              cacheFoiInvalidado ? Source.server : Source.serverAndCache;
+          final medicosSnapshot = await medicosRef
+              .where('ativo', isEqualTo: true)
+              .get(GetOptions(source: source));
+          medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+          _cacheMedicosAtivos[unidade.id] = medicoIds;
+          _cacheMedicosAtivosInvalidado.remove(unidade.id);
+        }
+      } else if (_cacheMedicosAtivos.containsKey(unidade.id) &&
+          !cacheFoiInvalidado) {
         medicoIds = _cacheMedicosAtivos[unidade.id]!;
-        // Não fazer log aqui para evitar spam - apenas quando carrega do Firestore
       } else {
         final medicosRef = firestore
             .collection('unidades')
             .doc(unidade.id)
             .collection('ocupantes');
+        final source =
+            cacheFoiInvalidado ? Source.server : Source.serverAndCache;
         final medicosSnapshot = await medicosRef
             .where('ativo', isEqualTo: true)
-            .get(const GetOptions(source: Source.serverAndCache));
+            .get(GetOptions(source: source));
         medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
         _cacheMedicosAtivos[unidade.id] = medicoIds;
-        debugPrint('📊 Médicos carregados do Firestore para unidade ${unidade.id}: ${medicoIds.length} médicos');
-      }
-      
-      // Se não há médicos, retornar vazio imediatamente (evita processamento desnecessário)
-      if (medicoIds.isEmpty) {
-        return disponibilidades;
+        _cacheMedicosAtivosInvalidado.remove(unidade.id);
       }
 
-      // Se há filtro de dia, carregar apenas séries que se aplicam a esse dia
-      // Caso contrário, carregar todas as séries ativas do ano
-      final medicosComSeries = <String>[];
-      
+      // Se não há médicos, retornar vazio imediatamente (evita processamento desnecessário)
+      if (medicoIds.isEmpty) {
+        return disponibilidadesMap.values.toList();
+      }
+
       // Carregar séries em paralelo para médicos ativos
       final futures = <Future<List<Disponibilidade>>>[];
-      
+
       for (final medicoId in medicoIds) {
         final cacheKey = '${medicoId}_$anoParaCache';
-        
+
+        // OTIMIZAÇÃO: Verificar se o cache foi invalidado antes de usar
+        final cacheFoiInvalidado = _cacheSeriesInvalidado.contains(cacheKey);
+
         // Verificar se já temos séries em cache para este médico e ano
         // IMPORTANTE: Para séries infinitas, também verificar cache do ano anterior,
         // pois séries que começaram no ano anterior podem se aplicar ao ano atual
-        bool usarCache = _cacheSeriesPorMedico.containsKey(cacheKey);
+        bool usarCache =
+            _cacheSeriesPorMedico.containsKey(cacheKey) && !cacheFoiInvalidado;
         Map<String, dynamic>? cachedData;
         List<SerieRecorrencia> seriesDoCache = [];
         List<ExcecaoSerie> excecoesDoCache = [];
-        
+
         if (usarCache) {
           cachedData = _cacheSeriesPorMedico[cacheKey]!;
-          seriesDoCache = (cachedData['series'] as List).cast<SerieRecorrencia>();
-          excecoesDoCache = (cachedData['excecoes'] as List).cast<ExcecaoSerie>();
-          debugPrint('  📦 Cache encontrado para $medicoId (ano $anoParaCache): ${seriesDoCache.length} séries, ${excecoesDoCache.length} exceções');
-        } else if (dataFiltroDia != null && anoParaCache > dataFiltroDia.year - 1) {
+          seriesDoCache =
+              (cachedData['series'] as List).cast<SerieRecorrencia>();
+          excecoesDoCache =
+              (cachedData['excecoes'] as List).cast<ExcecaoSerie>();
+          // Mensagem de debug removida para reduzir ruído no terminal
+          // debugPrint('  📦 Cache encontrado para $medicoId (ano $anoParaCache): ${seriesDoCache.length} séries, ${excecoesDoCache.length} exceções');
+        } else if (dataFiltroDia != null &&
+            anoParaCache > dataFiltroDia.year - 1 &&
+            !cacheFoiInvalidado) {
           // Tentar usar cache do ano anterior se disponível (para séries infinitas)
           final cacheKeyAnoAnterior = '${medicoId}_${anoParaCache - 1}';
-          if (_cacheSeriesPorMedico.containsKey(cacheKeyAnoAnterior)) {
+          if (_cacheSeriesPorMedico.containsKey(cacheKeyAnoAnterior) &&
+              !_cacheSeriesInvalidado.contains(cacheKeyAnoAnterior)) {
             cachedData = _cacheSeriesPorMedico[cacheKeyAnoAnterior]!;
-            seriesDoCache = (cachedData['series'] as List).cast<SerieRecorrencia>();
-            excecoesDoCache = (cachedData['excecoes'] as List).cast<ExcecaoSerie>();
+            seriesDoCache =
+                (cachedData['series'] as List).cast<SerieRecorrencia>();
+            excecoesDoCache =
+                (cachedData['excecoes'] as List).cast<ExcecaoSerie>();
             // Filtrar apenas séries infinitas ou que se aplicam ao ano atual
-            seriesDoCache = seriesDoCache.where((s) => 
-              s.dataFim == null || s.dataFim!.year >= anoParaCache
-            ).toList();
-            debugPrint('  📦 Usando cache do ano anterior para $medicoId: ${seriesDoCache.length} séries aplicáveis');
+            seriesDoCache = seriesDoCache
+                .where(
+                    (s) => s.dataFim == null || s.dataFim!.year >= anoParaCache)
+                .toList();
+            // Mensagem de debug removida para reduzir ruído no terminal
+            // debugPrint('  📦 Usando cache do ano anterior para $medicoId: ${seriesDoCache.length} séries aplicáveis');
             usarCache = true;
           }
         }
-        
+
         if (usarCache && seriesDoCache.isNotEmpty) {
+          // OTIMIZAÇÃO: Se há filtro de dia, verificar rapidamente se alguma série se aplica ao dia
+          // antes de gerar disponibilidades. Isso evita processamento desnecessário.
+          if (dataFiltroDia != null) {
+            // Verificar se alguma série se aplica ao dia antes de gerar
+            // Usar a mesma lógica dos geradores de séries para verificação precisa
+            bool temSerieAplicavel = false;
+            final dataFiltroNormalizada = DateTime(
+                dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+
+            for (final serie in seriesDoCache) {
+              if (!serie.ativo) continue;
+
+              // Verificar se a série está dentro do período
+              final serieDataInicioNormalizada = DateTime(serie.dataInicio.year,
+                  serie.dataInicio.month, serie.dataInicio.day);
+
+              if (serieDataInicioNormalizada.isAfter(dataFiltroNormalizada)) {
+                continue; // Série começa depois do dia
+              }
+              if (serie.dataFim != null) {
+                final serieDataFimNormalizada = DateTime(serie.dataFim!.year,
+                    serie.dataFim!.month, serie.dataFim!.day);
+                if (serieDataFimNormalizada.isBefore(dataFiltroNormalizada)) {
+                  continue; // Série já terminou antes do dia
+                }
+              }
+
+              // Verificar se a série realmente se aplica ao dia específico
+              bool serieSeAplicaAoDia = false;
+
+              switch (serie.tipo) {
+                case 'Semanal':
+                  // Verificar se é o mesmo dia da semana e a diferença é múltiplo de 7
+                  final diasDiferenca = dataFiltroNormalizada
+                      .difference(serieDataInicioNormalizada)
+                      .inDays;
+                  serieSeAplicaAoDia =
+                      diasDiferenca >= 0 && diasDiferenca % 7 == 0;
+                  break;
+                case 'Quinzenal':
+                  // Verificar se a diferença é múltiplo de 14
+                  final diasDiferenca = dataFiltroNormalizada
+                      .difference(serieDataInicioNormalizada)
+                      .inDays;
+                  serieSeAplicaAoDia =
+                      diasDiferenca >= 0 && diasDiferenca % 14 == 0;
+                  break;
+                case 'Mensal':
+                  // Verificar se é o mesmo dia do mês e mesma ocorrência do dia da semana
+                  if (dataFiltroNormalizada.weekday ==
+                      serie.dataInicio.weekday) {
+                    // Calcular ocorrência no mês (1ª, 2ª, 3ª, 4ª, última)
+                    final ocorrenciaSerie =
+                        _descobrirOcorrenciaNoMes(serie.dataInicio);
+                    final ocorrenciaDia =
+                        _descobrirOcorrenciaNoMes(dataFiltroNormalizada);
+                    serieSeAplicaAoDia = ocorrenciaSerie == ocorrenciaDia;
+                  }
+                  break;
+                case 'Consecutivo':
+                  // Verificar se está dentro do período consecutivo
+                  final numeroDias =
+                      serie.parametros['numeroDias'] as int? ?? 5;
+                  final diasDiferenca = dataFiltroNormalizada
+                      .difference(serieDataInicioNormalizada)
+                      .inDays;
+                  serieSeAplicaAoDia =
+                      diasDiferenca >= 0 && diasDiferenca < numeroDias;
+                  break;
+                case 'Única':
+                  // Verificar se é a data exata
+                  serieSeAplicaAoDia =
+                      serieDataInicioNormalizada == dataFiltroNormalizada;
+                  break;
+                default:
+                  // Para tipos desconhecidos, assumir que pode se aplicar
+                  serieSeAplicaAoDia = true;
+              }
+
+              if (serieSeAplicaAoDia) {
+                temSerieAplicavel = true;
+                break;
+              }
+            }
+
+            if (!temSerieAplicavel) {
+              // Nenhuma série se aplica ao dia, pular este médico
+              continue;
+            }
+          }
+
           // Se há filtro de dia, filtrar exceções apenas para esse dia
           List<ExcecaoSerie> excecoesFiltradas = excecoesDoCache;
           if (dataFiltroDia != null) {
-            excecoesFiltradas = excecoesFiltradas.where((e) =>
-              e.data.year == dataFiltroDia.year &&
-              e.data.month == dataFiltroDia.month &&
-              e.data.day == dataFiltroDia.day
-            ).toList();
-            debugPrint('  🔍 Exceções filtradas para ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}: ${excecoesFiltradas.length}');
+            excecoesFiltradas = excecoesFiltradas
+                .where((e) =>
+                    e.data.year == dataFiltroDia.year &&
+                    e.data.month == dataFiltroDia.month &&
+                    e.data.day == dataFiltroDia.day)
+                .toList();
           }
-          
+
           // Gerar disponibilidades do cache apenas para o período necessário
           final dispsGeradas = SerieGenerator.gerarDisponibilidades(
             series: seriesDoCache,
@@ -1320,20 +1713,38 @@ class AlocacaoMedicosLogic {
             dataInicio: dataInicio,
             dataFim: dataFim,
           );
-          disponibilidades.addAll(dispsGeradas);
-          
+
+          // CORREÇÃO: Adicionar médico à lista mesmo quando usa cache
+          if (dispsGeradas.isNotEmpty) {
+            medicosComSeries.add(medicoId);
+          }
+
+          // Adicionar ao Map de disponibilidades únicas para evitar duplicatas
+          for (final disp in dispsGeradas) {
+            final chave =
+                '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+            disponibilidadesMap[chave] =
+                disp; // Sobrescreve se já existir (evita duplicatas)
+          }
+
           // Se usamos cache do ano anterior, mesclar com o cache do ano atual
           if (!_cacheSeriesPorMedico.containsKey(cacheKey)) {
             _cacheSeriesPorMedico[cacheKey] = {
               'series': seriesDoCache,
               'excecoes': excecoesDoCache,
             };
-            debugPrint('  💾 Cache do ano anterior mesclado para o ano atual ($anoParaCache)');
           }
-          
+
           continue;
         }
-        
+
+        // OTIMIZAÇÃO: Só carregar séries se realmente necessário
+        // Se não há dataFiltroDia e não há anoEspecifico, não precisa carregar
+        if (dataFiltroDia == null && anoEspecifico == null) {
+          // Se não há filtro específico, não carregar séries (economiza recursos)
+          continue;
+        }
+
         // Carregar séries e exceções em paralelo
         futures.add((() async {
           try {
@@ -1344,32 +1755,44 @@ class AlocacaoMedicosLogic {
             // podem se aplicar a essa data (séries que começaram antes ou nessa data).
             DateTime? dataInicioParaCarregarSeries;
             DateTime? dataFimParaCarregarSeries;
-            
+
             if (dataFiltroDia != null) {
-              // Para séries infinitas, carregar todas as séries que começaram antes ou no dia selecionado
-              // Passar null para dataInicio para carregar todas as séries ativas
-              // Passar dataFiltroDia + 1 dia como dataFim para incluir séries que começaram até esse dia
-              dataInicioParaCarregarSeries = null; // Carregar todas as séries ativas (sem limite de início)
-              dataFimParaCarregarSeries = dataFiltroDia.add(const Duration(days: 1)); // Séries que começaram até este dia
-              debugPrint('  🔍 Carregando séries para $medicoId: todas as séries ativas que começaram até ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}');
+              // OTIMIZAÇÃO: Para séries infinitas, carregar apenas séries que podem se aplicar ao dia
+              // Limitar a busca para séries que começaram até o dia selecionado
+              // Isso reduz drasticamente o número de séries carregadas
+              dataInicioParaCarregarSeries =
+                  null; // Carregar todas as séries ativas (sem limite de início)
+              dataFimParaCarregarSeries = dataFiltroDia.add(
+                  const Duration(days: 1)); // Séries que começaram até este dia
             } else {
-              dataInicioParaCarregarSeries = dataInicio;
-              dataFimParaCarregarSeries = dataFim;
+              // Se não há filtro de dia, usar o período completo do ano
+              final ano = anoEspecifico != null
+                  ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+                  : DateTime.now().year;
+              dataInicioParaCarregarSeries = DateTime(ano, 1, 1);
+              dataFimParaCarregarSeries = DateTime(ano + 1, 1, 1);
             }
-            
-            // Carregar séries do médico diretamente (sem query extra de verificação)
-            // O filtro por período já é feito em SerieService.carregarSeries
+
+            // OTIMIZAÇÃO: Usar Source.serverAndCache para usar cache quando disponível
+            // Isso reduz drasticamente leituras desnecessárias do servidor
             final series = await SerieService.carregarSeries(
               medicoId,
               unidade: unidade,
               dataInicio: dataInicioParaCarregarSeries,
               dataFim: dataFimParaCarregarSeries,
             );
-            
-            debugPrint('  📊 Séries carregadas para $medicoId: ${series.length}');
-            for (final serie in series) {
-              debugPrint('    - Série: ${serie.id} - ${serie.tipo} - Início: ${serie.dataInicio.day}/${serie.dataInicio.month}/${serie.dataInicio.year} - Fim: ${serie.dataFim != null ? "${serie.dataFim!.day}/${serie.dataFim!.month}/${serie.dataFim!.year}" : "infinito"} - Gabinete: ${serie.gabineteId ?? "não alocado"}');
+
+            // OTIMIZAÇÃO: Se há filtro de dia e não há séries, pular este médico imediatamente
+            // Isso evita carregar exceções desnecessariamente
+            if (dataFiltroDia != null && series.isEmpty) {
+              return <Disponibilidade>[];
             }
+
+            // Mensagens de debug removidas para reduzir ruído no terminal
+            // debugPrint('  📊 Séries carregadas para $medicoId: ${series.length}');
+            // for (final serie in series) {
+            //   debugPrint('    - Série: ${serie.id} - ${serie.tipo} - Início: ${serie.dataInicio.day}/${serie.dataInicio.month}/${serie.dataInicio.year} - Fim: ${serie.dataFim != null ? "${serie.dataFim!.day}/${serie.dataFim!.month}/${serie.dataFim!.year}" : "infinito"} - Gabinete: ${serie.gabineteId ?? "não alocado"}');
+            // }
 
             if (series.isEmpty) {
               // Guardar no cache vazio para evitar futuras verificações
@@ -1382,55 +1805,126 @@ class AlocacaoMedicosLogic {
 
             // IMPORTANTE: Se há filtro de dia, carregar exceções APENAS para esse dia
             // Isso evita carregar exceções de todo o ano quando só precisa de um dia
-            debugPrint('  🔍 Carregando exceções para $medicoId de ${dataInicio.day}/${dataInicio.month}/${dataInicio.year} até ${dataFim.day}/${dataFim.month}/${dataFim.year}');
+            // Mensagem de debug removida para reduzir ruído no terminal
+            // debugPrint('  🔍 Carregando exceções para $medicoId de ${dataInicioParaCarregarSeries?.day}/${dataInicioParaCarregarSeries?.month}/${dataInicioParaCarregarSeries?.year} até ${dataFimParaCarregarSeries?.day}/${dataFimParaCarregarSeries?.month}/${dataFimParaCarregarSeries?.year}');
+            // Se o cache foi invalidado, forçar carregamento do servidor (sem cache)
+            // Isso garante que exceções recém-criadas sejam carregadas imediatamente
+            final cacheFoiInvalidado =
+                _cacheSeriesInvalidado.contains(cacheKey);
             final excecoes = await SerieService.carregarExcecoes(
               medicoId,
               unidade: unidade,
-              dataInicio: dataInicio,
-              dataFim: dataFim,
+              dataInicio: dataInicioParaCarregarSeries,
+              dataFim: dataFimParaCarregarSeries,
+              forcarServidor:
+                  cacheFoiInvalidado, // Forçar servidor se cache foi invalidado
             );
-            
-            debugPrint('  📊 Exceções carregadas do Firestore para $medicoId: ${excecoes.length}');
-            for (final excecao in excecoes) {
-              debugPrint('    - Exceção: ${excecao.serieId} - ${excecao.data.day}/${excecao.data.month}/${excecao.data.year} - Cancelada: ${excecao.cancelada}');
+
+            // Debug: mostrar exceções carregadas para séries mensais
+            final excecoesMensais =
+                excecoes.where((e) => e.gabineteId != null).toList();
+            if (excecoesMensais.isNotEmpty && dataFiltroDia != null) {
+              print(
+                  '📋 Exceções carregadas para médico $medicoId: ${excecoes.length} total, ${excecoesMensais.length} com gabinete');
+              for (final ex in excecoesMensais) {
+                final dataKey =
+                    '${ex.data.year}-${ex.data.month.toString().padLeft(2, '0')}-${ex.data.day.toString().padLeft(2, '0')}';
+                print(
+                    '   📋 Exceção: série=${ex.serieId}, data=$dataKey, gabinete=${ex.gabineteId}');
+              }
             }
+
+            // OTIMIZAÇÃO: Se há filtro de dia, filtrar exceções apenas para esse dia
+            // Isso reduz o processamento desnecessário
+            final excecoesFiltradas = dataFiltroDia != null
+                ? excecoes
+                    .where((e) =>
+                        e.data.year == dataFiltroDia.year &&
+                        e.data.month == dataFiltroDia.month &&
+                        e.data.day == dataFiltroDia.day)
+                    .toList()
+                : excecoes;
+
+            // Debug: mostrar exceções filtradas
+            if (dataFiltroDia != null && excecoesFiltradas.isNotEmpty) {
+              print(
+                  '📋 Exceções filtradas para data ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}: ${excecoesFiltradas.length}');
+              for (final ex in excecoesFiltradas) {
+                print(
+                    '   📋 Exceção filtrada: série=${ex.serieId}, data=${ex.data.day}/${ex.data.month}/${ex.data.year}, gabinete=${ex.gabineteId}');
+              }
+            }
+
+            // Mensagens de debug removidas para reduzir ruído no terminal
+            // debugPrint('  📊 Exceções carregadas do Firestore para $medicoId: ${excecoes.length} (filtradas: ${excecoesFiltradas.length})');
+            // for (final excecao in excecoesFiltradas) {
+            //   debugPrint('    - Exceção: ${excecao.serieId} - ${excecao.data.day}/${excecao.data.month}/${excecao.data.year} - Cancelada: ${excecao.cancelada}');
+            // }
 
             // Guardar no cache
             _cacheSeriesPorMedico[cacheKey] = {
               'series': series,
               'excecoes': excecoes,
             };
-            debugPrint('  💾 Cache atualizado para $medicoId: ${series.length} séries, ${excecoes.length} exceções');
+            // OTIMIZAÇÃO: Remover flag de invalidação após recarregar do servidor
+            _cacheSeriesInvalidado.remove(cacheKey);
+            // Mensagem de debug removida para reduzir ruído no terminal
+            // debugPrint('  💾 Cache atualizado para $medicoId: ${series.length} séries, ${excecoes.length} exceções');
 
             // Gerar disponibilidades dinamicamente
+            // Determinar período para gerar disponibilidades
+            DateTime dataInicioGeracao;
+            DateTime dataFimGeracao;
+            if (dataFiltroDia != null) {
+              dataInicioGeracao = DateTime(
+                  dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+              dataFimGeracao = dataInicioGeracao.add(const Duration(days: 1));
+            } else {
+              final ano = anoEspecifico != null
+                  ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+                  : DateTime.now().year;
+              dataInicioGeracao = DateTime(ano, 1, 1);
+              dataFimGeracao = DateTime(ano + 1, 1, 1);
+            }
+
             final dispsGeradas = SerieGenerator.gerarDisponibilidades(
               series: series,
-              excecoes: excecoes,
-              dataInicio: dataInicio,
-              dataFim: dataFim,
+              excecoes: excecoesFiltradas,
+              dataInicio: dataInicioGeracao,
+              dataFim: dataFimGeracao,
             );
 
             medicosComSeries.add(medicoId);
-            return dispsGeradas;
+
+            // Retornar como Map para evitar duplicatas ao mesclar
+            final dispsMap = <String, Disponibilidade>{};
+            for (final disp in dispsGeradas) {
+              final chave =
+                  '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+              dispsMap[chave] = disp;
+            }
+            return dispsMap.values.toList();
           } catch (e) {
-            debugPrint('❌ Erro ao carregar séries do médico $medicoId: $e');
             return <Disponibilidade>[];
           }
         })());
       }
-      
+
       // Aguardar todas as cargas em paralelo e coletar resultados
       final resultados = await Future.wait(futures);
-      for (final resultado in resultados) {
-        disponibilidades.addAll(resultado);
-      }
 
-      if (medicosComSeries.isNotEmpty || disponibilidades.isNotEmpty) {
-        debugPrint('✅ Disponibilidades geradas de séries: ${disponibilidades.length} (de ${medicosComSeries.length} médicos com séries)');
+      // Mesclar todos os resultados no Map para evitar duplicatas
+      for (final resultado in resultados) {
+        for (final disp in resultado) {
+          final chave =
+              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+          disponibilidadesMap[chave] =
+              disp; // Sobrescreve se já existir (evita duplicatas)
+        }
       }
-    } catch (e) {
-      debugPrint('❌ Erro ao carregar disponibilidades de séries: $e');
-    }
+    } catch (e) {}
+
+    final disponibilidades = disponibilidadesMap.values.toList();
 
     return disponibilidades;
   }
@@ -1537,7 +2031,7 @@ class AlocacaoMedicosLogic {
         }
       }
     } catch (e) {
-      debugPrint('❌ Erro ao carregar alocações: $e');
+      // Em caso de erro, continuar sem alocações do Firestore
     }
 
     // Gerar alocações dinamicamente a partir de séries
@@ -1546,10 +2040,11 @@ class AlocacaoMedicosLogic {
       // Determinar período para gerar alocações
       DateTime dataInicio;
       DateTime dataFim;
-      
+
       if (dataFiltroDia != null) {
         // Se há filtro de dia, gerar apenas para esse dia
-        dataInicio = DateTime(dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+        dataInicio = DateTime(
+            dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
         dataFim = dataInicio.add(const Duration(days: 1));
       } else if (anoEspecifico != null) {
         // Se há ano específico, gerar para o ano inteiro
@@ -1567,57 +2062,125 @@ class AlocacaoMedicosLogic {
       // IMPORTANTE: Usar cache de médicos e séries quando disponível
       final firestore = FirebaseFirestore.instance;
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-      
-      // Usar médicos do cache se disponível
-      final medicoIds = _cacheMedicosAtivos.containsKey(unidadeId)
-          ? _cacheMedicosAtivos[unidadeId]!
-          : null;
-      
-      final medicosSnapshot = medicoIds == null
-          ? await firestore
-              .collection('unidades')
-              .doc(unidadeId)
-              .collection('ocupantes')
-              .where('ativo', isEqualTo: true)
-              .get(const GetOptions(source: Source.serverAndCache))
-          : null;
 
       final alocacoesGeradas = <Alocacao>[];
-      final anoParaCache = dataFiltroDia?.year ?? (anoEspecifico != null ? int.tryParse(anoEspecifico) ?? DateTime.now().year : DateTime.now().year);
-      
-      // Processar médicos (do cache ou da query)
-      final medicosParaProcessar = medicoIds ?? 
-          (medicosSnapshot?.docs.map((doc) => doc.id).toList() ?? []);
-      
+      final anoParaCache = dataFiltroDia?.year ??
+          (anoEspecifico != null
+              ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+              : DateTime.now().year);
+
+      // OTIMIZAÇÃO: Usar apenas médicos que já têm séries alocadas no cache
+      // Isso evita processar médicos que não têm séries alocadas
+      // IMPORTANTE: Incluir também médicos com cache invalidado para garantir recarregamento
+      final medicosComSeriesAlocadasNoCache = <String>[];
+      final medicosComCacheInvalidado = <String>[];
+      for (final entry in _cacheSeriesPorMedico.entries) {
+        final parts = entry.key.split('_');
+        if (parts.length >= 2) {
+          final anoCache = int.tryParse(parts[1]);
+          if (anoCache == anoParaCache || anoCache == anoParaCache - 1) {
+            final medicoId = parts[0];
+            final cacheKey = '${medicoId}_$anoParaCache';
+            final cacheFoiInvalidado =
+                _cacheSeriesInvalidado.contains(cacheKey);
+
+            if (cacheFoiInvalidado) {
+              // Se o cache foi invalidado, incluir na lista para recarregar do servidor
+              medicosComCacheInvalidado.add(medicoId);
+            } else {
+              final cachedData = entry.value;
+              final series =
+                  (cachedData['series'] as List).cast<SerieRecorrencia>();
+              // Só incluir se tem séries alocadas (com gabineteId)
+              if (series.any((s) =>
+                  s.ativo &&
+                  s.gabineteId != null &&
+                  s.gabineteId!.isNotEmpty)) {
+                medicosComSeriesAlocadasNoCache.add(medicoId);
+              }
+            }
+          }
+        }
+      }
+
+      // IMPORTANTE: Incluir médicos com cache invalidado na lista para processar
+      // Isso garante que exceções recém-criadas sejam carregadas do servidor
+      final todosMedicosParaProcessar = <String>{
+        ...medicosComSeriesAlocadasNoCache,
+        ...medicosComCacheInvalidado,
+      };
+
+      // Se não encontrou médicos com séries alocadas no cache E não há cache invalidado, não processar nenhum
+      if (todosMedicosParaProcessar.isEmpty) {
+        return alocacoesGeradas;
+      }
+
+      // Processar médicos com séries alocadas no cache E médicos com cache invalidado
+      final medicosParaProcessar = todosMedicosParaProcessar.toList();
+
       for (final medicoId in medicosParaProcessar) {
         final cacheKey = '${medicoId}_$anoParaCache';
-        
+
         // Verificar se já temos séries e exceções em cache
+        // CORREÇÃO: Se o cache foi invalidado, forçar recarregamento do servidor
+        final cacheFoiInvalidado = _cacheSeriesInvalidado.contains(cacheKey);
+
+        // Debug: mostrar se o cache foi invalidado
+        if (cacheFoiInvalidado && dataFiltroDia != null) {
+          print(
+              '🔄 Cache invalidado para médico $medicoId, ano $anoParaCache, data ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year} - forçando recarregamento do servidor');
+        }
+
         List<SerieRecorrencia> series;
         List<ExcecaoSerie> excecoes;
-        
-        if (_cacheSeriesPorMedico.containsKey(cacheKey)) {
+
+        if (_cacheSeriesPorMedico.containsKey(cacheKey) &&
+            !cacheFoiInvalidado) {
           final cachedData = _cacheSeriesPorMedico[cacheKey]!;
           series = (cachedData['series'] as List).cast<SerieRecorrencia>();
           excecoes = (cachedData['excecoes'] as List).cast<ExcecaoSerie>();
-          
+
+          // Mensagem de debug removida para reduzir ruído no terminal
+          // debugPrint('  📦 Usando cache de séries para $medicoId (ano $anoParaCache): ${series.length} séries');
+
           // Se há filtro de dia, filtrar exceções apenas para esse dia
           if (dataFiltroDia != null) {
-            excecoes = excecoes.where((e) =>
-              e.data.year == dataFiltroDia.year &&
-              e.data.month == dataFiltroDia.month &&
-              e.data.day == dataFiltroDia.day
-            ).toList();
+            excecoes = excecoes
+                .where((e) =>
+                    e.data.year == dataFiltroDia.year &&
+                    e.data.month == dataFiltroDia.month &&
+                    e.data.day == dataFiltroDia.day)
+                .toList();
           }
-          
+
           // Filtrar séries que se aplicam ao período
           // IMPORTANTE: Para séries infinitas (dataFim == null), incluir se começaram antes ou no período
+          // Determinar período para filtrar séries
+          DateTime dataInicioFiltro;
+          DateTime dataFimFiltro;
+          if (dataFiltroDia != null) {
+            dataInicioFiltro = DateTime(
+                dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+            dataFimFiltro = dataInicioFiltro.add(const Duration(days: 1));
+          } else {
+            final ano = anoEspecifico != null
+                ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+                : DateTime.now().year;
+            dataInicioFiltro = DateTime(ano, 1, 1);
+            dataFimFiltro = DateTime(ano + 1, 1, 1);
+          }
+
           series = series.where((s) {
             // Excluir séries que começam depois do fim do período
-            if (s.dataInicio.isAfter(dataFim.subtract(const Duration(days: 1)))) return false;
+            if (s.dataInicio
+                .isAfter(dataFimFiltro.subtract(const Duration(days: 1)))) {
+              return false;
+            }
             // Excluir séries que já terminaram antes do início do período
             // Se dataFim é null, a série é infinita e deve ser incluída
-            if (s.dataFim != null && s.dataFim!.isBefore(dataInicio)) return false;
+            if (s.dataFim != null && s.dataFim!.isBefore(dataInicioFiltro)) {
+              return false;
+            }
             return true;
           }).toList();
         } else {
@@ -1625,17 +2188,24 @@ class AlocacaoMedicosLogic {
           // que começaram antes ou no período, independentemente do dataFim da série.
           DateTime? dataInicioParaCarregarSeries;
           DateTime? dataFimParaCarregarSeries;
-          
+
           if (dataFiltroDia != null) {
             // Para séries infinitas, carregar todas as séries que começaram antes ou no dia selecionado
-            dataInicioParaCarregarSeries = null; // Carregar todas as séries ativas (sem limite de início)
-            dataFimParaCarregarSeries = dataFiltroDia.add(const Duration(days: 1)); // Séries que começaram até este dia
-            debugPrint('  🔍 Carregando séries para alocações ($medicoId): todas as séries ativas que começaram até ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}');
+            dataInicioParaCarregarSeries =
+                null; // Carregar todas as séries ativas (sem limite de início)
+            dataFimParaCarregarSeries = dataFiltroDia.add(
+                const Duration(days: 1)); // Séries que começaram até este dia
+            // Mensagem de debug removida para reduzir ruído no terminal
+            // debugPrint('  🔍 Carregando séries para alocações ($medicoId): todas as séries ativas que começaram até ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}');
           } else {
-            dataInicioParaCarregarSeries = dataInicio;
-            dataFimParaCarregarSeries = dataFim;
+            // Se não há filtro de dia, usar o período completo do ano
+            final ano = anoEspecifico != null
+                ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+                : DateTime.now().year;
+            dataInicioParaCarregarSeries = DateTime(ano, 1, 1);
+            dataFimParaCarregarSeries = DateTime(ano + 1, 1, 1);
           }
-          
+
           // Carregar séries do médico
           series = await SerieService.carregarSeries(
             medicoId,
@@ -1643,33 +2213,118 @@ class AlocacaoMedicosLogic {
             dataInicio: dataInicioParaCarregarSeries,
             dataFim: dataFimParaCarregarSeries,
           );
-          
-          debugPrint('  📊 Séries carregadas para alocações ($medicoId): ${series.length}');
+
+          // Mensagem de debug removida para reduzir ruído no terminal
+          // debugPrint('  📊 Séries carregadas para alocações ($medicoId): ${series.length}');
 
           if (series.isEmpty) continue;
 
           // Carregar exceções do médico no período
+          // Determinar período para carregar exceções
+          DateTime dataInicioExcecoes;
+          DateTime dataFimExcecoes;
+          if (dataFiltroDia != null) {
+            // IMPORTANTE: Carregar exceções do dia específico, mas garantir que o ano seja incluído
+            // Quando o cache é invalidado, precisamos carregar exceções do ano correto
+            dataInicioExcecoes = DateTime(
+                dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+            dataFimExcecoes = dataInicioExcecoes.add(const Duration(days: 1));
+            // Debug: mostrar período de carregamento
+            if (cacheFoiInvalidado) {
+              print(
+                  '🔍 Carregando exceções para data específica: ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year} (ano: ${dataFiltroDia.year})');
+              print(
+                  '   📅 Período: ${dataInicioExcecoes.day}/${dataInicioExcecoes.month}/${dataInicioExcecoes.year} até ${dataFimExcecoes.day}/${dataFimExcecoes.month}/${dataFimExcecoes.year}');
+            }
+          } else {
+            final ano = anoEspecifico != null
+                ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+                : DateTime.now().year;
+            dataInicioExcecoes = DateTime(ano, 1, 1);
+            dataFimExcecoes = DateTime(ano + 1, 1, 1);
+          }
+
+          // Se o cache foi invalidado, forçar carregamento do servidor (sem cache)
+          // Isso garante que exceções recém-criadas sejam carregadas imediatamente
           excecoes = await SerieService.carregarExcecoes(
             medicoId,
             unidade: unidade,
-            dataInicio: dataInicio,
-            dataFim: dataFim,
+            dataInicio: dataInicioExcecoes,
+            dataFim: dataFimExcecoes,
+            forcarServidor:
+                cacheFoiInvalidado, // Forçar servidor se cache foi invalidado
           );
-          
-          // Guardar no cache
+
+          // Debug: mostrar exceções carregadas após invalidar cache
+          if (cacheFoiInvalidado && dataFiltroDia != null) {
+            final excecoesParaData = excecoes
+                .where((e) =>
+                    e.data.year == dataFiltroDia.year &&
+                    e.data.month == dataFiltroDia.month &&
+                    e.data.day == dataFiltroDia.day)
+                .toList();
+            print(
+                '📋 Exceções carregadas para ${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}: ${excecoesParaData.length} (total: ${excecoes.length})');
+            for (final ex in excecoesParaData) {
+              print(
+                  '   📋 Exceção encontrada: série=${ex.serieId}, data=${ex.data.day}/${ex.data.month}/${ex.data.year}, gabinete=${ex.gabineteId}');
+            }
+          }
+
+          // Guardar no cache e remover flag de invalidação
+          // IMPORTANTE: Guardar excecoes completas no cache (não filtradas)
+          // para uso futuro, mas usar excecoesFiltradas na geração
           _cacheSeriesPorMedico[cacheKey] = {
             'series': series,
-            'excecoes': excecoes,
+            'excecoes': excecoes, // Guardar exceções completas no cache
           };
+          _cacheSeriesInvalidado
+              .remove(cacheKey); // Remover flag após recarregar
         }
 
-        // Gerar alocações dinamicamente
+        // CORREÇÃO: Filtrar apenas séries com gabineteId != null para gerar alocações
+        // Séries sem gabineteId não devem gerar alocações (ainda não foram alocadas)
+        final seriesComGabinete =
+            series.where((s) => s.gabineteId != null).toList();
+
+        for (final s in seriesComGabinete) {}
+
+        // Gerar alocações dinamicamente apenas de séries com gabineteId
+        // Determinar período para gerar alocações
+        DateTime dataInicioAlocacoes;
+        DateTime dataFimAlocacoes;
+        if (dataFiltroDia != null) {
+          dataInicioAlocacoes = DateTime(
+              dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+          dataFimAlocacoes = dataInicioAlocacoes.add(const Duration(days: 1));
+        } else {
+          final ano = anoEspecifico != null
+              ? int.tryParse(anoEspecifico) ?? DateTime.now().year
+              : DateTime.now().year;
+          dataInicioAlocacoes = DateTime(ano, 1, 1);
+          dataFimAlocacoes = DateTime(ano + 1, 1, 1);
+        }
+
+        // Debug: mostrar exceções que serão passadas para o gerador
+        if (cacheFoiInvalidado && dataFiltroDia != null) {
+          final excecoesComGabinete =
+              excecoes.where((e) => e.gabineteId != null).toList();
+          print(
+              '🔍 Passando ${excecoes.length} exceções para SerieGenerator (${excecoesComGabinete.length} com gabinete)');
+          for (final ex in excecoesComGabinete) {
+            print(
+                '   📋 Exceção: série=${ex.serieId}, data=${ex.data.day}/${ex.data.month}/${ex.data.year}, gabinete=${ex.gabineteId}');
+          }
+        }
+
         final alocsGeradas = SerieGenerator.gerarAlocacoes(
-          series: series,
+          series: seriesComGabinete,
           excecoes: excecoes,
-          dataInicio: dataInicio,
-          dataFim: dataFim,
+          dataInicio: dataInicioAlocacoes,
+          dataFim: dataFimAlocacoes,
         );
+
+        for (final aloc in alocsGeradas.take(5)) {}
 
         alocacoesGeradas.addAll(alocsGeradas);
       }
@@ -1683,77 +2338,111 @@ class AlocacaoMedicosLogic {
           for (final medicoId in medicoIds) {
             final anoParaCache = dataFiltroDia.year;
             final cacheKey = '${medicoId}_$anoParaCache';
-            
+
             if (_cacheSeriesPorMedico.containsKey(cacheKey)) {
               final cachedData = _cacheSeriesPorMedico[cacheKey]!;
               final excecoes = cachedData['excecoes'] as List<ExcecaoSerie>;
-              
+
               for (final excecao in excecoes) {
-                if (excecao.cancelada && 
+                if (excecao.cancelada &&
                     excecao.data.year == dataFiltroDia.year &&
                     excecao.data.month == dataFiltroDia.month &&
                     excecao.data.day == dataFiltroDia.day) {
-                  final dataKey = '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+                  final dataKey =
+                      '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
                   datasComExcecoesCanceladas.add(dataKey);
-                  debugPrint('🚫 Exceção cancelada encontrada para filtrar alocações: médico $medicoId, data ${excecao.data.day}/${excecao.data.month}/${excecao.data.year}');
                 }
               }
             }
           }
-        } catch (e) {
-          debugPrint('❌ Erro ao extrair exceções para filtrar alocações: $e');
-        }
+        } catch (e) {}
       }
-      
-      // Mesclar alocações do Firestore com alocações geradas de séries
-      // Alocações do Firestore têm prioridade (podem ser alocações manuais ou salvas explicitamente)
-      // MAS: Filtrar alocações do Firestore que correspondem a datas com exceções canceladas
+
+      // CORREÇÃO: Simplificar mesclagem de alocações
+      // Alocações de séries: geradas dinamicamente (não salvas no Firestore)
+      // Alocações "Única": salvas no Firestore (ID não começa com "serie_")
       final alocacoesMap = <String, Alocacao>{};
-      
-      // Primeiro, adicionar alocações geradas de séries (já respeitam exceções)
+
+      // Primeiro, adicionar alocações geradas de séries (dinâmicas)
       for (final aloc in alocacoesGeradas) {
-        final chave = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+        final chave =
+            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
         alocacoesMap[chave] = aloc;
       }
-      
-      // Depois, sobrescrever com alocações do Firestore (que têm prioridade)
-      // MAS: Filtrar alocações do Firestore que correspondem a datas com exceções canceladas
+
+      // Depois, adicionar apenas alocações "Única" do Firestore
+      // Filtrar alocações antigas de séries (ID começa com "serie_") - essas não devem mais existir
+      // e alocações com exceções canceladas
       for (final aloc in alocacoes) {
-        // Verificar se esta alocação corresponde a uma data com exceção cancelada
-        final dataKey = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
-        if (datasComExcecoesCanceladas.contains(dataKey)) {
-          debugPrint('🚫 Filtrando alocação do Firestore com exceção cancelada: ${aloc.id} - médico ${aloc.medicoId}, data ${aloc.data.day}/${aloc.data.month}/${aloc.data.year}');
-          continue; // Não adicionar se há exceção cancelada
+        // Ignorar alocações antigas de séries (devem ser geradas dinamicamente)
+        if (aloc.id.startsWith('serie_')) {
+          continue;
         }
-        
-        final chave = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-        // Alocações do Firestore sempre têm prioridade (podem ser manuais ou salvas explicitamente)
+
+        // Verificar se esta alocação corresponde a uma data com exceção cancelada
+        final dataKey =
+            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
+        if (datasComExcecoesCanceladas.contains(dataKey)) {
+          continue;
+        }
+
+        // Adicionar apenas alocações "Única" (não são de séries)
+        final chave =
+            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+        // Alocações "Única" do Firestore têm prioridade sobre alocações geradas (caso raro de conflito)
         alocacoesMap[chave] = aloc;
       }
-      
+
       alocacoes.clear();
       alocacoes.addAll(alocacoesMap.values);
-      
-      debugPrint('✅ Alocações carregadas: ${alocacoes.length} (${alocacoesGeradas.length} geradas de séries)');
     } catch (e) {
-      debugPrint('❌ Erro ao gerar alocações de séries: $e');
       // Em caso de erro, retornar apenas as alocações do Firestore
     }
 
     return alocacoes;
   }
 
-
   /// Busca todas as alocações de um médico específico do Firebase
   static Future<List<Alocacao>> buscarAlocacoesMedico(
-    Unidade? unidade,
-    String medicoId,
-    {int? anoEspecifico}
-  ) async {
-    final todasAlocacoes = await _carregarAlocacoesUnidadePorAno(
-      unidade,
-      anoEspecifico?.toString(),
-    );
-    return todasAlocacoes.where((a) => a.medicoId == medicoId).toList();
+      Unidade? unidade, String medicoId,
+      {int? anoEspecifico, DateTime? dataInicio, DateTime? dataFim}) async {
+    List<Alocacao> todasAlocacoes;
+
+    // Se há dataInicio e dataFim, buscar de todos os anos necessários
+    if (dataInicio != null && dataFim != null) {
+      final anoInicio = dataInicio.year;
+      final anoFim = dataFim.year;
+      todasAlocacoes = [];
+
+      // Buscar de todos os anos que a série cruza
+      for (int ano = anoInicio; ano <= anoFim; ano++) {
+        final alocacoesAno = await _carregarAlocacoesUnidadePorAno(
+          unidade,
+          ano.toString(),
+        );
+        todasAlocacoes.addAll(alocacoesAno);
+      }
+    } else {
+      // Buscar apenas do ano específico ou ano atual
+      todasAlocacoes = await _carregarAlocacoesUnidadePorAno(
+        unidade,
+        anoEspecifico?.toString(),
+      );
+    }
+
+    var alocacoesMedico =
+        todasAlocacoes.where((a) => a.medicoId == medicoId).toList();
+
+    // Filtrar por período se fornecido
+    if (dataInicio != null || dataFim != null) {
+      alocacoesMedico = alocacoesMedico.where((a) {
+        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+        if (dataInicio != null && aDate.isBefore(dataInicio)) return false;
+        if (dataFim != null && aDate.isAfter(dataFim)) return false;
+        return true;
+      }).toList();
+    }
+
+    return alocacoesMedico;
   }
 }

@@ -13,13 +13,13 @@ class CalendarioDisponibilidades extends StatefulWidget {
 
   /// onViewChanged recebe (DateTime visibleDate) quando o usuário navega no calendário
   final Function(DateTime)? onViewChanged;
-  
+
   /// dataCalendario - data atual do calendário para forçar atualização visual
   final DateTime? dataCalendario;
-  
+
   /// Modo apenas seleção - se true, apenas seleciona a data sem mostrar diálogos
   final bool modoApenasSelecao;
-  
+
   /// Callback opcional para quando uma data é selecionada (usado no modo apenas seleção)
   final Function(DateTime)? onDateSelected;
 
@@ -35,10 +35,12 @@ class CalendarioDisponibilidades extends StatefulWidget {
   });
 
   @override
-  State<CalendarioDisponibilidades> createState() => _CalendarioDisponibilidadesState();
+  State<CalendarioDisponibilidades> createState() =>
+      _CalendarioDisponibilidadesState();
 }
 
-class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades> {
+class _CalendarioDisponibilidadesState
+    extends State<CalendarioDisponibilidades> {
   late CalendarController _calendarController;
   bool _isInitialBuild = true;
 
@@ -93,7 +95,7 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
 
   Future<int?> _mostrarDialogoNumeroDias(BuildContext context) async {
     int numeroDias = 5; // Valor padrão
-    
+
     return await showDialog<int>(
       context: context,
       builder: (context) {
@@ -104,7 +106,8 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Escolha quantos dias consecutivos deseja marcar:'),
+                  const Text(
+                      'Escolha quantos dias consecutivos deseja marcar:'),
                   const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -120,14 +123,16 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                         icon: const Icon(Icons.remove),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           '$numeroDias',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
                       IconButton(
@@ -170,7 +175,7 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
           title: const Text('Remover disponibilidade'),
           content: Text(
             'Deseja remover a disponibilidade do dia '
-                '${date.day}/${date.month}/${date.year}?',
+            '${date.day}/${date.month}/${date.year}?',
           ),
           actions: [
             TextButton(
@@ -215,10 +220,10 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
   void didUpdateWidget(CalendarioDisponibilidades oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Se a data do calendário mudou, atualizar a visualização
-    if (widget.dataCalendario != null && 
-        (oldWidget.dataCalendario == null || 
-         oldWidget.dataCalendario!.year != widget.dataCalendario!.year ||
-         oldWidget.dataCalendario!.month != widget.dataCalendario!.month)) {
+    if (widget.dataCalendario != null &&
+        (oldWidget.dataCalendario == null ||
+            oldWidget.dataCalendario!.year != widget.dataCalendario!.year ||
+            oldWidget.dataCalendario!.month != widget.dataCalendario!.month)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _calendarController.displayDate = widget.dataCalendario!;
@@ -242,20 +247,25 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
   @override
   Widget build(BuildContext context) {
     // Obter a data atual do calendário (usar o displayDate do controller ou a data do widget)
-    final displayDate = _calendarController.displayDate ?? widget.dataCalendario ?? DateTime.now();
-    
+    final displayDate = _calendarController.displayDate ??
+        widget.dataCalendario ??
+        DateTime.now();
+
     // Capitalizar primeira letra do mês em português
-    final mes = _capitalizarPrimeiraLetra(DateFormat('MMMM', 'pt_PT').format(displayDate));
+    final mes = _capitalizarPrimeiraLetra(
+        DateFormat('MMMM', 'pt_PT').format(displayDate));
     final ano = displayDate.year.toString();
-    
+
     return Card(
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
           children: [
             // Header customizado com mês em português e ano destacado
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -265,7 +275,9 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                     underline: Container(), // Remove a linha padrão
                     isDense: true,
                     items: List.generate(10, (index) {
-                      final anoOpcao = DateTime.now().year - 2 + index; // 2 anos atrás até 7 anos à frente
+                      final anoOpcao = DateTime.now().year -
+                          2 +
+                          index; // 2 anos atrás até 7 anos à frente
                       return DropdownMenuItem<int>(
                         value: anoOpcao,
                         child: Text(
@@ -280,7 +292,8 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                     }).toList(),
                     onChanged: (int? novoAno) {
                       if (novoAno != null) {
-                        final novaData = DateTime(novoAno, displayDate.month, 1);
+                        final novaData =
+                            DateTime(novoAno, displayDate.month, 1);
                         setState(() {});
                         _calendarController.displayDate = novaData;
                         _calendarController.forward!();
@@ -306,7 +319,8 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          final novaData = DateTime(displayDate.year, displayDate.month - 1, 1);
+                          final novaData = DateTime(
+                              displayDate.year, displayDate.month - 1, 1);
                           setState(() {});
                           _calendarController.displayDate = novaData;
                           _calendarController.backward!();
@@ -320,8 +334,18 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                             underline: Container(), // Remove a linha padrão
                             isDense: true,
                             items: [
-                              'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                              'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                              'Janeiro',
+                              'Fevereiro',
+                              'Março',
+                              'Abril',
+                              'Maio',
+                              'Junho',
+                              'Julho',
+                              'Agosto',
+                              'Setembro',
+                              'Outubro',
+                              'Novembro',
+                              'Dezembro'
                             ].map((String m) {
                               return DropdownMenuItem<String>(
                                 value: m,
@@ -337,17 +361,29 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                             onChanged: (String? novoMes) {
                               if (novoMes != null) {
                                 final meses = [
-                                  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                                  'Janeiro',
+                                  'Fevereiro',
+                                  'Março',
+                                  'Abril',
+                                  'Maio',
+                                  'Junho',
+                                  'Julho',
+                                  'Agosto',
+                                  'Setembro',
+                                  'Outubro',
+                                  'Novembro',
+                                  'Dezembro'
                                 ];
                                 final indiceMes = meses.indexOf(novoMes) + 1;
-                                final novaData = DateTime(displayDate.year, indiceMes, 1);
+                                final novaData =
+                                    DateTime(displayDate.year, indiceMes, 1);
                                 setState(() {});
                                 _calendarController.displayDate = novaData;
                                 _calendarController.forward!();
                                 // Notificar mudança
                                 if (widget.onViewChanged != null) {
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  WidgetsBinding.instance
+                                      .addPostFrameCallback((_) {
                                     if (mounted) {
                                       widget.onViewChanged!(novaData);
                                     }
@@ -364,7 +400,8 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          final novaData = DateTime(displayDate.year, displayDate.month + 1, 1);
+                          final novaData = DateTime(
+                              displayDate.year, displayDate.month + 1, 1);
                           setState(() {});
                           _calendarController.displayDate = novaData;
                           _calendarController.forward!();
@@ -377,42 +414,44 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
             ),
             // Header customizado para os dias da semana em português
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
               child: Row(
                 children: ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']
                     .asMap()
                     .entries
                     .map((entry) {
-                      final index = entry.key;
-                      final day = entry.value;
-                      // Sábado (índice 5) e Domingo (índice 6) em azul
-                      final isWeekend = index == 5 || index == 6;
-                      return Expanded(
-                        child: Text(
-                          day,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: isWeekend ? Colors.blue : null,
-                          ),
-                        ),
-                      );
-                    })
-                    .toList(),
+                  final index = entry.key;
+                  final day = entry.value;
+                  // Sábado (índice 5) e Domingo (índice 6) em azul
+                  final isWeekend = index == 5 || index == 6;
+                  return Expanded(
+                    child: Text(
+                      day,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: isWeekend ? Colors.blue : null,
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
             SizedBox(
               height: 260, // Altura ajustada (300 - 40 do header dos dias)
-        child: SfCalendar(
+              child: SfCalendar(
                 controller: _calendarController,
-                showNavigationArrow: false, // Desabilitar navegação padrão, usar a customizada
-          view: CalendarView.month,
+                showNavigationArrow:
+                    false, // Desabilitar navegação padrão, usar a customizada
+                view: CalendarView.month,
                 initialDisplayDate: widget.dataCalendario,
                 headerHeight: 0, // Ocultar header padrão do mês/ano
                 firstDayOfWeek: 1, // Começar na segunda-feira (1 = Monday)
                 monthViewSettings: const MonthViewSettings(
-                  dayFormat: ' ', // Espaço vazio para ocultar os dias da semana padrão
+                  dayFormat:
+                      ' ', // Espaço vazio para ocultar os dias da semana padrão
                   showAgenda: false,
                 ),
                 onViewChanged: (ViewChangedDetails details) {
@@ -421,91 +460,95 @@ class _CalendarioDisponibilidadesState extends State<CalendarioDisponibilidades>
                     _isInitialBuild = false;
                     return;
                   }
-                  
+
                   // Atualizar data de exibição quando o calendário navega
                   if (details.visibleDates.isNotEmpty) {
-                    final visibleDate = details.visibleDates[details.visibleDates.length ~/ 2];
-                    
+                    final visibleDate =
+                        details.visibleDates[details.visibleDates.length ~/ 2];
+
                     // Quando o usuário navega no calendário, notificar a mudança
                     if (widget.onViewChanged != null) {
-                      debugPrint('📅 Calendário navegou para: ${visibleDate.day}/${visibleDate.month}/${visibleDate.year}');
-                      
+                      debugPrint(
+                          '📅 Calendário navegou para: ${visibleDate.day}/${visibleDate.month}/${visibleDate.year}');
+
                       // Atualizar o displayDate do controller imediatamente para sincronizar
                       _calendarController.displayDate = visibleDate;
-                      
+
                       // Usar WidgetsBinding para garantir que é executado após o build
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) {
-                          setState(() {}); // Forçar rebuild para atualizar header
+                          setState(
+                              () {}); // Forçar rebuild para atualizar header
                           widget.onViewChanged!(visibleDate);
                         }
                       });
                     }
                   }
                 },
-          onTap: (details) {
-            final date = details.date;
-            if (date != null) {
-              // Se está no modo apenas seleção, apenas chamar o callback
-              if (widget.modoApenasSelecao) {
-                if (widget.onDateSelected != null) {
-                  widget.onDateSelected!(date);
-                }
-                return;
-              }
-              
-              final isSelected = widget.diasSelecionados.any(
+                onTap: (details) {
+                  final date = details.date;
+                  if (date != null) {
+                    // Se está no modo apenas seleção, apenas chamar o callback
+                    if (widget.modoApenasSelecao) {
+                      if (widget.onDateSelected != null) {
+                        widget.onDateSelected!(date);
+                      }
+                      return;
+                    }
+
+                    final isSelected = widget.diasSelecionados.any(
+                      (d) =>
+                          d.year == date.year &&
+                          d.month == date.month &&
+                          d.day == date.day,
+                    );
+
+                    if (isSelected) {
+                      // Se já está selecionado (vermelho), pergunta se remove só esse ou toda a série
+                      _mostrarDialogoRemocaoSeries(context, date);
+                    } else {
+                      // Se não está selecionado, perguntar qual tipo de marcação (Única, Semanal etc.)
+                      _mostrarDialogoTipoMarcacao(context, date);
+                    }
+                  }
+                },
+                monthCellBuilder: (context, details) {
+                  final isSelected = widget.diasSelecionados.any(
                     (d) =>
-                d.year == date.year &&
-                    d.month == date.month &&
-                    d.day == date.day,
-              );
+                        d.year == details.date.year &&
+                        d.month == details.date.month &&
+                        d.day == details.date.day,
+                  );
 
-              if (isSelected) {
-                // Se já está selecionado (vermelho), pergunta se remove só esse ou toda a série
-                _mostrarDialogoRemocaoSeries(context, date);
-              } else {
-                // Se não está selecionado, perguntar qual tipo de marcação (Única, Semanal etc.)
-                _mostrarDialogoTipoMarcacao(context, date);
-              }
-            }
-          },
-          monthCellBuilder: (context, details) {
-            final isSelected = widget.diasSelecionados.any(
-                  (d) =>
-              d.year == details.date.year &&
-                  d.month == details.date.month &&
-                  d.day == details.date.day,
-            );
+                  // Verifica se a célula pertence ao mês atual
+                  final isCurrentMonth =
+                      details.visibleDates[10].month == details.date.month;
 
-            // Verifica se a célula pertence ao mês atual
-            final isCurrentMonth =
-                details.visibleDates[10].month == details.date.month;
-
-            return Center(
-              child: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey, width: 0.5),
-                  color: isSelected ? Colors.purple : Colors.transparent,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  '${details.date.day}',
-                  style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : isCurrentMonth
-                        ? Colors.black
-                        : Colors.grey,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ),
-            );
-          },
+                  return Center(
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey, width: 0.5),
+                        color: isSelected ? Colors.purple : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${details.date.day}',
+                        style: TextStyle(
+                          color: isSelected
+                              ? Colors.white
+                              : isCurrentMonth
+                                  ? Colors.black
+                                  : Colors.grey,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],

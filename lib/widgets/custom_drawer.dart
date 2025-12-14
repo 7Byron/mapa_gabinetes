@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_theme.dart';
 
 // Suas telas de referência
 import '../main.dart';

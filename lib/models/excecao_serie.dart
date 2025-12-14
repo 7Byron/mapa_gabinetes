@@ -41,16 +41,27 @@ class ExcecaoSerie {
       }
     }
 
+    // Normalizar a data ao carregar do Firestore para garantir correspondência exata
+    DateTime dataExcecao;
+    if (map['data'] != null) {
+      final dataParseada = DateTime.parse(map['data'].toString());
+      dataExcecao = DateTime(
+        dataParseada.year,
+        dataParseada.month,
+        dataParseada.day,
+      );
+    } else {
+      final agora = DateTime.now();
+      dataExcecao = DateTime(agora.year, agora.month, agora.day);
+    }
+
     return ExcecaoSerie(
       id: map['id']?.toString() ?? '',
       serieId: map['serieId']?.toString() ?? '',
-      data: map['data'] != null
-          ? DateTime.parse(map['data'].toString())
-          : DateTime.now(),
+      data: dataExcecao,
       cancelada: map['cancelada'] ?? false,
       horarios: horarios,
       gabineteId: map['gabineteId']?.toString(),
     );
   }
 }
-

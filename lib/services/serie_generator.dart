@@ -57,11 +57,32 @@ class SerieGenerator {
     // Indexar exceções por sérieId e data (serieId_dataKey)
     final excecoesMap = <String, ExcecaoSerie>{};
 
+    // Debug: mostrar exceções recebidas
+    if (excecoes.isNotEmpty) {
+      final excecoesComGabinete =
+          excecoes.where((e) => e.gabineteId != null).toList();
+      if (excecoesComGabinete.isNotEmpty) {
+        print(
+            '🔍 SerieGenerator recebeu ${excecoes.length} exceções (${excecoesComGabinete.length} com gabinete)');
+      }
+    }
+
     // Indexar exceções por sérieId e data para evitar conflitos entre séries
     for (final excecao in excecoes) {
-      final dataKey = _dataKey(excecao.data);
+      // Normalizar a data da exceção para garantir correspondência exata
+      final dataNormalizada = DateTime(
+        excecao.data.year,
+        excecao.data.month,
+        excecao.data.day,
+      );
+      final dataKey = _dataKey(dataNormalizada);
       final chave = '${excecao.serieId}_$dataKey';
       excecoesMap[chave] = excecao;
+      // Debug para exceções com gabineteId
+      if (excecao.gabineteId != null) {
+        print(
+            '📋 Exceção indexada: série=${excecao.serieId}, data=$dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
+      }
     }
 
     // Para cada série com gabinete alocado, gerar alocações
@@ -77,16 +98,48 @@ class SerieGenerator {
 
       // Converter disponibilidades em alocações
       for (final disp in cartoes) {
-        final dataKey = _dataKey(disp.data);
+        // Normalizar a data para garantir correspondência exata
+        final dataNormalizada = DateTime(
+          disp.data.year,
+          disp.data.month,
+          disp.data.day,
+        );
+        final dataKey = _dataKey(dataNormalizada);
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
-        
+
+        // Debug para séries quinzenais e mensais
+        if (serie.tipo == 'Mensal' || serie.tipo == 'Quinzenal') {
+          print(
+              '🔍 Buscando exceção: tipo=${serie.tipo}, série=${serie.id}, data=$dataKey, chave=$chave, encontrada=${excecao != null}');
+          if (excecao != null) {
+            print(
+                '   ✅ Exceção encontrada: gabinete=${excecao.gabineteId}, cancelada=${excecao.cancelada}');
+          } else {
+            print(
+                '   ❌ Exceção NÃO encontrada - usando gabinete da série: ${serie.gabineteId}');
+            // Debug: mostrar todas as chaves no mapa para ajudar a identificar o problema
+            print('   📋 Chaves disponíveis no mapa de exceções:');
+            excecoesMap.keys
+                .where((k) => k.startsWith('${serie.id}_'))
+                .take(5)
+                .forEach((k) => print('      - $k'));
+          }
+        }
+
         // Se cancelada, não criar alocação
         if (excecao?.cancelada ?? false) continue;
 
         // Usar gabinete da exceção ou da série
         final gabineteId = excecao?.gabineteId ?? serie.gabineteId!;
-        
+
+        // Debug para séries quinzenais e mensais
+        if ((serie.tipo == 'Mensal' || serie.tipo == 'Quinzenal') &&
+            excecao?.gabineteId != null) {
+          print(
+              '✅ Alocação gerada com exceção: tipo=${serie.tipo}, data=$dataKey, gabinete=$gabineteId (exceção: ${excecao?.gabineteId}, série: ${serie.gabineteId})');
+        }
+
         // Usar horários da exceção ou da série
         final horarios = excecao?.horarios ?? disp.horarios;
         if (horarios.isEmpty) continue;
@@ -118,12 +171,11 @@ class SerieGenerator {
     required Map<String, ExcecaoSerie> excecoesMap,
   }) {
     final cartoes = <Disponibilidade>[];
-    
+
     // Ajustar dataInicio para não começar antes da série
-    final inicio = dataInicio.isAfter(serie.dataInicio) 
-        ? dataInicio 
-        : serie.dataInicio;
-    
+    final inicio =
+        dataInicio.isAfter(serie.dataInicio) ? dataInicio : serie.dataInicio;
+
     // Ajustar dataFim se a série tiver fim
     final fim = serie.dataFim != null && serie.dataFim!.isBefore(dataFim)
         ? serie.dataFim!
@@ -144,7 +196,8 @@ class SerieGenerator {
         break;
       default:
         // Única - criar apenas se estiver no período
-        if (serie.dataInicio.isAfter(inicio.subtract(const Duration(days: 1))) &&
+        if (serie.dataInicio
+                .isAfter(inicio.subtract(const Duration(days: 1))) &&
             serie.dataInicio.isBefore(fim.add(const Duration(days: 1)))) {
           final dataKey = _dataKey(serie.dataInicio);
           final chave = '${serie.id}_$dataKey';
@@ -175,13 +228,13 @@ class SerieGenerator {
   ) {
     final cartoes = <Disponibilidade>[];
     final weekday = serie.dataInicio.weekday;
-    
+
     // Encontrar primeira data válida no período
     DateTime dataAtual = inicio;
     while (dataAtual.weekday != weekday && dataAtual.isBefore(fim)) {
       dataAtual = dataAtual.add(const Duration(days: 1));
     }
-    
+
     // Se não encontrou, começar na próxima semana
     if (dataAtual.isAfter(fim)) {
       return cartoes;
@@ -189,20 +242,28 @@ class SerieGenerator {
 
     // Ajustar para não começar antes da série
     if (dataAtual.isBefore(serie.dataInicio)) {
-      final semanas = (serie.dataInicio.difference(dataAtual).inDays / 7).ceil();
+      final semanas =
+          (serie.dataInicio.difference(dataAtual).inDays / 7).ceil();
       dataAtual = dataAtual.add(Duration(days: semanas * 7));
     }
 
     // Gerar cartões semanais
     while (dataAtual.isBefore(fim.add(const Duration(days: 1)))) {
-      final dataKey = _dataKey(dataAtual);
+      // Normalizar a data para garantir correspondência exata
+      final dataNormalizada = DateTime(
+        dataAtual.year,
+        dataAtual.month,
+        dataAtual.day,
+      );
+      final dataKey = _dataKey(dataNormalizada);
       final chave = '${serie.id}_$dataKey';
       final excecao = excecoesMap[chave];
-      
+
       // Se cancelada, pular
       if (excecao?.cancelada ?? false) {
         // Debug: verificar se a exceção está sendo aplicada
-        debugPrint('🚫 Exceção cancelada encontrada para série ${serie.id} na data ${dataAtual.day}/${dataAtual.month}/${dataAtual.year} - pulando geração');
+        debugPrint(
+            '🚫 Exceção cancelada encontrada para série ${serie.id} na data ${dataAtual.day}/${dataAtual.month}/${dataAtual.year} - pulando geração');
         dataAtual = dataAtual.add(const Duration(days: 7));
         continue;
       }
@@ -210,7 +271,7 @@ class SerieGenerator {
       cartoes.add(Disponibilidade(
         id: 'serie_${serie.id}_$dataKey',
         medicoId: serie.medicoId,
-        data: dataAtual,
+        data: dataNormalizada,
         horarios: excecao?.horarios ?? serie.horarios,
         tipo: 'Semanal',
       ));
@@ -229,22 +290,37 @@ class SerieGenerator {
     Map<String, ExcecaoSerie> excecoesMap,
   ) {
     final cartoes = <Disponibilidade>[];
-    final base = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
-    
+    final base = DateTime(
+        serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
+    final weekday = serie.dataInicio.weekday;
+
     // Encontrar primeira data válida no período
     DateTime dataAtual = inicio;
     while (dataAtual.isBefore(fim.add(const Duration(days: 1)))) {
       final diff = dataAtual.difference(base).inDays;
-      if (diff >= 0 && diff % 14 == 0) {
-        final dataKey = _dataKey(dataAtual);
+      // Verificar se é o mesmo dia da semana e múltiplo de 14 dias
+      if (diff >= 0 && diff % 14 == 0 && dataAtual.weekday == weekday) {
+        // Normalizar a data para garantir correspondência exata
+        final dataNormalizada = DateTime(
+          dataAtual.year,
+          dataAtual.month,
+          dataAtual.day,
+        );
+        final dataKey = _dataKey(dataNormalizada);
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
-        
+
+        // Debug para verificar se a exceção está sendo encontrada
+        if (excecao != null) {
+          print(
+              '🔍 _gerarQuinzenal: Exceção encontrada para data $dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
+        }
+
         if (!(excecao?.cancelada ?? false)) {
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
             medicoId: serie.medicoId,
-            data: dataAtual,
+            data: dataNormalizada,
             horarios: excecao?.horarios ?? serie.horarios,
             tipo: 'Quinzenal',
           ));
@@ -272,20 +348,29 @@ class SerieGenerator {
     final fimMes = DateTime(fim.year, fim.month + 1, 0);
 
     while (mesAtual.isBefore(fimMes.add(const Duration(days: 1)))) {
-      final data = _pegarNthWeekdayDoMes(mesAtual.year, mesAtual.month, weekday, ocorrencia);
-      
-      if (data != null && 
+      final data = _pegarNthWeekdayDoMes(
+          mesAtual.year, mesAtual.month, weekday, ocorrencia);
+
+      if (data != null &&
           data.isAfter(inicio.subtract(const Duration(days: 1))) &&
           data.isBefore(fim.add(const Duration(days: 1)))) {
-        final dataKey = _dataKey(data);
+        // Normalizar a data para garantir correspondência exata
+        final dataNormalizada = DateTime(data.year, data.month, data.day);
+        final dataKey = _dataKey(dataNormalizada);
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
-        
+
+        // Debug para verificar se a exceção está sendo encontrada
+        if (excecao != null) {
+          print(
+              '🔍 _gerarMensal: Exceção encontrada para data $dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
+        }
+
         if (!(excecao?.cancelada ?? false)) {
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
             medicoId: serie.medicoId,
-            data: data,
+            data: dataNormalizada,
             horarios: excecao?.horarios ?? serie.horarios,
             tipo: 'Mensal',
           ));
@@ -312,14 +397,14 @@ class SerieGenerator {
   ) {
     final cartoes = <Disponibilidade>[];
     final numeroDias = serie.parametros['numeroDias'] as int? ?? 5;
-    
+
     DateTime dataAtual = serie.dataInicio;
     while (dataAtual.isBefore(fim.add(const Duration(days: 1)))) {
       if (dataAtual.isAfter(inicio.subtract(const Duration(days: 1)))) {
         final dataKey = _dataKey(dataAtual);
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
-        
+
         if (!(excecao?.cancelada ?? false)) {
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
@@ -331,7 +416,7 @@ class SerieGenerator {
         }
       }
       dataAtual = dataAtual.add(const Duration(days: 1));
-      
+
       // Parar após número de dias consecutivos
       if (dataAtual.difference(serie.dataInicio).inDays >= numeroDias) {
         break;
@@ -347,7 +432,7 @@ class SerieGenerator {
     final ano = data.year;
     final mes = data.month;
     final dia = data.day;
-    
+
     final weekdayDia1 = DateTime(ano, mes, 1).weekday;
     final offset = (weekday - weekdayDia1 + 7) % 7;
     final primeiroDesteMes = 1 + offset;
@@ -361,7 +446,7 @@ class SerieGenerator {
     final offset = (weekday - weekdayDia1 + 7) % 7;
     final primeiroNoMes = 1 + offset;
     final dia = primeiroNoMes + 7 * (n - 1);
-    
+
     final ultimoDiaMes = DateTime(ano, mes + 1, 0).day;
     if (dia <= ultimoDiaMes) {
       return DateTime(ano, mes, dia);
@@ -374,4 +459,3 @@ class SerieGenerator {
     return '${data.year}-${data.month.toString().padLeft(2, '0')}-${data.day.toString().padLeft(2, '0')}';
   }
 }
-

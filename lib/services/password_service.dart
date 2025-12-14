@@ -390,4 +390,23 @@ class PasswordService {
       print('❌ Erro ao carregar passwords do documento da unidade: $e');
     }
   }
+
+  /// Verifica se o usuário atual é administrador
+  static Future<bool> isCurrentUserAdmin({required String unidadeId}) async {
+    try {
+      final adminPassword = await getAdminPassword(unidadeId: unidadeId);
+      if (adminPassword == null || adminPassword.isEmpty) {
+        return false;
+      }
+
+      // Verificar se há uma sessão de admin ativa
+      final prefs = await SharedPreferences.getInstance();
+      final isAdminSession =
+          prefs.getBool('is_admin_session_$unidadeId') ?? false;
+      return isAdminSession;
+    } catch (e) {
+      print('❌ Erro ao verificar se usuário é administrador: $e');
+      return false;
+    }
+  }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_theme.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:mapa_gabinetes/main.dart';
 import '../models/gabinete.dart';
@@ -143,7 +144,6 @@ class CadastroGabineteState extends State<CadastroGabinete> {
           widget.gabinete == null ? 'Novo Gabinete' : 'Editar Gabinete',
         ),
       ),
-      backgroundColor: MyAppTheme.cinzento,
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(

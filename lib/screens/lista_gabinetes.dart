@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_theme.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/gabinete.dart';
@@ -42,7 +43,8 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   Future<void> _carregarGabinetes() async {
     setState(() => isLoading = true);
     try {
-      final gabinetesCarregados = await buscarGabinetes(unidade: widget.unidade);
+      final gabinetesCarregados =
+          await buscarGabinetes(unidade: widget.unidade);
       debugPrint('Gabinetes encontrados: ${gabinetesCarregados.length}');
 
       gabinetesCarregados.sort((a, b) => a.nome.compareTo(b.nome));
@@ -83,16 +85,16 @@ class ListaGabinetesState extends State<ListaGabinetes> {
     gabinetes.sort((a, b) {
       final numA = _extrairNumeroGabinete(a.nome);
       final numB = _extrairNumeroGabinete(b.nome);
-      
+
       // Se ambos têm números, ordena numericamente
       if (numA != null && numB != null) {
         return numA.compareTo(numB);
       }
-      
+
       // Se apenas um tem número, ele vem primeiro
       if (numA != null) return -1;
       if (numB != null) return 1;
-      
+
       // Se nenhum tem número, ordena alfabeticamente
       return a.nome.compareTo(b.nome);
     });
@@ -126,7 +128,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
         ),
       ),
     );
-    
+
     // Sempre recarrega após voltar da tela de cadastro
     _carregarGabinetes();
   }
@@ -181,7 +183,6 @@ class ListaGabinetesState extends State<ListaGabinetes> {
     return Scaffold(
       appBar: CustomAppBar(
           title: 'Lista de ${widget.unidade?.nomeAlocacao ?? 'Gabinetes'}'),
-      backgroundColor: MyAppTheme.cinzento,
       body: isLoading
           ? Center(child: CircularProgressIndicator())
           : gabinetes.isEmpty

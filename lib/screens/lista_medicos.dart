@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_theme.dart';
 import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
@@ -104,14 +105,14 @@ class ListaMedicosState extends State<ListaMedicos> {
         // Filtrar apenas médicos ativos na lista principal
         final ativo = dados['ativo'] ?? true;
         if (ativo) {
-        medicosCarregados.add(Medico(
-          id: dados['id'],
-          nome: dados['nome'] ?? '',
-          especialidade: dados['especialidade'] ?? '',
-          observacoes: dados['observacoes'],
-          disponibilidades: const [], // Não carregar aqui
+          medicosCarregados.add(Medico(
+            id: dados['id'],
+            nome: dados['nome'] ?? '',
+            especialidade: dados['especialidade'] ?? '',
+            observacoes: dados['observacoes'],
+            disponibilidades: const [], // Não carregar aqui
             ativo: ativo,
-        ));
+          ));
         }
       }
       setState(() {
@@ -179,14 +180,14 @@ class ListaMedicosState extends State<ListaMedicos> {
         // Filtrar apenas médicos ativos na lista principal
         final ativo = dados['ativo'] ?? true;
         if (ativo) {
-        todos.add(Medico(
-          id: dados['id'],
-          nome: dados['nome'] ?? '',
-          especialidade: dados['especialidade'] ?? '',
-          observacoes: dados['observacoes'],
-          disponibilidades: const [],
+          todos.add(Medico(
+            id: dados['id'],
+            nome: dados['nome'] ?? '',
+            especialidade: dados['especialidade'] ?? '',
+            observacoes: dados['observacoes'],
+            disponibilidades: const [],
             ativo: ativo,
-        ));
+          ));
         }
       }
       setState(() {
@@ -216,8 +217,9 @@ class ListaMedicosState extends State<ListaMedicos> {
     try {
       final firestore = FirebaseFirestore.instance;
       final dataAtual = DateTime.now();
-      final dataAtualNormalizada = DateTime(dataAtual.year, dataAtual.month, dataAtual.day);
-      
+      final dataAtualNormalizada =
+          DateTime(dataAtual.year, dataAtual.month, dataAtual.day);
+
       CollectionReference ocupantesRef;
       CollectionReference disponibilidadesRef;
 
@@ -243,11 +245,11 @@ class ListaMedicosState extends State<ListaMedicos> {
         final registosRef = anoDoc.reference.collection('registos');
         // Buscar todos os registos e filtrar localmente para evitar necessidade de índice
         final todosRegistos = await registosRef.get();
-        
+
         for (final doc in todosRegistos.docs) {
           final data = doc.data();
           final dataRegisto = data['data'] as String?;
-          
+
           if (dataRegisto != null) {
             final dataRegistoDate = DateTime.parse(dataRegisto);
             final dataRegistoNormalizada = DateTime(
@@ -255,25 +257,26 @@ class ListaMedicosState extends State<ListaMedicos> {
               dataRegistoDate.month,
               dataRegistoDate.day,
             );
-            
+
             // Se apagarTodos, remove tudo. Senão, remove apenas a partir de hoje (>= hoje)
             // Usa comparação direta para garantir que datas iguais também são removidas
-            final deveRemover = apagarTodos || 
-                (dataRegistoNormalizada.isAtSameMomentAs(dataAtualNormalizada) || 
-                 dataRegistoNormalizada.isAfter(dataAtualNormalizada));
+            final deveRemover = apagarTodos ||
+                (dataRegistoNormalizada
+                        .isAtSameMomentAs(dataAtualNormalizada) ||
+                    dataRegistoNormalizada.isAfter(dataAtualNormalizada));
             if (deveRemover) {
-          await doc.reference.delete();
+              await doc.reference.delete();
               disponibilidadesRemovidas++;
             }
           }
         }
-        
+
         // Verificar se ainda há registos no ano
         final registosRestantes = await registosRef.get();
         if (registosRestantes.docs.isEmpty) {
-        // Remove o documento do ano se estiver vazio
-        await anoDoc.reference.delete();
-      }
+          // Remove o documento do ano se estiver vazio
+          await anoDoc.reference.delete();
+        }
       }
 
       // 2. Apaga alocações do médico
@@ -282,7 +285,7 @@ class ListaMedicosState extends State<ListaMedicos> {
         final unidadeId = widget.unidade!.id;
         // Buscar alocações do ano atual e próximo ano
         final anosParaVerificar = [dataAtual.year, dataAtual.year + 1];
-        
+
         for (final ano in anosParaVerificar) {
           final alocacoesRef = firestore
               .collection('unidades')
@@ -290,17 +293,16 @@ class ListaMedicosState extends State<ListaMedicos> {
               .collection('alocacoes')
               .doc(ano.toString())
               .collection('registos');
-          
+
           // Buscar todas as alocações do médico e filtrar localmente
           // Isso evita a necessidade de índice composto
-          final todasAlocacoes = await alocacoesRef
-              .where('medicoId', isEqualTo: id)
-              .get();
-          
+          final todasAlocacoes =
+              await alocacoesRef.where('medicoId', isEqualTo: id).get();
+
           for (final doc in todasAlocacoes.docs) {
             final data = doc.data();
             final dataAlocacao = data['data'] as String?;
-            
+
             if (dataAlocacao != null) {
               final dataAlocacaoDate = DateTime.parse(dataAlocacao);
               final dataAlocacaoNormalizada = DateTime(
@@ -308,12 +310,13 @@ class ListaMedicosState extends State<ListaMedicos> {
                 dataAlocacaoDate.month,
                 dataAlocacaoDate.day,
               );
-              
+
               // Se apagarTodos, remove tudo. Senão, remove apenas a partir de hoje (>= hoje)
               // Usa comparação direta para garantir que datas iguais também são removidas
-              final deveRemover = apagarTodos || 
-                  (dataAlocacaoNormalizada.isAtSameMomentAs(dataAtualNormalizada) || 
-                   dataAlocacaoNormalizada.isAfter(dataAtualNormalizada));
+              final deveRemover = apagarTodos ||
+                  (dataAlocacaoNormalizada
+                          .isAtSameMomentAs(dataAtualNormalizada) ||
+                      dataAlocacaoNormalizada.isAfter(dataAtualNormalizada));
               if (deveRemover) {
                 await doc.reference.delete();
                 alocacoesRemovidas++;
@@ -327,13 +330,13 @@ class ListaMedicosState extends State<ListaMedicos> {
       // Senão, apenas marca como inativo para preservar histórico
       if (apagarTodos) {
         // Deleta o documento do médico completamente
-      await ocupantesRef.doc(id).delete();
+        await ocupantesRef.doc(id).delete();
       } else {
         // Marca o médico como inativo em vez de apagá-lo
         // Isso preserva o histórico e evita cartões "Desconhecido"
         await ocupantesRef.doc(id).update({'ativo': false});
       }
-      
+
       // Remove imediatamente da lista local para feedback visual instantâneo
       // (a lista só mostra médicos ativos)
       if (mounted) {
@@ -341,13 +344,13 @@ class ListaMedicosState extends State<ListaMedicos> {
           medicos.removeWhere((m) => m.id == id);
         });
       }
-      
+
       // Mostra mensagem de sucesso
       if (mounted) {
         final mensagem = apagarTodos
             ? 'Médico e todos os dados removidos: $disponibilidadesRemovidas disponibilidade(s) e $alocacoesRemovidas alocação(ões) deletadas.'
             : 'Médico marcado como inativo: $disponibilidadesRemovidas disponibilidade(s) e $alocacoesRemovidas alocação(ões) futuras removidas. O histórico foi preservado.';
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(mensagem),
@@ -356,7 +359,7 @@ class ListaMedicosState extends State<ListaMedicos> {
           ),
         );
       }
-      
+
       // Invalida o cache de todos os dias futuros para garantir que os cartões desapareçam
       // Isso é importante para que quando o usuário voltar ao menu principal,
       // os cartões futuros não apareçam mais (nem alocados, nem na lista de não alocados)
@@ -367,7 +370,7 @@ class ListaMedicosState extends State<ListaMedicos> {
         // Se é "todos os dados", limpa todo o cache
         AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(2000, 1, 1));
       }
-      
+
       // Recarrega a lista completa para garantir sincronização
       // Aguarda um pequeno delay para garantir que o Firebase processou a atualização
       await Future.delayed(const Duration(milliseconds: 300));
@@ -376,13 +379,13 @@ class ListaMedicosState extends State<ListaMedicos> {
       }
     } catch (e) {
       if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Erro ao deletar ${widget.unidade?.nomeOcupantes ?? 'Ocupante'}: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Erro ao deletar ${widget.unidade?.nomeOcupantes ?? 'Ocupante'}: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
         // Se houver erro, recarrega a lista para garantir estado correto
         await _carregarMedicos(refresh: true);
       }
@@ -407,17 +410,19 @@ class ListaMedicosState extends State<ListaMedicos> {
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop('apartir_hoje'),
-              child: const Text('A partir de hoje', style: TextStyle(color: Colors.orange)),
+              child: const Text('A partir de hoje',
+                  style: TextStyle(color: Colors.orange)),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop('todos'),
-              child: const Text('Todos os dados', style: TextStyle(color: Colors.red)),
+              child: const Text('Todos os dados',
+                  style: TextStyle(color: Colors.red)),
             ),
           ],
         );
       },
     );
-    
+
     if (escolha != null) {
       _deletarMedico(id, apagarTodos: escolha == 'todos');
     }
@@ -446,7 +451,6 @@ class ListaMedicosState extends State<ListaMedicos> {
     return Scaffold(
       appBar: CustomAppBar(
           title: 'Lista de ${widget.unidade?.nomeOcupantes ?? 'Ocupantes'}'),
-      backgroundColor: MyAppTheme.cinzento,
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : Center(

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/network_utils.dart';
 
@@ -24,12 +25,12 @@ class FirebaseErrorHandler {
     try {
       return await operation();
     } catch (e) {
-      print('❌ Erro na operação ${operationName ?? 'Firestore'}: $e');
+      debugPrint('❌ Erro na operação ${operationName ?? 'Firestore'}: $e');
 
       // Se for erro de rede, marcar como problema de Firebase
       if (_isNetworkError(e)) {
         _hasFirebaseIssues = true;
-        print('⚠️ Problema de rede detectado - Firebase em modo offline');
+        debugPrint('⚠️ Problema de rede detectado - Firebase em modo offline');
       }
 
       return null;

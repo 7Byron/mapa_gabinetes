@@ -1,5 +1,6 @@
 // lib/services/disponibilidade_serie_service.dart
 
+import 'package:flutter/foundation.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../models/disponibilidade.dart';
@@ -54,7 +55,7 @@ class DisponibilidadeSerieService {
     // Salvar no Firestore
     await SerieService.salvarSerie(serie, unidade: unidade);
 
-    print(
+    debugPrint(
         '✅ Série criada: $tipo para médico $medicoId a partir de ${dataInicial.day}/${dataInicial.month}/${dataInicial.year}');
 
     return serie;
@@ -81,7 +82,7 @@ class DisponibilidadeSerieService {
 
       return serie;
     } catch (e) {
-      print('❌ Erro ao converter disponibilidade para série: $e');
+      debugPrint('❌ Erro ao converter disponibilidade para série: $e');
       return null;
     }
   }
@@ -103,7 +104,7 @@ class DisponibilidadeSerieService {
     );
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
-    print(
+    debugPrint(
         '✅ Exceção criada: data ${data.day}/${data.month}/${data.year} cancelada para série $serieId');
   }
 
@@ -126,7 +127,7 @@ class DisponibilidadeSerieService {
     );
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
-    print(
+    debugPrint(
         '✅ Exceção criada: horários modificados para data ${data.day}/${data.month}/${data.year}');
   }
 
@@ -142,12 +143,14 @@ class DisponibilidadeSerieService {
     final dataNormalizada = DateTime(data.year, data.month, data.day);
 
     // Verificar se já existe uma exceção para esta série e data
+    // CORREÇÃO: Forçar servidor para garantir que exceções recém-criadas sejam encontradas
     final excecoesExistentes = await SerieService.carregarExcecoes(
       medicoId,
       unidade: unidade,
       dataInicio: dataNormalizada,
       dataFim: dataNormalizada,
       serieId: serieId,
+      forcarServidor: true, // Forçar servidor para garantir dados atualizados
     );
 
     ExcecaoSerie excecao;
@@ -177,7 +180,7 @@ class DisponibilidadeSerieService {
             excecaoExistente.horarios, // Manter horários existentes se houver
         gabineteId: novoGabineteId, // Atualizar o gabinete
       );
-      print('🔄 Atualizando exceção existente: ${excecao.id}');
+      debugPrint('🔄 Atualizando exceção existente: ${excecao.id}');
     } else {
       // Criar nova exceção
       final excecaoId =
@@ -189,13 +192,13 @@ class DisponibilidadeSerieService {
         cancelada: false,
         gabineteId: novoGabineteId,
       );
-      print('➕ Criando nova exceção: ${excecao.id}');
+      debugPrint('➕ Criando nova exceção: ${excecao.id}');
     }
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
-    print(
-        '✅ Exceção salva: ID=${excecao.id}, série=${serieId}, data=${dataNormalizada.day}/${dataNormalizada.month}/${dataNormalizada.year}, gabinete=$novoGabineteId');
-    print(
+    debugPrint(
+        '✅ Exceção salva: ID=${excecao.id}, série=$serieId, data=${dataNormalizada.day}/${dataNormalizada.month}/${dataNormalizada.year}, gabinete=$novoGabineteId');
+    debugPrint(
         '   📋 Detalhes: dataKey=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, chaveEsperada=${serieId}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
   }
 
@@ -226,9 +229,9 @@ class DisponibilidadeSerieService {
       );
 
       await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
-      print('✅ Série alocada ao gabinete $gabineteId');
+      debugPrint('✅ Série alocada ao gabinete $gabineteId');
     } catch (e) {
-      print('❌ Erro ao alocar série: $e');
+      debugPrint('❌ Erro ao alocar série: $e');
       rethrow;
     }
   }
@@ -259,9 +262,9 @@ class DisponibilidadeSerieService {
       );
 
       await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
-      print('✅ Série desalocada (gabinete removido)');
+      debugPrint('✅ Série desalocada (gabinete removido)');
     } catch (e) {
-      print('❌ Erro ao desalocar série: $e');
+      debugPrint('❌ Erro ao desalocar série: $e');
       rethrow;
     }
   }

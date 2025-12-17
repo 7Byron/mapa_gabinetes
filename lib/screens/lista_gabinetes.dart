@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
-import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
@@ -24,13 +23,6 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   void initState() {
     super.initState();
     _carregarGabinetes();
-    // Adiciona observer para detectar retorno à tela
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ModalRoute.of(context)?.addScopedWillPopCallback(() async {
-        _carregarGabinetes();
-        return true;
-      });
-    });
   }
 
   @override
@@ -58,6 +50,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
       });
     } catch (e) {
       debugPrint('Erro geral ao carregar gabinetes: $e');
+      if (!mounted) return;
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -136,6 +129,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   Future<void> _deletarGabinete(String id) async {
     try {
       await deletarGabinete(id, unidade: widget.unidade);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Gabinete eliminado com sucesso!'),
@@ -144,6 +138,7 @@ class ListaGabinetesState extends State<ListaGabinetes> {
       );
       _carregarGabinetes();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Erro ao eliminar gabinete: $e'),
@@ -179,98 +174,107 @@ class ListaGabinetesState extends State<ListaGabinetes> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: CustomAppBar(
-          title: 'Lista de ${widget.unidade?.nomeAlocacao ?? 'Gabinetes'}'),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : gabinetes.isEmpty
-              ? Center(child: Text('Nenhum gabinete encontrado'))
-              : Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
-                    child: ListView.builder(
-                      itemCount: gabinetesPorSetor.length,
-                      itemBuilder: (context, index) {
-                        String setor = gabinetesPorSetor.keys.elementAt(index);
-                        List<Gabinete> gabinetesDoSetor =
-                            gabinetesPorSetor[setor]!;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Text(
-                                setor,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+    return PopScope(
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) {
+          _carregarGabinetes();
+        }
+      },
+      child: Scaffold(
+        appBar: CustomAppBar(
+            title: 'Lista de ${widget.unidade?.nomeAlocacao ?? 'Gabinetes'}'),
+        body: isLoading
+            ? Center(child: CircularProgressIndicator())
+            : gabinetes.isEmpty
+                ? Center(child: Text('Nenhum gabinete encontrado'))
+                : Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: ListView.builder(
+                        itemCount: gabinetesPorSetor.length,
+                        itemBuilder: (context, index) {
+                          String setor =
+                              gabinetesPorSetor.keys.elementAt(index);
+                          List<Gabinete> gabinetesDoSetor =
+                              gabinetesPorSetor[setor]!;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  setor,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                            for (var gabinete in gabinetesDoSetor)
-                              Card(
-                                margin: EdgeInsets.symmetric(
-                                    vertical: 8, horizontal: 16),
-                                child: ListTile(
-                                  title: RichText(
-                                    text: TextSpan(
-                                      text: 'Gabinete ${gabinete.nome} - ',
-                                      style: TextStyle(
-                                        color: Colors.black,
-                                        fontSize: 16,
-                                      ),
-                                      children: [
-                                        TextSpan(
-                                          text: gabinete
-                                                  .especialidadesPermitidas
-                                                  .isNotEmpty
-                                              ? gabinete
-                                                  .especialidadesPermitidas
-                                                  .first
-                                              : 'Sem Especialidades',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 16,
+                              for (var gabinete in gabinetesDoSetor)
+                                Card(
+                                  margin: EdgeInsets.symmetric(
+                                      vertical: 8, horizontal: 16),
+                                  child: ListTile(
+                                    title: RichText(
+                                      text: TextSpan(
+                                        text: 'Gabinete ${gabinete.nome} - ',
+                                        style: TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 16,
+                                        ),
+                                        children: [
+                                          TextSpan(
+                                            text: gabinete
+                                                    .especialidadesPermitidas
+                                                    .isNotEmpty
+                                                ? gabinete
+                                                    .especialidadesPermitidas
+                                                    .first
+                                                : 'Sem Especialidades',
+                                            style: TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 16,
+                                            ),
                                           ),
+                                        ],
+                                      ),
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: Icon(Icons.edit,
+                                              color: MyAppTheme.azulEscuro),
+                                          tooltip: 'Editar',
+                                          onPressed: () {
+                                            _adicionarOuEditarGabinete(
+                                                gabineteExistente: gabinete);
+                                          },
+                                        ),
+                                        IconButton(
+                                          icon: Icon(Icons.delete,
+                                              color: Colors.red),
+                                          tooltip: 'Eliminar',
+                                          onPressed: () => _confirmarDelecao(
+                                              context, gabinete.id),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(Icons.edit,
-                                            color: MyAppTheme.azulEscuro),
-                                        tooltip: 'Editar',
-                                        onPressed: () {
-                                          _adicionarOuEditarGabinete(
-                                              gabineteExistente: gabinete);
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: Icon(Icons.delete,
-                                            color: Colors.red),
-                                        tooltip: 'Eliminar',
-                                        onPressed: () => _confirmarDelecao(
-                                            context, gabinete.id),
-                                      ),
-                                    ],
-                                  ),
                                 ),
-                              ),
-                          ],
-                        );
-                      },
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _adicionarOuEditarGabinete(),
-        tooltip: 'Adicionar Gabinete',
-        child: Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _adicionarOuEditarGabinete(),
+          tooltip: 'Adicionar Gabinete',
+          child: Icon(Icons.add),
+        ),
       ),
     );
   }

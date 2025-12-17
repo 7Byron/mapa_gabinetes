@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -23,58 +24,58 @@ class PasswordService {
   static Future<void> saveProjectPassword(String password,
       {String? unidadeId}) async {
     try {
-      print('🔐 === SALVANDO PASSWORD DO PROJETO ===');
-      print('   - Unidade ID: $unidadeId');
-      print('   - Password: ${password.length} caracteres');
+      debugPrint('🔐 === SALVANDO PASSWORD DO PROJETO ===');
+      debugPrint('   - Unidade ID: $unidadeId');
+      debugPrint('   - Password: ${password.length} caracteres');
 
       // Salva no documento da unidade se tiver unidadeId
       if (unidadeId != null && unidadeId.isNotEmpty) {
-        print('   - Tentando salvar no documento da unidade...');
+        debugPrint('   - Tentando salvar no documento da unidade...');
 
         final docRef =
             FirebaseFirestore.instance.collection('unidades').doc(unidadeId);
 
-        print('   - Referência do documento: ${docRef.path}');
+        debugPrint('   - Referência do documento: ${docRef.path}');
 
         await docRef.update({
           'project_password': password,
           'updated_at': FieldValue.serverTimestamp(),
         });
 
-        print(
+        debugPrint(
             '✅ Password do projeto salva no documento da unidade com sucesso!');
 
         // Verificar se foi realmente salva
         final doc = await docRef.get();
         if (doc.exists) {
-          print('✅ Documento confirmado no Firebase:');
-          print(
+          debugPrint('✅ Documento confirmado no Firebase:');
+          debugPrint(
               '   - project_password: ${doc.data()?['project_password'] != null ? "Presente" : "Ausente"}');
-          print(
+          debugPrint(
               '   - updated_at: ${doc.data()?['updated_at'] != null ? "Presente" : "Ausente"}');
         } else {
-          print('❌ Documento não encontrado após salvar!');
+          debugPrint('❌ Documento não encontrado após salvar!');
         }
       } else {
-        print('⚠️ Unidade ID é nulo ou vazio - não salvando no Firebase');
+        debugPrint('⚠️ Unidade ID é nulo ou vazio - não salvando no Firebase');
       }
 
       // Também salva localmente para cache
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_projectPasswordKey, password);
-      print('✅ Password do projeto salva localmente');
+      debugPrint('✅ Password do projeto salva localmente');
     } catch (e) {
-      print('❌ Erro ao salvar password do projeto: $e');
-      print('❌ Stack trace: ${StackTrace.current}');
+      debugPrint('❌ Erro ao salvar password do projeto: $e');
+      debugPrint('❌ Stack trace: ${StackTrace.current}');
 
       // Em caso de erro no Firebase, ainda salva localmente
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_projectPasswordKey, password);
-        print(
+        debugPrint(
             '✅ Password do projeto salva apenas localmente devido a erro no Firebase');
       } catch (localError) {
-        print('❌ Erro ao salvar password localmente: $localError');
+        debugPrint('❌ Erro ao salvar password localmente: $localError');
       }
       rethrow;
     }
@@ -84,58 +85,58 @@ class PasswordService {
   static Future<void> saveAdminPassword(String password,
       {String? unidadeId}) async {
     try {
-      print('🔐 === SALVANDO PASSWORD DO ADMINISTRADOR ===');
-      print('   - Unidade ID: $unidadeId');
-      print('   - Password: ${password.length} caracteres');
+      debugPrint('🔐 === SALVANDO PASSWORD DO ADMINISTRADOR ===');
+      debugPrint('   - Unidade ID: $unidadeId');
+      debugPrint('   - Password: ${password.length} caracteres');
 
       // Salva no documento da unidade se tiver unidadeId
       if (unidadeId != null && unidadeId.isNotEmpty) {
-        print('   - Tentando salvar no documento da unidade...');
+        debugPrint('   - Tentando salvar no documento da unidade...');
 
         final docRef =
             FirebaseFirestore.instance.collection('unidades').doc(unidadeId);
 
-        print('   - Referência do documento: ${docRef.path}');
+        debugPrint('   - Referência do documento: ${docRef.path}');
 
         await docRef.update({
           'admin_password': password,
           'updated_at': FieldValue.serverTimestamp(),
         });
 
-        print(
+        debugPrint(
             '✅ Password do administrador salva no documento da unidade com sucesso!');
 
         // Verificar se foi realmente salva
         final doc = await docRef.get();
         if (doc.exists) {
-          print('✅ Documento confirmado no Firebase:');
-          print(
+          debugPrint('✅ Documento confirmado no Firebase:');
+          debugPrint(
               '   - admin_password: ${doc.data()?['admin_password'] != null ? "Presente" : "Ausente"}');
-          print(
+          debugPrint(
               '   - updated_at: ${doc.data()?['updated_at'] != null ? "Presente" : "Ausente"}');
         } else {
-          print('❌ Documento não encontrado após salvar!');
+          debugPrint('❌ Documento não encontrado após salvar!');
         }
       } else {
-        print('⚠️ Unidade ID é nulo ou vazio - não salvando no Firebase');
+        debugPrint('⚠️ Unidade ID é nulo ou vazio - não salvando no Firebase');
       }
 
       // Também salva localmente para cache
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_adminPasswordKey, password);
-      print('✅ Password do administrador salva localmente');
+      debugPrint('✅ Password do administrador salva localmente');
     } catch (e) {
-      print('❌ Erro ao salvar password do administrador: $e');
-      print('❌ Stack trace: ${StackTrace.current}');
+      debugPrint('❌ Erro ao salvar password do administrador: $e');
+      debugPrint('❌ Stack trace: ${StackTrace.current}');
 
       // Em caso de erro no Firebase, ainda salva localmente
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_adminPasswordKey, password);
-        print(
+        debugPrint(
             '✅ Password do administrador salva apenas localmente devido a erro no Firebase');
       } catch (localError) {
-        print('❌ Erro ao salvar password localmente: $localError');
+        debugPrint('❌ Erro ao salvar password localmente: $localError');
       }
       rethrow;
     }
@@ -144,7 +145,7 @@ class PasswordService {
   /// Obtém a password do projeto (tenta Firebase primeiro, depois local)
   static Future<String?> getProjectPassword({String? unidadeId}) async {
     try {
-      print('🔍 Obtendo password do projeto para unidade: $unidadeId');
+      debugPrint('🔍 Obtendo password do projeto para unidade: $unidadeId');
 
       // Tenta obter do documento da unidade primeiro
       if (unidadeId != null) {
@@ -158,10 +159,10 @@ class PasswordService {
           // Atualiza cache local
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_projectPasswordKey, password);
-          print('✅ Password do projeto obtida do documento da unidade');
+          debugPrint('✅ Password do projeto obtida do documento da unidade');
           return password;
         } else {
-          print(
+          debugPrint(
               '⚠️ Password do projeto não encontrada no documento da unidade');
         }
       }
@@ -170,21 +171,21 @@ class PasswordService {
       final prefs = await SharedPreferences.getInstance();
       final localPassword = prefs.getString(_projectPasswordKey);
       if (localPassword != null) {
-        print('✅ Password do projeto obtida do cache local');
+        debugPrint('✅ Password do projeto obtida do cache local');
       } else {
-        print('⚠️ Password do projeto não encontrada localmente');
+        debugPrint('⚠️ Password do projeto não encontrada localmente');
       }
       return localPassword;
     } catch (e) {
-      print('❌ Erro ao obter password do projeto: $e');
+      debugPrint('❌ Erro ao obter password do projeto: $e');
       // Em caso de erro, tenta local
       try {
         final prefs = await SharedPreferences.getInstance();
         final localPassword = prefs.getString(_projectPasswordKey);
-        print('✅ Password do projeto obtida do cache local (fallback)');
+        debugPrint('✅ Password do projeto obtida do cache local (fallback)');
         return localPassword;
       } catch (localError) {
-        print('❌ Erro ao obter password localmente: $localError');
+        debugPrint('❌ Erro ao obter password localmente: $localError');
         return null;
       }
     }
@@ -193,7 +194,8 @@ class PasswordService {
   /// Obtém a password do administrador (tenta Firebase primeiro, depois local)
   static Future<String?> getAdminPassword({String? unidadeId}) async {
     try {
-      print('🔍 Obtendo password do administrador para unidade: $unidadeId');
+      debugPrint(
+          '🔍 Obtendo password do administrador para unidade: $unidadeId');
 
       // Tenta obter do documento da unidade primeiro
       if (unidadeId != null) {
@@ -207,10 +209,11 @@ class PasswordService {
           // Atualiza cache local
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_adminPasswordKey, password);
-          print('✅ Password do administrador obtida do documento da unidade');
+          debugPrint(
+              '✅ Password do administrador obtida do documento da unidade');
           return password;
         } else {
-          print(
+          debugPrint(
               '⚠️ Password do administrador não encontrada no documento da unidade');
         }
       }
@@ -219,21 +222,22 @@ class PasswordService {
       final prefs = await SharedPreferences.getInstance();
       final localPassword = prefs.getString(_adminPasswordKey);
       if (localPassword != null) {
-        print('✅ Password do administrador obtida do cache local');
+        debugPrint('✅ Password do administrador obtida do cache local');
       } else {
-        print('⚠️ Password do administrador não encontrada localmente');
+        debugPrint('⚠️ Password do administrador não encontrada localmente');
       }
       return localPassword;
     } catch (e) {
-      print('❌ Erro ao obter password do administrador: $e');
+      debugPrint('❌ Erro ao obter password do administrador: $e');
       // Em caso de erro, tenta local
       try {
         final prefs = await SharedPreferences.getInstance();
         final localPassword = prefs.getString(_adminPasswordKey);
-        print('✅ Password do administrador obtida do cache local (fallback)');
+        debugPrint(
+            '✅ Password do administrador obtida do cache local (fallback)');
         return localPassword;
       } catch (localError) {
-        print('❌ Erro ao obter password localmente: $localError');
+        debugPrint('❌ Erro ao obter password localmente: $localError');
         return null;
       }
     }
@@ -277,7 +281,7 @@ class PasswordService {
   /// Verifica se as passwords estão configuradas
   static Future<bool> hasPasswordsConfigured({String? unidadeId}) async {
     try {
-      print(
+      debugPrint(
           '🔍 Verificando se passwords estão configuradas para unidade: $unidadeId');
 
       // Primeiro tenta verificar no documento da unidade
@@ -294,12 +298,12 @@ class PasswordService {
           final hasAdmin = data['admin_password'] != null &&
               data['admin_password'].toString().isNotEmpty;
 
-          print('📊 Status das passwords no documento da unidade:');
-          print(
+          debugPrint('📊 Status das passwords no documento da unidade:');
+          debugPrint(
               '   - Password do projeto: ${hasProject ? "✅ Configurada" : "❌ Não configurada"}');
-          print(
+          debugPrint(
               '   - Password do administrador: ${hasAdmin ? "✅ Configurada" : "❌ Não configurada"}');
-          print(
+          debugPrint(
               '   - Total: ${hasProject && hasAdmin ? "✅ Ambas configuradas" : "❌ Incompleto"}');
 
           if (hasProject && hasAdmin) {
@@ -315,17 +319,17 @@ class PasswordService {
       final hasProject = projectPassword != null && projectPassword.isNotEmpty;
       final hasAdmin = adminPassword != null && adminPassword.isNotEmpty;
 
-      print('📊 Status das passwords no cache local:');
-      print(
+      debugPrint('📊 Status das passwords no cache local:');
+      debugPrint(
           '   - Password do projeto: ${hasProject ? "✅ Configurada" : "❌ Não configurada"}');
-      print(
+      debugPrint(
           '   - Password do administrador: ${hasAdmin ? "✅ Configurada" : "❌ Não configurada"}');
-      print(
+      debugPrint(
           '   - Total: ${hasProject && hasAdmin ? "✅ Ambas configuradas" : "❌ Incompleto"}');
 
       return hasProject && hasAdmin;
     } catch (e) {
-      print('❌ Erro ao verificar passwords configuradas: $e');
+      debugPrint('❌ Erro ao verificar passwords configuradas: $e');
       return false;
     }
   }
@@ -360,7 +364,7 @@ class PasswordService {
   /// Carrega passwords do documento da unidade para cache local
   static Future<void> loadPasswordsFromFirebase(String unidadeId) async {
     try {
-      print('🔄 Carregando passwords do documento da unidade: $unidadeId');
+      debugPrint('🔄 Carregando passwords do documento da unidade: $unidadeId');
 
       final doc = await FirebaseFirestore.instance
           .collection('unidades')
@@ -373,21 +377,21 @@ class PasswordService {
 
         if (data['project_password'] != null) {
           await prefs.setString(_projectPasswordKey, data['project_password']);
-          print('✅ Password do projeto carregada do documento da unidade');
+          debugPrint('✅ Password do projeto carregada do documento da unidade');
         }
 
         if (data['admin_password'] != null) {
           await prefs.setString(_adminPasswordKey, data['admin_password']);
-          print(
+          debugPrint(
               '✅ Password do administrador carregada do documento da unidade');
         }
 
-        print('✅ Todas as passwords carregadas com sucesso');
+        debugPrint('✅ Todas as passwords carregadas com sucesso');
       } else {
-        print('⚠️ Documento da unidade não encontrado');
+        debugPrint('⚠️ Documento da unidade não encontrado');
       }
     } catch (e) {
-      print('❌ Erro ao carregar passwords do documento da unidade: $e');
+      debugPrint('❌ Erro ao carregar passwords do documento da unidade: $e');
     }
   }
 
@@ -405,7 +409,7 @@ class PasswordService {
           prefs.getBool('is_admin_session_$unidadeId') ?? false;
       return isAdminSession;
     } catch (e) {
-      print('❌ Erro ao verificar se usuário é administrador: $e');
+      debugPrint('❌ Erro ao verificar se usuário é administrador: $e');
       return false;
     }
   }

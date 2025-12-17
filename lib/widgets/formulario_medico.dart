@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
-import '../main.dart';
 import '../services/medico_salvar_service.dart';
 import '../models/unidade.dart';
 
@@ -61,7 +60,7 @@ class FormularioMedicoState extends State<FormularioMedico> {
         isLoadingEspecialidades = false;
       });
     } catch (e) {
-      print('❌ Erro ao carregar especialidades: $e');
+      debugPrint('❌ Erro ao carregar especialidades: $e');
       setState(() {
         isLoadingEspecialidades = false;
       });
@@ -105,12 +104,13 @@ class FormularioMedicoState extends State<FormularioMedico> {
                 if (texto.isEmpty) {
                   return especialidadesDisponiveis;
                 }
-                
+
                 final filtradas = especialidadesDisponiveis
                     .where((especialidade) =>
                         especialidade.toLowerCase().contains(texto))
                     .toList();
-                filtradas.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+                filtradas
+                    .sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
                 return filtradas;
               },
               onSelected: (String selection) {
@@ -128,15 +128,16 @@ class FormularioMedicoState extends State<FormularioMedico> {
                 if (textEditingController.text != localController.text) {
                   textEditingController.text = localController.text;
                 }
-                
+
                 // Atualiza o controller local quando o usuário digita
                 textEditingController.addListener(() {
                   if (textEditingController.text != localController.text) {
                     localController.text = textEditingController.text;
-                    widget.especialidadeController.text = textEditingController.text;
+                    widget.especialidadeController.text =
+                        textEditingController.text;
                   }
                 });
-                
+
                 return TextField(
                   controller: textEditingController,
                   focusNode: focusNode,
@@ -171,15 +172,17 @@ class FormularioMedicoState extends State<FormularioMedico> {
                       bottomRight: Radius.circular(4),
                     ),
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 200, maxWidth: 400),
+                      constraints:
+                          const BoxConstraints(maxHeight: 200, maxWidth: 400),
                       child: ListView.builder(
                         shrinkWrap: true,
                         padding: EdgeInsets.zero,
                         itemCount: options.length,
                         itemBuilder: (BuildContext context, int index) {
                           final String option = options.elementAt(index);
-                          final bool isSelected = localController.text.toLowerCase().trim() == 
-                              option.toLowerCase();
+                          final bool isSelected =
+                              localController.text.toLowerCase().trim() ==
+                                  option.toLowerCase();
                           return InkWell(
                             onTap: () {
                               onSelected(option);
@@ -190,8 +193,8 @@ class FormularioMedicoState extends State<FormularioMedico> {
                                 vertical: 12.0,
                               ),
                               decoration: BoxDecoration(
-                                color: isSelected 
-                                    ? MyAppTheme.roxo.withOpacity(0.1)
+                                color: isSelected
+                                    ? MyAppTheme.roxo.withValues(alpha: 0.1)
                                     : Colors.transparent,
                               ),
                               child: Row(
@@ -201,10 +204,10 @@ class FormularioMedicoState extends State<FormularioMedico> {
                                       option,
                                       style: TextStyle(
                                         fontSize: 14,
-                                        color: isSelected 
+                                        color: isSelected
                                             ? MyAppTheme.roxo
                                             : Colors.black87,
-                                        fontWeight: isSelected 
+                                        fontWeight: isSelected
                                             ? FontWeight.w500
                                             : FontWeight.normal,
                                       ),

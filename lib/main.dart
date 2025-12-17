@@ -13,19 +13,19 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    print('✅ Firebase inicializado com sucesso');
+    debugPrint('✅ Firebase inicializado com sucesso');
   } catch (e, stackTrace) {
-    print('❌ Erro ao inicializar Firebase: $e');
-    print('Stack trace: $stackTrace');
+    debugPrint('❌ Erro ao inicializar Firebase: $e');
+    debugPrint('Stack trace: $stackTrace');
     // Continuar mesmo com erro para não bloquear o app
   }
 
   // Inicializar dados de locale para formatação de datas
   try {
     await initializeDateFormatting('pt_PT', null);
-    print('✅ Locale pt_PT inicializado com sucesso');
+    debugPrint('✅ Locale pt_PT inicializado com sucesso');
   } catch (e) {
-    print('⚠️ Erro ao inicializar locale pt_PT: $e');
+    debugPrint('⚠️ Erro ao inicializar locale pt_PT: $e');
     // Continuar mesmo com erro
   }
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:mapa_gabinetes/main.dart';
 
 // Services
 import '../models/disponibilidade.dart';
@@ -15,6 +14,11 @@ import '../services/disponibilidade_remocao.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
+import '../services/disponibilidade_unica_service.dart';
+import '../services/cadastro_medico_salvar_service.dart';
+import '../services/alocacao_disponibilidade_remocao_service.dart';
+import '../services/excecao_serie_criacao_service.dart';
+import '../services/disponibilidade_data_gestao_service.dart';
 
 // Widgets
 import '../widgets/disponibilidades_grid.dart';
@@ -27,8 +31,9 @@ import 'package:intl/intl.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/alocacao_medicos_logic.dart';
+import '../utils/series_helper.dart';
+import '../utils/cadastro_medicos_helper.dart';
 import 'alocacao_medicos_screen.dart';
-import '../services/password_service.dart';
 
 class CadastroMedico extends StatefulWidget {
   final Medico? medico;
@@ -168,12 +173,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
     // CORREÇÃO CRÍTICA: Verificar mudanças nas disponibilidades "Única" primeiro
     // Isso garante que disponibilidades "Única" novas sejam sempre detectadas,
     // mesmo quando múltiplas séries são criadas rapidamente
-    final disponibilidadesUnicas = disponibilidades
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
-    final disponibilidadesUnicasOriginal = _disponibilidadesOriginal
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
+    final disponibilidadesUnicas =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            disponibilidades, _medicoId);
+    final disponibilidadesUnicasOriginal =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            _disponibilidadesOriginal, _medicoId);
 
     // Verificar se há disponibilidades "Única" novas ou removidas
     final temUnicasNovas = disponibilidadesUnicas.any((d) =>
@@ -182,14 +187,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
             orig.data.year == d.data.year &&
             orig.data.month == d.data.month &&
             orig.data.day == d.data.day &&
-            _listasIguais(orig.horarios, d.horarios)));
+            CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios)));
     final temUnicasRemovidas = disponibilidadesUnicasOriginal.any((orig) =>
         !disponibilidadesUnicas.any((d) =>
             d.id == orig.id &&
             d.data.year == orig.data.year &&
             d.data.month == orig.data.month &&
             d.data.day == orig.data.day &&
-            _listasIguais(d.horarios, orig.horarios)));
+            CadastroMedicosHelper.listasIguais(d.horarios, orig.horarios)));
 
     if (temUnicasNovas || temUnicasRemovidas) {
       mudancas = true;
@@ -209,7 +214,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
             orig.data.month == disp.data.month &&
             orig.data.day == disp.data.day &&
             orig.tipo == disp.tipo &&
-            _listasIguais(orig.horarios, disp.horarios));
+            CadastroMedicosHelper.listasIguais(orig.horarios, disp.horarios));
         if (!existeOriginal) {
           mudancas = true;
           break;
@@ -225,7 +230,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
               disp.data.month == orig.data.month &&
               disp.data.day == orig.data.day &&
               disp.tipo == orig.tipo &&
-              _listasIguais(disp.horarios, orig.horarios));
+              CadastroMedicosHelper.listasIguais(disp.horarios, orig.horarios));
           if (!existeAtual) {
             mudancas = true;
             break;
@@ -238,35 +243,27 @@ class CadastroMedicoState extends State<CadastroMedico> {
     });
   }
 
-  bool _listasIguais(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
   /// Salva automaticamente antes de sair (se houver mudanças)
   Future<bool> _confirmarSaida() async {
     // CORREÇÃO CRÍTICA: Verificar se há cartões únicos não salvos
     // Mesmo que _houveMudancas seja false, se há cartões únicos, precisamos salvar
     // IMPORTANTE: Recalcular disponibilidades únicas para garantir lista atualizada
-    final disponibilidadesUnicasAtualizadas = disponibilidades
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
-    final disponibilidadesUnicasOriginal = _disponibilidadesOriginal
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
+    final disponibilidadesUnicasAtualizadas =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            disponibilidades, _medicoId);
+    final disponibilidadesUnicasOriginal =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            _disponibilidadesOriginal, _medicoId);
 
     // CORREÇÃO: Verificar se há disponibilidades "Única" que não estão nas originais
     // Usar comparação mais robusta que verifica ID, data completa e horários
-    final temUnicasNaoSalvas = disponibilidadesUnicasAtualizadas.any((d) {
+    disponibilidadesUnicasAtualizadas.any((d) {
       final existeOriginal = disponibilidadesUnicasOriginal.any((orig) =>
           orig.id == d.id &&
           orig.data.year == d.data.year &&
           orig.data.month == d.data.month &&
           orig.data.day == d.data.day &&
-          _listasIguais(orig.horarios, d.horarios));
+          CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios));
       return !existeOriginal;
     });
     // CORREÇÃO CRÍTICA: Sempre forçar verificação de mudanças antes de sair
@@ -277,9 +274,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     // CORREÇÃO: Recalcular disponibilidades únicas após verificar mudanças
     // Isso garante que temos a lista mais atualizada (pode ter mudado desde a primeira verificação)
-    final disponibilidadesUnicasRecalculadas = disponibilidades
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
+    final disponibilidadesUnicasRecalculadas =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            disponibilidades, _medicoId);
 
     // Atualizar temUnicasNaoSalvas após verificar mudanças novamente
     final temUnicasNaoSalvasAtualizado =
@@ -289,7 +286,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
           orig.data.year == d.data.year &&
           orig.data.month == d.data.month &&
           orig.data.day == d.data.day &&
-          _listasIguais(orig.horarios, d.horarios));
+          CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios));
 
       return !existeOriginal;
     });
@@ -306,17 +303,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     // CORREÇÃO: Sempre salvar se há disponibilidades "Única" não salvas
     // Usar a versão atualizada da verificação com lista atualizada
-    if (temUnicasNaoSalvasAtualizado || _houveMudancas) {
-      final unicasNaoSalvas = disponibilidadesUnicasRecalculadas
-          .where((d) => !disponibilidadesUnicasOriginal.any((orig) =>
-              orig.id == d.id &&
-              orig.data.year == d.data.year &&
-              orig.data.month == d.data.month &&
-              orig.data.day == d.data.day &&
-              _listasIguais(orig.horarios, d.horarios)))
-          .toList();
-      for (final disp in unicasNaoSalvas) {}
-    }
+    // Verificação de mudanças já feita acima
 
     // Salvar automaticamente antes de sair
     await _salvarMedico();
@@ -337,28 +324,45 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
   /// Navega para a página de alocação, salvando antes se houver mudanças
   Future<void> _navegarParaAlocacao() async {
-    // Verificar se há mudanças não salvas
+    // CORREÇÃO CRÍTICA: Sempre verificar mudanças e disponibilidades únicas
+    // Antes de qualquer outra operação, para garantir que sejam capturadas corretamente
     _verificarMudancas();
 
-    // Verificar se há disponibilidades "Única" não salvas
-    final disponibilidadesUnicasAtualizadas = disponibilidades
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
-    final disponibilidadesUnicasOriginal = _disponibilidadesOriginal
-        .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-        .toList();
+    // CORREÇÃO CRÍTICA: Capturar disponibilidades únicas ANTES de qualquer validação
+    // que possa modificar a lista (fazendo cópia profunda)
+    final todasDisponibilidadesCopia =
+        CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
+            disponibilidades);
+    final disponibilidadesUnicasParaVerificar =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            todasDisponibilidadesCopia, _medicoId);
 
-    final temUnicasNaoSalvas = disponibilidadesUnicasAtualizadas.any((d) {
+    final disponibilidadesUnicasOriginal =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            _disponibilidadesOriginal, _medicoId);
+
+    final temUnicasNaoSalvas = disponibilidadesUnicasParaVerificar.any((d) {
       return !disponibilidadesUnicasOriginal.any((orig) =>
           orig.id == d.id &&
           orig.data.year == d.data.year &&
           orig.data.month == d.data.month &&
           orig.data.day == d.data.day &&
-          _listasIguais(orig.horarios, d.horarios));
+          CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios));
     });
 
-    // Se houver mudanças ou disponibilidades não salvas, salvar antes de navegar
-    if (_houveMudancas || temUnicasNaoSalvas) {
+    // CORREÇÃO CRÍTICA: SEMPRE salvar se há disponibilidades únicas na lista, independentemente de _houveMudancas
+    // Se há disponibilidades únicas, sempre salvar para garantir que sejam persistidas
+    debugPrint(
+        '🔍 [_navegarParaAlocacao] Verificando salvamento: _houveMudancas=$_houveMudancas, temUnicasNaoSalvas=$temUnicasNaoSalvas, totalUnicas=${disponibilidadesUnicasParaVerificar.length}');
+
+    // CORREÇÃO RADICAL: Se há disponibilidades únicas na lista, SEMPRE salvar, mesmo que _houveMudancas seja false
+    // porque pode ser que as disponibilidades únicas tenham sido criadas mas a flag não foi atualizada
+    final deveSalvar =
+        _houveMudancas || disponibilidadesUnicasParaVerificar.isNotEmpty;
+
+    if (deveSalvar) {
+      debugPrint(
+          '✅ [_navegarParaAlocacao] Vai salvar antes de navegar (mudanças: $_houveMudancas, únicas: ${disponibilidadesUnicasParaVerificar.length})');
       if (widget.unidade == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -850,43 +854,18 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // OTIMIZAÇÃO: Remover apenas disponibilidades do ano atual, não todas
         // Isso é mais eficiente quando só mudou o mês
         // IMPORTANTE: Não remover disponibilidades "Única" - elas são salvas no Firestore
-        final disponibilidadesAntigas = this
-            .disponibilidades
-            .where((d) =>
-                d.id.startsWith('serie_') &&
-                d.medicoId == medicoId &&
-                d.data.year == anoParaCarregar)
-            .toList();
-
         this.disponibilidades.removeWhere((d) =>
             d.id.startsWith('serie_') &&
             d.medicoId == medicoId &&
             d.data.year == anoParaCarregar);
 
         // CORREÇÃO: Carregar disponibilidades "Única" do Firestore
-        List<Disponibilidade> dispsUnicas = [];
-        try {
-          final firestore = FirebaseFirestore.instance;
-          final unidadeId = widget.unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-          final disponibilidadesRef = firestore
-              .collection('unidades')
-              .doc(unidadeId)
-              .collection('ocupantes')
-              .doc(medicoId)
-              .collection('disponibilidades')
-              .doc(anoParaCarregar.toString())
-              .collection('registos');
-
-          final snapshot =
-              await disponibilidadesRef.where('tipo', isEqualTo: 'Única').get();
-
-          dispsUnicas = snapshot.docs
-              .map((doc) => Disponibilidade.fromMap(doc.data()))
-              .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
-              .toList();
-        } catch (e) {
-          // Erro ao carregar disponibilidades únicas - continuar sem elas
-        }
+        final dispsUnicas =
+            await DisponibilidadeUnicaService.carregarDisponibilidadesUnicas(
+          medicoId,
+          anoParaCarregar,
+          widget.unidade,
+        );
 
         if (mounted) {
           setState(() {
@@ -922,8 +901,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
           });
         }
 
-        for (final excecao in excecoesCarregadas) {}
-
         // NOVO MODELO: Apenas séries - adicionar disponibilidades geradas
         // As exceções já são aplicadas automaticamente na geração
         // Usar um Map para garantir unicidade baseado em (medicoId, data, tipo)
@@ -931,8 +908,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
         // Adicionar disponibilidades existentes de outros anos
         for (final disp in this.disponibilidades) {
-          final chave =
-              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
+          final chave = CadastroMedicosHelper.gerarChaveDisponibilidade(disp);
           disponibilidadesUnicas[chave] = disp;
         }
 
@@ -952,10 +928,19 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
 
         // CORREÇÃO: Adicionar disponibilidades "Única" carregadas do Firestore
+        // IMPORTANTE: As disponibilidades únicas já adicionadas localmente (ainda não salvas)
+        // têm prioridade sobre as do Firestore para a mesma chave
+        // Isso garante que disponibilidades recém-adicionadas não sejam perdidas
         for (final dispUnica in dispsUnicas) {
           final chave =
               '${dispUnica.medicoId}_${dispUnica.data.year}-${dispUnica.data.month}-${dispUnica.data.day}_${dispUnica.tipo}';
-          disponibilidadesUnicas[chave] = dispUnica;
+          // Só adicionar se não existe ainda (para não sobrescrever disponibilidades não salvas)
+          if (!disponibilidadesUnicas.containsKey(chave)) {
+            disponibilidadesUnicas[chave] = dispUnica;
+          } else {
+            debugPrint(
+                '⚠️ Disponibilidade única já existe localmente (não salva), preservando: $chave');
+          }
         }
 
         if (mounted) {
@@ -979,91 +964,67 @@ class CadastroMedicoState extends State<CadastroMedico> {
           });
         }
 
-        // CORREÇÃO: Mesclar com disponibilidades existentes que não são do ano atual
+        // CORREÇÃO CRÍTICA: Mesclar com disponibilidades existentes que não são do ano atual
         // Manter disponibilidades "Única" que ainda não foram salvas (não estão no Firestore)
-        final disponibilidadesFinais = <String, Disponibilidade>{};
-
-        // Primeiro, adicionar todas as disponibilidades existentes que não são do ano atual
-        // ou que são "Única" (podem não estar salvas ainda)
-        for (final disp in this.disponibilidades) {
-          if (disp.data.year != anoParaCarregar || disp.tipo == 'Única') {
-            final chave =
-                '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
-            disponibilidadesFinais[chave] = disp;
-          }
-        }
-
-        // Depois, adicionar as disponibilidades geradas/ordenadas (séries do ano atual + únicas do Firestore)
-        for (final disp in listaOrdenada) {
-          final chave =
-              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
-          disponibilidadesFinais[chave] = disp;
-        }
+        final disponibilidadesFinais =
+            CadastroMedicosHelper.mesclarDisponibilidadesComAno(
+          this.disponibilidades,
+          listaOrdenada,
+          medicoId,
+          anoParaCarregar,
+        );
 
         // Atualizar lista completa
+        // CORREÇÃO CRÍTICA: Preservar disponibilidades únicas não salvas mesmo quando há séries
         final listaFinal = disponibilidadesFinais.values.toList();
         listaFinal.sort((a, b) => a.data.compareTo(b.data));
+
+        // DEBUG: Verificar quantas disponibilidades únicas estão sendo preservadas
+        final unicasAntes = disponibilidades
+            .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
+            .length;
+        final unicasDepois = listaFinal
+            .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
+            .length;
+        if (unicasAntes != unicasDepois) {
+          debugPrint(
+              '⚠️ PERDA DE DISPONIBILIDADES ÚNICAS: antes=$unicasAntes, depois=$unicasDepois');
+        }
+
         disponibilidades.clear();
         disponibilidades.addAll(listaFinal);
       } else {
         // Se não há séries, ainda precisamos carregar disponibilidades "Única"
-        List<Disponibilidade> dispsUnicas = [];
         try {
-          final firestore = FirebaseFirestore.instance;
-          final unidadeId = widget.unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-          final disponibilidadesRef = firestore
-              .collection('unidades')
-              .doc(unidadeId)
-              .collection('ocupantes')
-              .doc(medicoId)
-              .collection('disponibilidades')
-              .doc(anoParaCarregar.toString())
-              .collection('registos');
+          final dispsUnicas =
+              await DisponibilidadeUnicaService.carregarDisponibilidadesUnicas(
+            medicoId,
+            anoParaCarregar,
+            widget.unidade,
+          );
 
-          final snapshot =
-              await disponibilidadesRef.where('tipo', isEqualTo: 'Única').get();
-
-          dispsUnicas = snapshot.docs
-              .map((doc) => Disponibilidade.fromMap(doc.data()))
-              .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
-              .toList();
-
-          // CORREÇÃO: Mesclar com disponibilidades existentes (incluindo as que ainda não foram salvas)
+          // CORREÇÃO CRÍTICA: Mesclar com disponibilidades existentes (incluindo as que ainda não foram salvas)
           // Não limpar a lista completamente, apenas mesclar para não perder disponibilidades não salvas
-          final disponibilidadesUnicas = <String, Disponibilidade>{};
+          final listaOrdenada = CadastroMedicosHelper.mesclarApenasUnicas(
+            this.disponibilidades,
+            dispsUnicas,
+            medicoId,
+          );
 
-          // Primeiro, adicionar todas as disponibilidades existentes (incluindo não salvas)
-          for (final disp in this.disponibilidades) {
-            final chave =
-                '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
-            disponibilidadesUnicas[chave] = disp;
-          }
-
-          // Depois, adicionar/sobrescrever com as do Firestore (já salvas)
-          for (final dispUnica in dispsUnicas) {
-            final chave =
-                '${dispUnica.medicoId}_${dispUnica.data.year}-${dispUnica.data.month}-${dispUnica.data.day}_${dispUnica.tipo}';
-            disponibilidadesUnicas[chave] = dispUnica;
-          }
-
-          // Atualizar apenas as disponibilidades "Única", mantendo as de séries
-          final disponibilidadesFinais = <Disponibilidade>[];
-
-          // Manter todas as disponibilidades de séries
-          for (final disp in this.disponibilidades) {
-            if (disp.id.startsWith('serie_')) {
-              disponibilidadesFinais.add(disp);
-            }
-          }
-
-          // Adicionar todas as disponibilidades "Única" (mescladas)
-          disponibilidadesFinais.addAll(
-              disponibilidadesUnicas.values.where((d) => d.tipo == 'Única'));
-
-          final listaOrdenada = disponibilidadesFinais.toList();
-          listaOrdenada.sort((a, b) => a.data.compareTo(b.data));
-
+          // CORREÇÃO CRÍTICA: Preservar disponibilidades únicas não salvas mesmo quando não há séries
           // Atualizar a lista completa
+          // DEBUG: Verificar quantas disponibilidades únicas estão sendo preservadas
+          final unicasAntes = disponibilidades
+              .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
+              .length;
+          final unicasDepois = listaOrdenada
+              .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
+              .length;
+          if (unicasAntes != unicasDepois) {
+            debugPrint(
+                '⚠️ PERDA DE DISPONIBILIDADES ÚNICAS (sem séries): antes=$unicasAntes, depois=$unicasDepois');
+          }
+
           disponibilidades.clear();
           disponibilidades.addAll(listaOrdenada);
         } catch (e) {
@@ -1071,7 +1032,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
       }
     } catch (e) {
-      print('❌ Erro ao carregar séries e gerar disponibilidades: $e');
+      debugPrint('❌ Erro ao carregar séries e gerar disponibilidades: $e');
     }
 
     // Atualizar estado - garantir que a barra de progresso seja visível até o final
@@ -1086,11 +1047,35 @@ class CadastroMedicoState extends State<CadastroMedico> {
       await Future.delayed(const Duration(milliseconds: 30));
 
       // Atualizar os dados
+      // CORREÇÃO CRÍTICA: Antes de substituir a lista, preservar disponibilidades únicas não salvas
+      final unicasNaoSalvas = this
+          .disponibilidades
+          .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
+          .toList();
+
       if (mounted) {
         setState(() {
+          // Substituir a lista, mas depois adicionar de volta as únicas não salvas
           this.disponibilidades = disponibilidades;
+
+          // Adicionar de volta as disponibilidades únicas não salvas
+          for (final unica in unicasNaoSalvas) {
+            final chave =
+                '${unica.medicoId}_${unica.data.year}-${unica.data.month}-${unica.data.day}_${unica.tipo}';
+            final jaExiste = this.disponibilidades.any((d) {
+              final dChave =
+                  '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}_${d.tipo}';
+              return dChave == chave;
+            });
+            if (!jaExiste) {
+              this.disponibilidades.add(unica);
+              debugPrint(
+                  '🔒 Restaurada disponibilidade única não salva: ${unica.data.day}/${unica.data.month}/${unica.data.year}');
+            }
+          }
+
           // Atualiza os dias selecionados baseado nas disponibilidades carregadas
-          diasSelecionados = disponibilidades.map((d) => d.data).toList();
+          diasSelecionados = this.disponibilidades.map((d) => d.data).toList();
           _anoVisualizado = anoParaCarregar; // Guarda o ano visualizado
           // Chegar a 100% e depois desligar
           progressoCarregamentoDisponibilidades = 1.0;
@@ -1112,9 +1097,21 @@ class CadastroMedicoState extends State<CadastroMedico> {
           // CORREÇÃO: Guardar disponibilidades originais de forma síncrona
           // Isso garante que _disponibilidadesOriginal esteja sempre atualizada
           // quando o usuário cria novas disponibilidades
-          _disponibilidadesOriginal = disponibilidades
+          // IMPORTANTE: Incluir também as disponibilidades únicas não salvas
+          _disponibilidadesOriginal = this
+              .disponibilidades
               .map((d) => Disponibilidade.fromMap(d.toMap()))
               .toList();
+
+          // DEBUG: Verificar se disponibilidades únicas foram preservadas
+          final unicasAposCarregamento = this
+              .disponibilidades
+              .where((d) => d.tipo == 'Única' && d.medicoId == medicoId)
+              .length;
+          if (unicasNaoSalvas.isNotEmpty) {
+            debugPrint(
+                '🔍 Após carregar: $unicasAposCarregamento disponibilidades únicas na lista (${unicasNaoSalvas.length} deveriam ser preservadas)');
+          }
         });
       }
     }
@@ -1137,138 +1134,58 @@ class CadastroMedicoState extends State<CadastroMedico> {
   Future<void> _adicionarData(DateTime date, String tipo) async {
     // Se for tipo recorrente, criar série ao invés de cartões individuais
     if (tipo != 'Única' && !tipo.startsWith('Consecutivo:')) {
-      // Criar série de recorrência
-      try {
-        final serie = await DisponibilidadeSerieService.criarSerie(
-          medicoId: _medicoId,
-          dataInicial: date,
-          tipo: tipo,
-          horarios: [], // Horários serão definidos depois
-          unidade: widget.unidade,
-          dataFim: null, // Série infinita
-        );
+      final resultado =
+          await DisponibilidadeDataGestaoService.criarSerieRecorrente(
+        context,
+        date,
+        tipo,
+        _medicoId,
+        widget.unidade,
+      );
 
+      if (resultado['sucesso'] == true) {
         setState(() {
-          series.add(serie);
+          series.add(resultado['serie'] as SerieRecorrencia);
         });
 
-        // CORREÇÃO: Invalidar cache do dia de início da série para garantir que apareça no ecrã de alocação
-        AlocacaoMedicosLogic.invalidateCacheForDay(date);
-        // Invalidar também cache de séries para este médico e ano
-        final anoSerie = date.year;
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-            _medicoId, anoSerie);
-        // Invalidar cache de todo o ano para garantir que apareça em todos os dias relevantes
-        AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
-
-        // Gerar cartões visuais para o ano atual (para mostrar na UI)
-        final geradas = criarDisponibilidadesSerie(
-          date,
-          tipo,
-          medicoId: _medicoId,
-          limitarAoAno: true,
+        DisponibilidadeDataGestaoService.adicionarDisponibilidadesAListas(
+          resultado['disponibilidades'] as List<Disponibilidade>,
+          disponibilidades,
+          diasSelecionados,
         );
 
-        for (final novaDisp in geradas) {
-          if (!diasSelecionados.any((d) =>
-              d.year == novaDisp.data.year &&
-              d.month == novaDisp.data.month &&
-              d.day == novaDisp.data.day)) {
-            disponibilidades.add(novaDisp);
-            diasSelecionados.add(novaDisp.data);
-          }
-        }
-
-        disponibilidades.sort((a, b) => a.data.compareTo(b.data));
-
-        // CORREÇÃO: Verificar mudanças após adicionar série recorrente
-        // Isso garante que se uma disponibilidade "Única" foi adicionada antes,
-        // ela seja detectada quando esta série é criada
         _verificarMudancas();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Série $tipo criada com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao criar série: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     } else if (tipo.startsWith('Consecutivo:')) {
-      // Consecutivo também cria série
-      final numeroDiasStr = tipo.split(':')[1];
-      final numeroDias = int.tryParse(numeroDiasStr) ?? 5;
+      final resultado =
+          await DisponibilidadeDataGestaoService.criarSerieConsecutiva(
+        context,
+        date,
+        tipo,
+        _medicoId,
+        widget.unidade,
+      );
 
-      try {
-        final serie = await DisponibilidadeSerieService.criarSerie(
-          medicoId: _medicoId,
-          dataInicial: date,
-          tipo: 'Consecutivo',
-          horarios: [],
-          unidade: widget.unidade,
-          dataFim: date.add(Duration(days: numeroDias - 1)),
-        );
-
+      if (resultado['sucesso'] == true) {
         setState(() {
-          series.add(serie);
+          series.add(resultado['serie'] as SerieRecorrencia);
         });
 
-        // CORREÇÃO: Invalidar cache para garantir que apareça no ecrã de alocação
-        AlocacaoMedicosLogic.invalidateCacheForDay(date);
-        final anoSerie = date.year;
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-            _medicoId, anoSerie);
-        // Invalidar cache de todo o ano para garantir que apareça em todos os dias relevantes
-        AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
-
-        // Gerar cartões visuais
-        final geradas = criarDisponibilidadesSerie(
-          date,
-          tipo,
-          medicoId: _medicoId,
-          limitarAoAno: true,
+        DisponibilidadeDataGestaoService.adicionarDisponibilidadesAListas(
+          resultado['disponibilidades'] as List<Disponibilidade>,
+          disponibilidades,
+          diasSelecionados,
         );
 
-        for (final novaDisp in geradas) {
-          if (!diasSelecionados.any((d) =>
-              d.year == novaDisp.data.year &&
-              d.month == novaDisp.data.month &&
-              d.day == novaDisp.data.day)) {
-            disponibilidades.add(novaDisp);
-            diasSelecionados.add(novaDisp.data);
-          }
-        }
-
-        disponibilidades.sort((a, b) => a.data.compareTo(b.data));
         _verificarMudancas();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Série Consecutiva criada com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao criar série: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     } else {
       // Única: criar cartão individual (compatibilidade)
-      final geradas = criarDisponibilidadesSerie(
+      final geradas =
+          DisponibilidadeDataGestaoService.criarDisponibilidadesUnicas(
         date,
         tipo,
-        medicoId: _medicoId,
-        limitarAoAno: true,
+        _medicoId,
       );
 
       bool adicionouNova = false;
@@ -1277,45 +1194,29 @@ class CadastroMedicoState extends State<CadastroMedico> {
             d.year == novaDisp.data.year &&
             d.month == novaDisp.data.month &&
             d.day == novaDisp.data.day)) {
-          // CORREÇÃO: Adicionar à lista ANTES do setState para garantir que está disponível
-          // quando _verificarMudancas() for chamado
           disponibilidades.add(novaDisp);
           diasSelecionados.add(novaDisp.data);
           adicionouNova = true;
-
-          setState(() {
-            // Apenas atualizar UI - dados já foram adicionados acima
-          });
         }
       }
 
       if (adicionouNova) {
-        // Ordenar disponibilidades antes de verificar mudanças
         disponibilidades.sort((a, b) => a.data.compareTo(b.data));
+        setState(() {});
 
-        setState(() {
-          // Apenas atualizar UI - dados já foram ordenados acima
-        });
-
-        // CORREÇÃO CRÍTICA: Verificar mudanças IMEDIATAMENTE após adicionar
-        // Não usar addPostFrameCallback porque pode ser muito tarde quando múltiplas séries são criadas
-        // Chamar de forma síncrona para garantir detecção imediata
-        // IMPORTANTE: Chamar DEPOIS do setState para garantir que a lista está atualizada
         _verificarMudancas();
 
-        // CORREÇÃO ADICIONAL: Forçar atualização de _houveMudancas se detectou mudanças
-        // Isso garante que mesmo que _verificarMudancas() não tenha atualizado corretamente,
-        // a flag será atualizada aqui
         if (!_houveMudancas) {
-          // Verificar novamente especificamente para disponibilidades "Única"
-          final temUnicasNovas = disponibilidades
-              .where((d) => d.tipo == 'Única' && d.medicoId == _medicoId)
-              .any((d) => !_disponibilidadesOriginal.any((orig) =>
-                  orig.id == d.id &&
-                  orig.data.year == d.data.year &&
-                  orig.data.month == d.data.month &&
-                  orig.data.day == d.data.day &&
-                  _listasIguais(orig.horarios, d.horarios)));
+          final temUnicasNovas =
+              CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+                      disponibilidades, _medicoId)
+                  .any((d) => !_disponibilidadesOriginal.any((orig) =>
+                      orig.id == d.id &&
+                      orig.data.year == d.data.year &&
+                      orig.data.month == d.data.month &&
+                      orig.data.day == d.data.day &&
+                      CadastroMedicosHelper.listasIguais(
+                          orig.horarios, d.horarios)));
 
           if (temUnicasNovas) {
             setState(() {
@@ -1328,7 +1229,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     // Atualiza cache do dia adicionado
     AlocacaoMedicosLogic.updateCacheForDay(
-      day: DateTime(date.year, date.month, date.day),
+      day: CadastroMedicosHelper.normalizarData(date),
       disponibilidades: disponibilidades,
     );
   }
@@ -1355,106 +1256,27 @@ class CadastroMedicoState extends State<CadastroMedico> {
       // Se a disponibilidade é de uma série, encontrar e remover a série do Firestore
       if (disponibilidadeNaData.id.startsWith('serie_') &&
           disponibilidadeNaData.tipo != 'Única') {
-        try {
-          // Extrair o ID da série do ID da disponibilidade
-          final dataKeyPattern = RegExp(r'_\d{4}-\d{2}-\d{2}$');
-          final match = dataKeyPattern.firstMatch(disponibilidadeNaData.id);
+        final serieEncontrada =
+            DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+          disponibilidadeNaData,
+          series,
+          date,
+        );
 
-          if (match != null) {
-            final serieId = disponibilidadeNaData.id.substring(0, match.start);
-            final serieIdFinal =
-                serieId.startsWith('serie_') ? serieId : 'serie_$serieId';
-
-            // Encontrar a série na lista local
-            final serieEncontrada = series.firstWhere(
-              (s) => s.id == serieIdFinal && s.ativo,
-              orElse: () => SerieRecorrencia(
-                id: '',
-                medicoId: '',
-                dataInicio: DateTime.now(),
-                tipo: '',
-                horarios: [],
-              ),
-            );
-
-            // Se encontrou a série, remover do Firestore
-            if (serieEncontrada.id.isNotEmpty) {
-              await SerieService.removerSerie(
-                serieEncontrada.id,
-                _medicoId,
-                unidade: widget.unidade,
-                permanente: true, // Remover permanentemente
-              );
-
-              // CORREÇÃO: Invalidar cache para garantir que remoção apareça no ecrã de alocação
-              final anoSerie = serieEncontrada.dataInicio.year;
-              AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-                  _medicoId, anoSerie);
-              AlocacaoMedicosLogic.invalidateCacheFromDate(
-                  DateTime(anoSerie, 1, 1));
-
-              // Remover da lista local
-              setState(() {
-                series.removeWhere((s) => s.id == serieEncontrada.id);
-              });
-            } else {
-              // Se não encontrou pelo ID, tentar encontrar por tipo e data
-              for (final serie in series) {
-                if (serie.tipo == disponibilidadeNaData.tipo &&
-                    serie.ativo &&
-                    (serie.dataFim == null || serie.dataFim!.isAfter(date)) &&
-                    serie.dataInicio
-                        .isBefore(date.add(const Duration(days: 1)))) {
-                  // Verificar se a data corresponde ao padrão da série
-                  bool correspondeAoPadrao = false;
-                  switch (serie.tipo) {
-                    case 'Semanal':
-                      correspondeAoPadrao =
-                          date.weekday == serie.dataInicio.weekday;
-                      break;
-                    case 'Quinzenal':
-                      final diffDias = date.difference(serie.dataInicio).inDays;
-                      correspondeAoPadrao = diffDias >= 0 && diffDias % 14 == 0;
-                      break;
-                    case 'Mensal':
-                      correspondeAoPadrao = date.day == serie.dataInicio.day;
-                      break;
-                    default:
-                      correspondeAoPadrao = true;
-                  }
-
-                  if (correspondeAoPadrao) {
-                    await SerieService.removerSerie(
-                      serie.id,
-                      _medicoId,
-                      unidade: widget.unidade,
-                      permanente: true,
-                    );
-
-                    // CORREÇÃO: Invalidar cache para garantir que remoção apareça no ecrã de alocação
-                    final anoSerie = serie.dataInicio.year;
-                    AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-                        _medicoId, anoSerie);
-                    AlocacaoMedicosLogic.invalidateCacheFromDate(
-                        DateTime(anoSerie, 1, 1));
-
-                    setState(() {
-                      series.removeWhere((s) => s.id == serie.id);
-                    });
-
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erro ao remover série: $e'),
-              backgroundColor: Colors.red,
-            ),
+        if (serieEncontrada != null) {
+          final sucesso =
+              await DisponibilidadeDataGestaoService.removerSerieDoFirestore(
+            context,
+            serieEncontrada,
+            _medicoId,
+            widget.unidade,
           );
+
+          if (sucesso) {
+            setState(() {
+              series.removeWhere((s) => s.id == serieEncontrada.id);
+            });
+          }
         }
       }
     }
@@ -1477,7 +1299,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     // Atualiza cache do dia removido
     AlocacaoMedicosLogic.updateCacheForDay(
-      day: DateTime(date.year, date.month, date.day),
+      day: CadastroMedicosHelper.normalizarData(date),
       disponibilidades: disponibilidades,
     );
 
@@ -1599,28 +1421,34 @@ class CadastroMedicoState extends State<CadastroMedico> {
               ano: _anoVisualizado);
         }
 
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  '$seriesEncerradas série(s) encerrada(s) a partir de ${DateFormat('dd/MM/yyyy').format(dataEncerramento)}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nenhuma série ativa para encerrar'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                '$seriesEncerradas série(s) encerrada(s) a partir de ${DateFormat('dd/MM/yyyy').format(dataEncerramento)}'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Nenhuma série ativa para encerrar'),
-            backgroundColor: Colors.orange,
+            content: Text('Erro ao encerrar séries: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao encerrar séries: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -1843,23 +1671,27 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       _verificarMudancas();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Série transformada: ${serieAtual.tipo} encerrada em ${DateFormat('dd/MM/yyyy').format(dataEncerramento)}, '
-            'nova série $novoTipo iniciada em ${DateFormat('dd/MM/yyyy').format(dataNovaSerie)}',
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Série transformada: ${serieAtual.tipo} encerrada em ${DateFormat('dd/MM/yyyy').format(dataEncerramento)}, '
+              'nova série $novoTipo iniciada em ${DateFormat('dd/MM/yyyy').format(dataNovaSerie)}',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
           ),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao transformar série: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao transformar série: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1957,20 +1789,24 @@ class CadastroMedicoState extends State<CadastroMedico> {
               ano: _anoVisualizado);
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Série encerrada a partir de ${DateFormat('dd/MM/yyyy').format(dataEncerramento!)}'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Série encerrada a partir de ${DateFormat('dd/MM/yyyy').format(dataEncerramento!)}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao encerrar série: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao encerrar série: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -1979,238 +1815,53 @@ class CadastroMedicoState extends State<CadastroMedico> {
   Future<void> _criarExcecaoPeriodoGeral(
       DateTime dataInicio, DateTime dataFim) async {
     try {
-      // Para cada série ativa, criar exceções para todas as datas do período que se aplicam à série
-      int totalExcecoesCriadas = 0;
+      // Usar serviço para criar exceções
+      final totalExcecoesCriadas =
+          await ExcecaoSerieCriacaoService.criarExcecoesParaPeriodoGeral(
+        series,
+        excecoes,
+        dataInicio,
+        dataFim,
+        _medicoId,
+        (excecao) async {
+          // Salvar no Firestore
+          await SerieService.salvarExcecao(excecao, _medicoId,
+              unidade: widget.unidade);
 
-      for (final serie in series) {
-        if (!serie.ativo) continue;
-
-        DateTime dataAtual = dataInicio;
-        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
-          // Verificar se a data está dentro da série
-          if (dataAtual.isAfter(
-                  serie.dataInicio.subtract(const Duration(days: 1))) &&
-              (serie.dataFim == null ||
-                  dataAtual
-                      .isBefore(serie.dataFim!.add(const Duration(days: 1))))) {
-            // Verificar se esta data corresponde à série (ex: se é semanal às quartas, só criar se for quarta)
-            bool dataCorresponde = false;
-
-            switch (serie.tipo) {
-              case 'Semanal':
-                // Verificar se é o mesmo dia da semana
-                dataCorresponde = dataAtual.weekday == serie.dataInicio.weekday;
-                break;
-              case 'Quinzenal':
-                // Verificar se a diferença em dias é múltiplo de 14
-                final diff = dataAtual.difference(serie.dataInicio).inDays;
-                dataCorresponde = diff >= 0 && diff % 14 == 0;
-                break;
-              case 'Mensal':
-                // Verificar se é o mesmo dia do mês e mesma ocorrência do dia da semana
-                final ocorrencia = _descobrirOcorrenciaNoMes(serie.dataInicio);
-                final ocorrenciaAtual = _descobrirOcorrenciaNoMes(dataAtual);
-                dataCorresponde =
-                    dataAtual.weekday == serie.dataInicio.weekday &&
-                        ocorrenciaAtual == ocorrencia;
-                break;
-              case 'Consecutivo':
-                // Para consecutivo, verificar se está dentro do período consecutivo
-                final numeroDias = serie.parametros['numeroDias'] as int? ?? 5;
-                final diff = dataAtual.difference(serie.dataInicio).inDays;
-                dataCorresponde = diff >= 0 && diff < numeroDias;
-                break;
-              default:
-                // Para "Única", verificar se é a data exata
-                dataCorresponde = dataAtual.year == serie.dataInicio.year &&
-                    dataAtual.month == serie.dataInicio.month &&
-                    dataAtual.day == serie.dataInicio.day;
-            }
-
-            if (dataCorresponde) {
-              final excecaoId =
-                  'excecao_${serie.id}_${dataAtual.millisecondsSinceEpoch}';
-
-              // Verificar se já existe exceção para esta data
-              final jaExiste = excecoes.any((e) =>
-                  e.serieId == serie.id &&
-                  e.data.year == dataAtual.year &&
-                  e.data.month == dataAtual.month &&
-                  e.data.day == dataAtual.day);
-
-              if (!jaExiste) {
-                final excecao = ExcecaoSerie(
-                  id: excecaoId,
-                  serieId: serie.id,
-                  data: dataAtual,
-                  cancelada: true,
-                );
-
-                // Salvar no Firestore
-                await SerieService.salvarExcecao(excecao, _medicoId,
-                    unidade: widget.unidade);
-
-                setState(() {
-                  excecoes.add(excecao);
-                });
-
-                totalExcecoesCriadas++;
-              }
-            }
-          }
-
-          dataAtual = dataAtual.add(const Duration(days: 1));
-        }
-      }
+          setState(() {
+            excecoes.add(excecao);
+          });
+        },
+      );
 
       // Remover alocações e disponibilidades do Firestore para as datas do período
       // Isso garante que os cartões desapareçam do menu principal, quer estejam alocados ou não
       if (widget.unidade != null && _medicoAtual != null) {
-        final firestore = FirebaseFirestore.instance;
-        final unidadeId = widget.unidade!.id;
-        DateTime dataAtual = dataInicio;
+        await AlocacaoDisponibilidadeRemocaoService
+            .removerAlocacoesEDisponibilidades(
+          widget.unidade!.id,
+          _medicoAtual!.id,
+          dataInicio,
+          dataFim,
+        );
 
+        // Remover também da lista local de disponibilidades
+        DateTime dataAtual = dataInicio;
         while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
-          final ano = dataAtual.year.toString();
           final inicio =
               DateTime(dataAtual.year, dataAtual.month, dataAtual.day);
-
-          try {
-            // Buscar e remover alocações do médico para esta data
-            final alocacoesRef = firestore
-                .collection('unidades')
-                .doc(unidadeId)
-                .collection('alocacoes')
-                .doc(ano)
-                .collection('registos');
-
-            // Buscar alocações sem usar query composta (para evitar erro de índice)
-            final todasAlocacoes = await alocacoesRef.get();
-            final alocacoesParaRemover = todasAlocacoes.docs.where((doc) {
-              final data = doc.data();
-              final medicoIdAloc = data['medicoId']?.toString();
-              final dataAloc = data['data']?.toString();
-              if (medicoIdAloc != _medicoAtual!.id) return false;
-              if (dataAloc == null) return false;
-              try {
-                final dataAlocDateTime = DateTime.parse(dataAloc);
-                return dataAlocDateTime.year == inicio.year &&
-                    dataAlocDateTime.month == inicio.month &&
-                    dataAlocDateTime.day == inicio.day;
-              } catch (e) {
-                return false;
-              }
-            }).toList();
-
-            // Remover todas as alocações encontradas
-            for (final doc in alocacoesParaRemover) {
-              await doc.reference.delete();
-            }
-
-            // CORREÇÃO CRÍTICA: Remover disponibilidades únicas do Firestore
-            // As disponibilidades únicas são salvas em dois lugares:
-            // 1. unidades/{unidadeId}/ocupantes/{medicoId}/disponibilidades/{ano}/registos
-            // 2. unidades/{unidadeId}/dias/{dayKey}/disponibilidades (vista diária)
-
-            // 1. Remover da coleção de ocupantes
-            final disponibilidadesRef = firestore
-                .collection('unidades')
-                .doc(unidadeId)
-                .collection('ocupantes')
-                .doc(_medicoAtual!.id)
-                .collection('disponibilidades')
-                .doc(ano)
-                .collection('registos');
-
-            final todasDisponibilidades = await disponibilidadesRef.get();
-            final disponibilidadesParaRemover =
-                todasDisponibilidades.docs.where((doc) {
-              final data = doc.data();
-              final dataDisp = data['data']?.toString();
-              final tipoDisp = data['tipo']?.toString();
-              final medicoIdDisp = data['medicoId']?.toString();
-
-              if (dataDisp == null ||
-                  tipoDisp != 'Única' ||
-                  medicoIdDisp != _medicoAtual!.id) {
-                return false;
-              }
-
-              try {
-                final dataDispDateTime = DateTime.parse(dataDisp);
-                final corresponde = dataDispDateTime.year == inicio.year &&
-                    dataDispDateTime.month == inicio.month &&
-                    dataDispDateTime.day == inicio.day;
-                return corresponde;
-              } catch (e) {
-                return false;
-              }
-            }).toList();
-
-            // Remover todas as disponibilidades únicas encontradas
-            for (final doc in disponibilidadesParaRemover) {
-              await doc.reference.delete();
-
-              // CORREÇÃO: Também remover da lista local de disponibilidades
-              final dispId = doc.id;
-              setState(() {
-                disponibilidades.removeWhere((d) =>
-                    d.id == dispId &&
-                    d.tipo == 'Única' &&
-                    d.data.year == inicio.year &&
-                    d.data.month == inicio.month &&
-                    d.data.day == inicio.day);
-                _disponibilidadesOriginal.removeWhere((d) =>
-                    d.id == dispId &&
-                    d.tipo == 'Única' &&
-                    d.data.year == inicio.year &&
-                    d.data.month == inicio.month &&
-                    d.data.day == inicio.day);
-              });
-            }
-
-            // 2. Remover da vista diária (dias/{dayKey}/disponibilidades)
-            final keyDia =
-                '${inicio.year}-${inicio.month.toString().padLeft(2, '0')}-${inicio.day.toString().padLeft(2, '0')}';
-            final diasDisponibilidadesRef = firestore
-                .collection('unidades')
-                .doc(unidadeId)
-                .collection('dias')
-                .doc(keyDia)
-                .collection('disponibilidades');
-
-            final todasDisponibilidadesDias =
-                await diasDisponibilidadesRef.get();
-            final disponibilidadesDiasParaRemover =
-                todasDisponibilidadesDias.docs.where((doc) {
-              final data = doc.data();
-              final medicoIdDisp = data['medicoId']?.toString();
-              final tipoDisp = data['tipo']?.toString();
-              if (medicoIdDisp != _medicoAtual!.id || tipoDisp != 'Única')
-                return false;
-              final dataDisp = data['data']?.toString();
-              if (dataDisp == null) return false;
-              try {
-                final dataDispDateTime = DateTime.parse(dataDisp);
-                return dataDispDateTime.year == inicio.year &&
-                    dataDispDateTime.month == inicio.month &&
-                    dataDispDateTime.day == inicio.day;
-              } catch (e) {
-                return false;
-              }
-            }).toList();
-
-            // Remover todas as disponibilidades únicas da vista diária
-            for (final doc in disponibilidadesDiasParaRemover) {
-              await doc.reference.delete();
-            }
-
-            // Invalidar cache para esta data específica
-            AlocacaoMedicosLogic.invalidateCacheFromDate(inicio);
-          } catch (e) {
-            // Erro ao remover disponibilidades - continuar
-          }
-
+          setState(() {
+            disponibilidades.removeWhere((d) =>
+                d.tipo == 'Única' &&
+                d.data.year == inicio.year &&
+                d.data.month == inicio.month &&
+                d.data.day == inicio.day);
+            _disponibilidadesOriginal.removeWhere((d) =>
+                d.tipo == 'Única' &&
+                d.data.year == inicio.year &&
+                d.data.month == inicio.month &&
+                d.data.day == inicio.day);
+          });
           dataAtual = dataAtual.add(const Duration(days: 1));
         }
       }
@@ -2240,172 +1891,78 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       _verificarMudancas();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Exceção de período criada: $totalExcecoesCriadas exceção(ões) criada(s) para o período ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Exceção de período criada: $totalExcecoesCriadas exceção(ões) criada(s) para o período ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao criar exceção de período: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao criar exceção de período: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
-  }
-
-  /// Descobre qual ocorrência do weekday no mês (ex: 1ª terça, 2ª terça)
-  int _descobrirOcorrenciaNoMes(DateTime data) {
-    final weekday = data.weekday;
-    final ano = data.year;
-    final mes = data.month;
-    final dia = data.day;
-
-    final weekdayDia1 = DateTime(ano, mes, 1).weekday;
-    final offset = (weekday - weekdayDia1 + 7) % 7;
-    final primeiroDesteMes = 1 + offset;
-    final dif = dia - primeiroDesteMes;
-    return 1 + (dif ~/ 7);
   }
 
   /// Cria exceção para cancelar um período de uma série (ex: férias)
   Future<void> _criarExcecaoPeriodo(
       SerieRecorrencia serie, DateTime dataInicio, DateTime dataFim) async {
     try {
-      // Criar exceção para cada data do período
-      DateTime dataAtual = dataInicio;
-      int excecoesCriadas = 0;
+      // Usar serviço para criar exceções
+      final excecoesCriadas =
+          await ExcecaoSerieCriacaoService.criarExcecoesParaPeriodoSerie(
+        serie,
+        excecoes,
+        dataInicio,
+        dataFim,
+        _medicoId,
+        (excecao) async {
+          // Salvar no Firestore
+          await SerieService.salvarExcecao(excecao, _medicoId,
+              unidade: widget.unidade);
 
-      while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
-        // Verificar se a data está dentro da série
-        if (dataAtual
-                .isAfter(serie.dataInicio.subtract(const Duration(days: 1))) &&
-            (serie.dataFim == null ||
-                dataAtual
-                    .isBefore(serie.dataFim!.add(const Duration(days: 1))))) {
-          final excecaoId =
-              'excecao_${serie.id}_${dataAtual.millisecondsSinceEpoch}';
-
-          // Verificar se já existe exceção para esta data
-          final jaExiste = excecoes.any((e) =>
-              e.serieId == serie.id &&
-              e.data.year == dataAtual.year &&
-              e.data.month == dataAtual.month &&
-              e.data.day == dataAtual.day);
-
-          if (!jaExiste) {
-            final excecao = ExcecaoSerie(
-              id: excecaoId,
-              serieId: serie.id,
-              data: dataAtual,
-              cancelada: true,
-            );
-
-            // Salvar no Firestore
-            await SerieService.salvarExcecao(excecao, _medicoId,
-                unidade: widget.unidade);
-
-            setState(() {
-              excecoes.add(excecao);
-            });
-
-            excecoesCriadas++;
-          }
-        }
-
-        dataAtual = dataAtual.add(const Duration(days: 1));
-      }
+          setState(() {
+            excecoes.add(excecao);
+          });
+        },
+      );
 
       // Remover alocações e disponibilidades do Firestore para as datas com exceções
       // Isso garante que os cartões desapareçam do menu principal, quer estejam alocados ou não
       if (widget.unidade != null && _medicoAtual != null) {
-        final firestore = FirebaseFirestore.instance;
-        final unidadeId = widget.unidade!.id;
+        // Filtrar apenas datas dentro do período da série
         DateTime dataAtual = dataInicio;
+        DateTime? dataInicioFiltrada;
+        DateTime? dataFimFiltrada;
 
         while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
-          // Verificar se a data está dentro da série e se foi criada uma exceção
           if (dataAtual.isAfter(
                   serie.dataInicio.subtract(const Duration(days: 1))) &&
               (serie.dataFim == null ||
                   dataAtual
                       .isBefore(serie.dataFim!.add(const Duration(days: 1))))) {
-            final ano = dataAtual.year.toString();
-            final inicio =
-                DateTime(dataAtual.year, dataAtual.month, dataAtual.day);
-
-            try {
-              // Buscar e remover alocações do médico para esta data
-              final alocacoesRef = firestore
-                  .collection('unidades')
-                  .doc(unidadeId)
-                  .collection('alocacoes')
-                  .doc(ano)
-                  .collection('registos');
-
-              // Buscar alocações sem usar query composta (para evitar erro de índice)
-              final todasAlocacoes = await alocacoesRef.get();
-              final alocacoesParaRemover = todasAlocacoes.docs.where((doc) {
-                final data = doc.data();
-                final medicoIdAloc = data['medicoId']?.toString();
-                final dataAloc = data['data']?.toString();
-                if (medicoIdAloc != _medicoAtual!.id) return false;
-                if (dataAloc == null) return false;
-                try {
-                  final dataAlocDateTime = DateTime.parse(dataAloc);
-                  return dataAlocDateTime.year == inicio.year &&
-                      dataAlocDateTime.month == inicio.month &&
-                      dataAlocDateTime.day == inicio.day;
-                } catch (e) {
-                  return false;
-                }
-              }).toList();
-
-              // Remover todas as alocações encontradas
-              for (final doc in alocacoesParaRemover) {
-                await doc.reference.delete();
-              }
-
-              // Buscar e remover disponibilidades individuais do Firestore para esta data
-              final disponibilidadesRef = firestore
-                  .collection('unidades')
-                  .doc(unidadeId)
-                  .collection('ocupantes')
-                  .doc(_medicoAtual!.id)
-                  .collection('disponibilidades')
-                  .doc(ano)
-                  .collection('registos');
-
-              final todasDisponibilidades = await disponibilidadesRef.get();
-              final disponibilidadesParaRemover =
-                  todasDisponibilidades.docs.where((doc) {
-                final data = doc.data();
-                final dataDisp = data['data']?.toString();
-                if (dataDisp == null) return false;
-                try {
-                  final dataDispDateTime = DateTime.parse(dataDisp);
-                  return dataDispDateTime.year == inicio.year &&
-                      dataDispDateTime.month == inicio.month &&
-                      dataDispDateTime.day == inicio.day;
-                } catch (e) {
-                  return false;
-                }
-              }).toList();
-
-              // Remover todas as disponibilidades encontradas
-              for (final doc in disponibilidadesParaRemover) {
-                await doc.reference.delete();
-              }
-
-              // Invalidar cache para esta data específica
-              AlocacaoMedicosLogic.invalidateCacheFromDate(inicio);
-            } catch (e) {}
+            dataInicioFiltrada ??= dataAtual;
+            dataFimFiltrada = dataAtual;
           }
-
           dataAtual = dataAtual.add(const Duration(days: 1));
+        }
+
+        if (dataInicioFiltrada != null && dataFimFiltrada != null) {
+          await AlocacaoDisponibilidadeRemocaoService
+              .removerAlocacoesEDisponibilidades(
+            widget.unidade!.id,
+            _medicoAtual!.id,
+            dataInicioFiltrada,
+            dataFimFiltrada,
+          );
         }
       }
 
@@ -2439,107 +1996,30 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       _verificarMudancas();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Exceção criada para $excecoesCriadas dia(s): ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Exceção criada para $excecoesCriadas dia(s): ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao criar exceção: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao criar exceção: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   /// Agrupa exceções por período (datas consecutivas)
   List<Map<String, dynamic>> _agruparExcecoesPorPeriodo() {
-    if (excecoes.isEmpty) return [];
-
-    // Ordenar exceções por data
-    final excecoesOrdenadas = List<ExcecaoSerie>.from(excecoes);
-    excecoesOrdenadas.sort((a, b) => a.data.compareTo(b.data));
-
-    final grupos = <Map<String, dynamic>>[];
-    List<ExcecaoSerie>? grupoAtual;
-    DateTime? dataFimGrupo;
-
-    for (final excecao in excecoesOrdenadas) {
-      if (grupoAtual == null) {
-        // Iniciar novo grupo
-        grupoAtual = [excecao];
-        dataFimGrupo = excecao.data;
-      } else {
-        // Verificar se é data consecutiva (mesma série e data seguinte)
-        final ultimaData = dataFimGrupo!;
-        final dataEsperada = ultimaData.add(const Duration(days: 1));
-        final mesmaSerie = grupoAtual.first.serieId == excecao.serieId;
-        final dataConsecutiva = excecao.data.year == dataEsperada.year &&
-            excecao.data.month == dataEsperada.month &&
-            excecao.data.day == dataEsperada.day;
-
-        if (mesmaSerie && dataConsecutiva) {
-          // Adicionar ao grupo atual
-          grupoAtual.add(excecao);
-          dataFimGrupo = excecao.data;
-        } else {
-          // Finalizar grupo atual e iniciar novo
-          final serie = series.firstWhere(
-            (s) => s.id == grupoAtual!.first.serieId,
-            orElse: () => series.isNotEmpty
-                ? series.first
-                : SerieRecorrencia(
-                    id: '',
-                    medicoId: '',
-                    dataInicio: DateTime.now(),
-                    tipo: '',
-                    horarios: [],
-                  ),
-          );
-
-          grupos.add({
-            'excecoes': List<ExcecaoSerie>.from(grupoAtual),
-            'serie': serie,
-            'dataInicio': grupoAtual.first.data,
-            'dataFim': dataFimGrupo,
-            'isPeriodo': grupoAtual.length > 1,
-          });
-
-          grupoAtual = [excecao];
-          dataFimGrupo = excecao.data;
-        }
-      }
-    }
-
-    // Adicionar último grupo
-    if (grupoAtual != null && grupoAtual.isNotEmpty) {
-      final serie = series.firstWhere(
-        (s) => s.id == grupoAtual!.first.serieId,
-        orElse: () => series.isNotEmpty
-            ? series.first
-            : SerieRecorrencia(
-                id: '',
-                medicoId: '',
-                dataInicio: DateTime.now(),
-                tipo: '',
-                horarios: [],
-              ),
-      );
-
-      grupos.add({
-        'excecoes': grupoAtual,
-        'serie': serie,
-        'dataInicio': grupoAtual.first.data,
-        'dataFim': dataFimGrupo!,
-        'isPeriodo': grupoAtual.length > 1,
-      });
-    }
-
-    return grupos;
+    return SeriesHelper.agruparExcecoesPorPeriodo(excecoes, series);
   }
 
   /// Remove uma exceção
@@ -2556,6 +2036,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       // NÃO recarregar disponibilidades aqui - será feito em lote se necessário
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Erro ao remover exceção: $e'),
@@ -2605,25 +2086,29 @@ class CadastroMedicoState extends State<CadastroMedico> {
         mensagemSaving = 'A guardar...';
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              '${excecoesParaRemover.length} exceção(ões) removida(s) com sucesso'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '${excecoesParaRemover.length} exceção(ões) removida(s) com sucesso'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
         _saving = false;
         progressoSaving = 0.0;
         mensagemSaving = 'A guardar...';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao remover exceções: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao remover exceções: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -2645,7 +2130,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
         // Salvar disponibilidade única diretamente no Firestore
         final firestore = FirebaseFirestore.instance;
-        final unidadeId = widget.unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+        final unidadeId = CadastroMedicosHelper.obterUnidadeId(widget.unidade);
         final ano = disponibilidade.data.year.toString();
         final disponibilidadesRef = firestore
             .collection('unidades')
@@ -2668,6 +2153,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
         await disponibilidadesRef
             .doc(disponibilidade.id)
             .set(dispAtualizada.toMap());
+
+        debugPrint(
+            '✅ Disponibilidade única salva ao editar horários: ID=${disponibilidade.id}, data=${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
+
+        // CORREÇÃO: Invalidar cache do dia da disponibilidade após salvar
+        final d = DateTime(disponibilidade.data.year,
+            disponibilidade.data.month, disponibilidade.data.day);
+        AlocacaoMedicosLogic.invalidateCacheForDay(d);
+        // Invalidar também cache do ano da disponibilidade
+        AlocacaoMedicosLogic.invalidateCacheFromDate(
+            DateTime(disponibilidade.data.year, 1, 1));
 
         // Atualizar na lista local
         setState(() {
@@ -2734,33 +2230,25 @@ class CadastroMedicoState extends State<CadastroMedico> {
       // - dataKey é '2025-12-02' (formato YYYY-MM-DD)
       // Então o formato completo é: 'serie_serie_1234567890_2025-12-02'
       if (disponibilidade.id.startsWith('serie_')) {
-        // Estratégia 1: Usar regex para encontrar o dataKey no final
-        final dataKeyPattern = RegExp(r'_\d{4}-\d{2}-\d{2}$');
-        final match = dataKeyPattern.firstMatch(disponibilidade.id);
+        // Estratégia 1: Usar helper para extrair o ID da série
+        final serieIdFinal =
+            SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id);
 
-        if (match != null) {
-          // Extrair o ID da série (tudo antes do underscore + dataKey)
-          final serieId = disponibilidade.id.substring(0, match.start);
-          // Remover o prefixo 'serie_' inicial se presente
-          final serieIdFinal =
-              serieId.startsWith('serie_') ? serieId : 'serie_$serieId';
-
-          // Tentar encontrar série com ID exato
-          serieEncontrada = series.firstWhere(
-            (s) => s.id == serieIdFinal && s.ativo,
-            orElse: () => SerieRecorrencia(
-              id: '',
-              medicoId: '',
-              dataInicio: DateTime.now(),
-              tipo: '',
-              horarios: [],
-            ),
-          );
-        }
+        // Tentar encontrar série com ID exato
+        serieEncontrada = series.firstWhere(
+          (s) => s.id == serieIdFinal && s.ativo,
+          orElse: () => SerieRecorrencia(
+            id: '',
+            medicoId: '',
+            dataInicio: DateTime.now(),
+            tipo: '',
+            horarios: [],
+          ),
+        );
 
         // Estratégia 2: Se não encontrou, tentar correspondência parcial
         // Isso garante compatibilidade com formatos antigos ou variações
-        if (serieEncontrada == null || serieEncontrada.id.isEmpty) {
+        if (serieEncontrada.id.isEmpty) {
           for (final serie in series) {
             // Verificar se o ID da disponibilidade contém o ID da série
             // e se a série está ativa
@@ -2792,31 +2280,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
           if (serie.dataInicio.isAfter(disponibilidade.data)) continue;
 
           // Verificar se a data corresponde ao padrão da série
-          bool correspondeAoPadrao = false;
-
-          switch (serie.tipo) {
-            case 'Semanal':
-              // Para semanal, verificar se o dia da semana corresponde
-              correspondeAoPadrao =
-                  disponibilidade.data.weekday == serie.dataInicio.weekday;
-              break;
-            case 'Quinzenal':
-              // Para quinzenal, verificar se a diferença em dias é múltipla de 14
-              final diffDias =
-                  disponibilidade.data.difference(serie.dataInicio).inDays;
-              correspondeAoPadrao = diffDias >= 0 && diffDias % 14 == 0;
-              break;
-            case 'Mensal':
-              // Para mensal, verificar se o dia do mês corresponde
-              correspondeAoPadrao =
-                  disponibilidade.data.day == serie.dataInicio.day;
-              break;
-            default:
-              // Para outros tipos, apenas verificar se está no período
-              correspondeAoPadrao = true;
-          }
-
-          if (correspondeAoPadrao) {
+          if (SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
+              disponibilidade.data, serie)) {
             serieEncontrada = serie;
             break;
           }
@@ -2856,7 +2321,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
         await SerieService.salvarSerie(serieAtualizada,
             unidade: widget.unidade);
 
-        print('✅ Série atualizada com novos horários: ${serieAtualizada.id}');
+        debugPrint(
+            '✅ Série atualizada com novos horários: ${serieAtualizada.id}');
 
         // CORREÇÃO: Invalidar cache para garantir que mudanças apareçam no ecrã de alocação
         final anoSerie = serieAtualizada.dataInicio.year;
@@ -2894,15 +2360,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
           });
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Horários atualizados na série!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Horários atualizados na série!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       } else {
-        print('⚠️ Série não encontrada para atualizar horários');
+        debugPrint('⚠️ Série não encontrada para atualizar horários');
         if (mounted) {
           setState(() {
             _atualizandoHorarios = false;
@@ -2912,13 +2380,15 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
       }
     } catch (e) {
-      print('❌ Erro ao atualizar série com horários: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao atualizar série: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      debugPrint('❌ Erro ao atualizar série com horários: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao atualizar série: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
       if (mounted) {
         setState(() {
           _atualizandoHorarios = false;
@@ -2936,89 +2406,36 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     // Verifica se o nome foi preenchido
     if (nomeController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Introduza o nome do médico')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Introduza o nome do médico')),
+        );
+      }
       return; // Interrompe o processo de salvar
     }
-
-    final medico = Medico(
-      id: _medicoId,
-      nome: nomeController.text, // Captura o nome
-      especialidade: especialidadeController.text, // Captura a especialidade
-      observacoes: observacoesController.text, // Captura observações
-      disponibilidades:
-          disponibilidades, // Adiciona as disponibilidades (para compatibilidade)
-      ativo: true, // CORREÇÃO: Garantir que novos médicos sejam sempre ativos
-    );
 
     try {
       setState(() => _saving = true);
 
-      // Salvar médico e disponibilidades antigas (compatibilidade)
-      await salvarMedicoCompleto(
-        medico,
-        unidade: widget.unidade,
-        disponibilidadesOriginais: _disponibilidadesOriginal,
+      final resultado =
+          await CadastroMedicoSalvarService.salvarMedicoCompletoComTudo(
+        context,
+        _medicoId,
+        nomeController.text,
+        especialidadeController.text,
+        observacoesController.text,
+        disponibilidades,
+        series,
+        excecoes,
+        _disponibilidadesOriginal,
+        widget.unidade,
       );
 
-      // Salvar séries de recorrência (novo modelo)
-      for (final serie in series) {
-        // Atualizar horários da série se foram modificados
-        final serieComHorarios = SerieRecorrencia(
-          id: serie.id,
-          medicoId: serie.medicoId,
-          dataInicio: serie.dataInicio,
-          dataFim: serie.dataFim,
-          tipo: serie.tipo,
-          horarios: serie.horarios, // Manter horários da série
-          gabineteId: serie.gabineteId,
-          parametros: serie.parametros,
-          ativo: serie.ativo,
-        );
-        await SerieService.salvarSerie(serieComHorarios,
-            unidade: widget.unidade);
-      }
-
-      // CORREÇÃO: Salvar disponibilidades "Única" no Firestore
-      // Disponibilidades "Única" não são séries, então precisam ser salvas diretamente
-      final firestore = FirebaseFirestore.instance;
-      final unidadeId = widget.unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-
-      int unicasSalvas = 0;
-
-      for (final disp in disponibilidades) {
-        if (disp.tipo == 'Única' && disp.medicoId == _medicoId) {
-          try {
-            final ano = disp.data.year.toString();
-            final disponibilidadesRef = firestore
-                .collection('unidades')
-                .doc(unidadeId)
-                .collection('ocupantes')
-                .doc(_medicoId)
-                .collection('disponibilidades')
-                .doc(ano)
-                .collection('registos');
-
-            await disponibilidadesRef.doc(disp.id).set(disp.toMap());
-            unicasSalvas++;
-          } catch (e) {
-            // Erro ao salvar disponibilidade única - continuar com as outras
-          }
-        }
-      }
-
-      // CORREÇÃO CRÍTICA: Aguardar um pouco para dar tempo à Cloud Function atualizar a vista diária
-      // Isso garante que quando invalidarmos o cache, os dados já estarão atualizados
-      await Future.delayed(const Duration(milliseconds: 1000));
-
-      // Salvar exceções
-      for (final excecao in excecoes) {
-        await SerieService.salvarExcecao(excecao, _medicoId,
-            unidade: widget.unidade);
-      }
-
       if (!mounted) return;
+
+      if (!resultado['sucesso']) {
+        return; // Erro já foi mostrado pelo serviço
+      }
 
       // Reseta as mudanças após salvar com sucesso
       _nomeOriginal = nomeController.text.trim();
@@ -3028,36 +2445,15 @@ class CadastroMedicoState extends State<CadastroMedico> {
       setState(() {
         _houveMudancas = false;
         // Atualizar médico atual após salvar
-        _medicoAtual = medico;
+        _medicoAtual = Medico(
+          id: _medicoId,
+          nome: nomeController.text,
+          especialidade: especialidadeController.text,
+          observacoes: observacoesController.text,
+          disponibilidades: disponibilidades,
+          ativo: true,
+        );
       });
-
-      // CORREÇÃO CRÍTICA: Invalidar cache DEPOIS de salvar para garantir que será recarregado
-      // Invalidar cache dos dias das disponibilidades
-      for (final disp in disponibilidades) {
-        final d = DateTime(disp.data.year, disp.data.month, disp.data.day);
-        AlocacaoMedicosLogic.invalidateCacheForDay(d);
-      }
-
-      // CORREÇÃO CRÍTICA: Invalidar cache de séries para TODOS os dias do ano atual
-      // Isso garante que séries criadas apareçam em todos os dias relevantes
-      final anoAtual = DateTime.now().year;
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoAtual, 1, 1));
-
-      // CORREÇÃO ADICIONAL: Invalidar também cache de séries para o próximo ano
-      // (caso haja séries que se estendam para o próximo ano)
-      AlocacaoMedicosLogic.invalidateCacheFromDate(
-          DateTime(anoAtual + 1, 1, 1));
-
-      // CORREÇÃO: Invalidar cache de médicos ativos para garantir que o novo médico apareça na lista
-      if (widget.unidade != null) {
-        AlocacaoMedicosLogic.invalidateMedicosAtivosCache(
-            unidadeId: widget.unidade!.id);
-
-        // CORREÇÃO CRÍTICA: Invalidar também o cache de séries para o novo médico
-        // Isso garante que as séries sejam recarregadas quando necessário
-        // Invalidar para TODOS os anos para garantir que apareça em todos os dias
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(_medicoId, null);
-      }
 
       // Retorna à lista sem flicker: agenda o pop para o próximo frame
       _navegandoAoSair = true;
@@ -3094,96 +2490,28 @@ class CadastroMedicoState extends State<CadastroMedico> {
       return false; // Interrompe o processo de salvar
     }
 
-    final medico = Medico(
-      id: _medicoId,
-      nome: nomeController.text, // Captura o nome
-      especialidade: especialidadeController.text, // Captura a especialidade
-      observacoes: observacoesController.text, // Captura observações
-      disponibilidades:
-          disponibilidades, // Adiciona as disponibilidades (compatibilidade)
-    );
-
     try {
       setState(() => _saving = true);
 
-      // Salvar médico e disponibilidades antigas (compatibilidade)
-      await salvarMedicoCompleto(
-        medico,
-        unidade: widget.unidade,
-        disponibilidadesOriginais: _disponibilidadesOriginal,
+      final resultado =
+          await CadastroMedicoSalvarService.salvarMedicoCompletoComTudo(
+        context,
+        _medicoId,
+        nomeController.text,
+        especialidadeController.text,
+        observacoesController.text,
+        disponibilidades,
+        series,
+        excecoes,
+        _disponibilidadesOriginal,
+        widget.unidade,
       );
-
-      // Salvar séries de recorrência (novo modelo)
-      for (final serie in series) {
-        final serieComHorarios = SerieRecorrencia(
-          id: serie.id,
-          medicoId: serie.medicoId,
-          dataInicio: serie.dataInicio,
-          dataFim: serie.dataFim,
-          tipo: serie.tipo,
-          horarios: serie.horarios,
-          gabineteId: serie.gabineteId,
-          parametros: serie.parametros,
-          ativo: serie.ativo,
-        );
-        await SerieService.salvarSerie(serieComHorarios,
-            unidade: widget.unidade);
-      }
-
-      // CORREÇÃO: Salvar disponibilidades "Única" no Firestore
-      // Disponibilidades "Única" não são séries, então precisam ser salvas diretamente
-      final firestore = FirebaseFirestore.instance;
-      final unidadeId = widget.unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-
-      int unicasSalvas = 0;
-
-      for (final disp in disponibilidades) {
-        if (disp.tipo == 'Única' && disp.medicoId == _medicoId) {
-          try {
-            final ano = disp.data.year.toString();
-            final disponibilidadesRef = firestore
-                .collection('unidades')
-                .doc(unidadeId)
-                .collection('ocupantes')
-                .doc(_medicoId)
-                .collection('disponibilidades')
-                .doc(ano)
-                .collection('registos');
-
-            await disponibilidadesRef.doc(disp.id).set(disp.toMap());
-            unicasSalvas++;
-          } catch (e) {}
-        }
-      }
-
-      // CORREÇÃO CRÍTICA: Aguardar um pouco para dar tempo à Cloud Function atualizar a vista diária
-      // Isso garante que quando invalidarmos o cache, os dados já estarão atualizados
-      await Future.delayed(const Duration(milliseconds: 1000));
-
-      // Salvar exceções
-      for (final excecao in excecoes) {
-        await SerieService.salvarExcecao(excecao, _medicoId,
-            unidade: widget.unidade);
-      }
 
       if (!mounted) return false;
 
-      // CORREÇÃO CRÍTICA: Invalidar cache ANTES de resetar mudanças
-      // Invalidar cache dos dias das disponibilidades
-      for (final disp in disponibilidades) {
-        final d = DateTime(disp.data.year, disp.data.month, disp.data.day);
-        AlocacaoMedicosLogic.invalidateCacheForDay(d);
+      if (!resultado['sucesso']) {
+        return false; // Erro já foi mostrado pelo serviço
       }
-
-      // CORREÇÃO CRÍTICA: Invalidar cache de séries para TODOS os anos relevantes
-      // Isso garante que séries criadas apareçam em todos os dias relevantes
-      final anoAtual = DateTime.now().year;
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoAtual, 1, 1));
-      AlocacaoMedicosLogic.invalidateCacheFromDate(
-          DateTime(anoAtual + 1, 1, 1));
-
-      // Invalidar cache de séries para este médico (todos os anos)
-      AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(_medicoId, null);
 
       // Reseta as mudanças após salvar com sucesso
       _nomeOriginal = nomeController.text.trim();
@@ -3193,7 +2521,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
       setState(() {
         _houveMudancas = false;
         // Atualizar médico atual após salvar
-        _medicoAtual = medico;
+        _medicoAtual = Medico(
+          id: _medicoId,
+          nome: nomeController.text,
+          especialidade: especialidadeController.text,
+          observacoes: observacoesController.text,
+          disponibilidades: disponibilidades,
+          ativo: true,
+        );
         progressoSaving = 1.0;
         mensagemSaving = 'Concluído!';
         // Desligar progress bar após um pequeno delay para mostrar 100%
@@ -3312,18 +2647,22 @@ class CadastroMedicoState extends State<CadastroMedico> {
         });
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Médico criado com sucesso! Agora pode criar disponibilidades.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Médico criado com sucesso! Agora pode criar disponibilidades.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao criar médico: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao criar médico: $e')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -3476,10 +2815,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 const SizedBox(width: 12),
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                        color: Colors.white.withOpacity(0.3), width: 1),
+                        color: Colors.white.withValues(alpha: 0.3), width: 1),
                   ),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -3552,7 +2891,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                     decoration: InputDecoration(
                                       hintText: 'Pesquisar médico...',
                                       hintStyle: TextStyle(
-                                        color: Colors.white.withOpacity(0.7),
+                                        color:
+                                            Colors.white.withValues(alpha: 0.7),
                                         fontSize: 14,
                                       ),
                                       border: InputBorder.none,
@@ -3569,7 +2909,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                 Icons.clear,
                                                 size: 18,
                                                 color: Colors.white
-                                                    .withOpacity(0.8),
+                                                    .withValues(alpha: 0.8),
                                               ),
                                               onPressed: () {
                                                 textEditingController.clear();
@@ -3628,7 +2968,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                             ),
                                             decoration: BoxDecoration(
                                               color: isSelected
-                                                  ? Colors.blue.withOpacity(0.2)
+                                                  ? Colors.blue
+                                                      .withValues(alpha: 0.2)
                                                   : Colors.transparent,
                                             ),
                                             child: Row(
@@ -4831,7 +4172,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
             if (_saving)
               Positioned.fill(
                 child: Container(
-                  color: Colors.black.withOpacity(0.35),
+                  color: Colors.black.withValues(alpha: 0.35),
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -4859,7 +4200,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                 child: LinearProgressIndicator(
                                   value: progressoSaving,
                                   backgroundColor:
-                                      Colors.white.withOpacity(0.3),
+                                      Colors.white.withValues(alpha: 0.3),
                                   valueColor:
                                       const AlwaysStoppedAnimation<Color>(
                                           Colors.white),
@@ -4890,7 +4231,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
             if (_atualizandoHorarios)
               Positioned.fill(
                 child: Container(
-                  color: Colors.black.withOpacity(0.35),
+                  color: Colors.black.withValues(alpha: 0.35),
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -4918,7 +4259,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                 child: LinearProgressIndicator(
                                   value: progressoAtualizandoHorarios,
                                   backgroundColor:
-                                      Colors.white.withOpacity(0.3),
+                                      Colors.white.withValues(alpha: 0.3),
                                   valueColor:
                                       const AlwaysStoppedAnimation<Color>(
                                           Colors.white),

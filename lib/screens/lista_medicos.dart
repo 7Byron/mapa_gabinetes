@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/app_theme.dart';
-import 'package:mapa_gabinetes/main.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
@@ -95,9 +93,9 @@ class ListaMedicosState extends State<ListaMedicos> {
       final snapshot = await query.get(
         GetOptions(source: refresh ? Source.server : Source.serverAndCache),
       );
-      print(
+      debugPrint(
           '🔍 Buscando médicos na unidade: ${widget.unidade?.id ?? 'global'}');
-      print('📊 Página carregada: ${snapshot.docs.length}');
+      debugPrint('📊 Página carregada: ${snapshot.docs.length}');
 
       final medicosCarregados = <Medico>[];
       for (final doc in snapshot.docs) {
@@ -129,6 +127,7 @@ class ListaMedicosState extends State<ListaMedicos> {
         isLoading = false;
         _isLoadingMore = false;
       });
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -201,6 +200,7 @@ class ListaMedicosState extends State<ListaMedicos> {
       _searchFocusNode.requestFocus();
     } catch (e) {
       setState(() => _loadingAll = false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

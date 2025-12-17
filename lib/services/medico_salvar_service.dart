@@ -1,5 +1,6 @@
 // lib/services/medico_salvar_service.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
@@ -37,7 +38,7 @@ Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
     final especialidadesUnicas = especialidades.toSet().toList()..sort();
     return especialidadesUnicas;
   } catch (e) {
-    print('❌ Erro ao buscar especialidades: $e');
+    debugPrint('❌ Erro ao buscar especialidades: $e');
     return [];
   }
 }
@@ -74,8 +75,8 @@ Future<void> salvarMedicoCompleto(
     'searchTokens': _buildSearchTokens(medico.nome, medico.especialidade),
   }, SetOptions(merge: true));
 
-  print('✅ Médico salvo: ${medico.nome} (ID: ${medico.id})');
-  print('📊 Disps (novas): ${medico.disponibilidades.length}');
+  debugPrint('✅ Médico salvo: ${medico.nome} (ID: ${medico.id})');
+  debugPrint('📊 Disps (novas): ${medico.disponibilidades.length}');
 
   // Caminho base das disponibilidades
   final dispRef = medicoRef.collection('disponibilidades');
@@ -137,7 +138,7 @@ Future<void> salvarMedicoCompleto(
   }
 
   await batch.commit();
-  print(
+  debugPrint(
       '✅ Diff aplicado: -${idsParaApagar.length} / +${idsParaCriar.length} / ~${idsPossiveisUpdates.length}');
 }
 

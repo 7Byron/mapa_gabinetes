@@ -57,7 +57,18 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
         anos.add(doc.id);
       }
 
-      // Adiciona o ano atual se não existir
+      // Adiciona o ano atual e próximo ano se não existirem
+      final anoAtual = DateTime.now().year.toString();
+      final proximoAno = (DateTime.now().year + 1).toString();
+
+      if (!anos.contains(anoAtual)) {
+        anos.add(anoAtual);
+      }
+      if (!anos.contains(proximoAno)) {
+        anos.add(proximoAno);
+      }
+
+      // Adiciona o ano selecionado se não existir (para permitir navegação)
       if (!anos.contains(anoSelecionado)) {
         anos.add(anoSelecionado);
       }
@@ -71,6 +82,34 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
     } catch (e) {
       debugPrint('Erro ao carregar anos disponíveis: $e');
     }
+  }
+
+  void _anoAnterior() {
+    final anoAtual = int.parse(anoSelecionado);
+    final novoAno = (anoAtual - 1).toString();
+    setState(() {
+      anoSelecionado = novoAno;
+      // Adiciona o novo ano à lista se não existir
+      if (!anosDisponiveis.contains(novoAno)) {
+        anosDisponiveis.add(novoAno);
+        anosDisponiveis.sort((a, b) => int.parse(b).compareTo(int.parse(a)));
+      }
+    });
+    _carregarDiasEncerramento();
+  }
+
+  void _proximoAno() {
+    final anoAtual = int.parse(anoSelecionado);
+    final novoAno = (anoAtual + 1).toString();
+    setState(() {
+      anoSelecionado = novoAno;
+      // Adiciona o novo ano à lista se não existir
+      if (!anosDisponiveis.contains(novoAno)) {
+        anosDisponiveis.add(novoAno);
+        anosDisponiveis.sort((a, b) => int.parse(b).compareTo(int.parse(a)));
+      }
+    });
+    _carregarDiasEncerramento();
   }
 
   Future<void> _carregarDiasEncerramento() async {
@@ -140,6 +179,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
     String descricao = '';
     String motivo = 'Encerramento';
 
+    if (!mounted) return;
     await showDialog(
       context: context,
       builder: (context) {
@@ -279,6 +319,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
     }
 
     // Dialog para editar descrição e motivo
+    if (!mounted) return;
     await showDialog(
       context: context,
       builder: (context) {
@@ -478,34 +519,35 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                // Seletor de ano
+                // Seletor de ano com navegação por setas
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        const Text(
-                          'Ano: ',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                        // Botão para ano anterior
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left),
+                          onPressed: _anoAnterior,
+                          iconSize: 32,
+                          color: Colors.blue,
                         ),
                         const SizedBox(width: 8),
-                        DropdownButton<String>(
-                          value: anoSelecionado,
-                          items: anosDisponiveis.map((ano) {
-                            return DropdownMenuItem(
-                              value: ano,
-                              child: Text(ano),
-                            );
-                          }).toList(),
-                          onChanged: (String? novoAno) {
-                            if (novoAno != null) {
-                              setState(() {
-                                anoSelecionado = novoAno;
-                              });
-                              _carregarDiasEncerramento();
-                            }
-                          },
+                        // Ano atual
+                        Text(
+                          anoSelecionado,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Botão para próximo ano
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: _proximoAno,
+                          iconSize: 32,
+                          color: Colors.blue,
                         ),
                         const Spacer(),
                         ElevatedButton.icon(

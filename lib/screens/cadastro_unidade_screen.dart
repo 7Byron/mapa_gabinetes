@@ -2,7 +2,6 @@
 import '../utils/app_theme.dart';
 
 import 'package:flutter/material.dart';
-import 'package:mapa_gabinetes/main.dart';
 import '../models/unidade.dart';
 import '../services/unidade_service.dart';
 import '../services/password_service.dart';
@@ -53,7 +52,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
         _tiposExistentes = tipos;
       });
     } catch (e) {
-      print('Erro ao carregar tipos existentes: $e');
+      debugPrint('Erro ao carregar tipos existentes: $e');
     }
   }
 
@@ -61,7 +60,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     if (widget.unidade == null) return;
 
     try {
-      print('🔄 Carregando dados da unidade: ${widget.unidade!.id}');
+      debugPrint('🔄 Carregando dados da unidade: ${widget.unidade!.id}');
 
       // Carregar dados básicos da unidade
       _nomeController.text = widget.unidade!.nome;
@@ -73,7 +72,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
       _nomeAlocacaoController.text = widget.unidade!.nomeAlocacao;
 
       // Carregar passwords do documento da unidade
-      print('🔐 Carregando passwords do documento da unidade...');
+      debugPrint('🔐 Carregando passwords do documento da unidade...');
       final projectPassword = await PasswordService.getProjectPassword(
           unidadeId: widget.unidade!.id);
       final adminPassword =
@@ -81,23 +80,23 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
 
       if (projectPassword != null) {
         _passwordProjetoController.text = projectPassword;
-        print(
+        debugPrint(
             '✅ Password do projeto carregada: ${projectPassword.length} caracteres');
       } else {
-        print('⚠️ Password do projeto não encontrada');
+        debugPrint('⚠️ Password do projeto não encontrada');
       }
 
       if (adminPassword != null) {
         _passwordAdminController.text = adminPassword;
-        print(
+        debugPrint(
             '✅ Password do administrador carregada: ${adminPassword.length} caracteres');
       } else {
-        print('⚠️ Password do administrador não encontrada');
+        debugPrint('⚠️ Password do administrador não encontrada');
       }
 
-      print('✅ Dados da unidade carregados com sucesso');
+      debugPrint('✅ Dados da unidade carregados com sucesso');
     } catch (e) {
-      print('❌ Erro ao carregar dados da unidade: $e');
+      debugPrint('❌ Erro ao carregar dados da unidade: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -126,7 +125,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
   Future<void> _salvarUnidade() async {
     // Validar todos os campos obrigatórios
     if (!_formKey.currentState!.validate()) {
-      print('❌ Validação do formulário falhou');
+      debugPrint('❌ Validação do formulário falhou');
       return;
     }
 
@@ -168,7 +167,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
           ),
         );
       }
-      print(
+      debugPrint(
           '❌ Campos obrigatórios não preenchidos: ${camposFaltantes.join(', ')}');
       return;
     }
@@ -183,22 +182,22 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
           ),
         );
       }
-      print('❌ Passwords muito curtas');
+      debugPrint('❌ Passwords muito curtas');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      print('💾 Iniciando salvamento da unidade...');
-      print('📋 Dados a salvar:');
-      print('   - Tipo: $tipo');
-      print('   - Nome: $nome');
-      print('   - Endereço: $endereco');
-      print('   - Password Projeto: ${passwordProjeto.length} caracteres');
-      print('   - Password Admin: ${passwordAdmin.length} caracteres');
-      print('   - Ocupantes: $nomeOcupantes');
-      print('   - Alocação: $nomeAlocacao');
+      debugPrint('💾 Iniciando salvamento da unidade...');
+      debugPrint('📋 Dados a salvar:');
+      debugPrint('   - Tipo: $tipo');
+      debugPrint('   - Nome: $nome');
+      debugPrint('   - Endereço: $endereco');
+      debugPrint('   - Password Projeto: ${passwordProjeto.length} caracteres');
+      debugPrint('   - Password Admin: ${passwordAdmin.length} caracteres');
+      debugPrint('   - Ocupantes: $nomeOcupantes');
+      debugPrint('   - Alocação: $nomeAlocacao');
 
       final unidade = Unidade(
         id: widget.unidade?.id ?? '',
@@ -221,44 +220,46 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
       String? unidadeId;
       if (widget.unidade == null) {
         // Criar nova unidade
-        print('🆕 Criando nova unidade...');
+        debugPrint('🆕 Criando nova unidade...');
         unidadeId = await UnidadeService.criarUnidade(unidade);
         sucesso = unidadeId != null;
 
         // Se criou com sucesso, salva as passwords com o novo ID
         if (sucesso) {
-          print('✅ Unidade criada com ID: $unidadeId');
-          print('🔐 Salvando passwords no Firebase...');
-          print('   - Unidade ID para passwords: $unidadeId');
-          print('   - Password projeto: ${passwordProjeto.length} caracteres');
-          print('   - Password admin: ${passwordAdmin.length} caracteres');
+          debugPrint('✅ Unidade criada com ID: $unidadeId');
+          debugPrint('🔐 Salvando passwords no Firebase...');
+          debugPrint('   - Unidade ID para passwords: $unidadeId');
+          debugPrint(
+              '   - Password projeto: ${passwordProjeto.length} caracteres');
+          debugPrint('   - Password admin: ${passwordAdmin.length} caracteres');
 
           await PasswordService.saveProjectPassword(passwordProjeto,
               unidadeId: unidadeId);
           await PasswordService.saveAdminPassword(passwordAdmin,
               unidadeId: unidadeId);
-          print('✅ Passwords salvas com o novo ID da unidade');
+          debugPrint('✅ Passwords salvas com o novo ID da unidade');
         }
       } else {
         // Atualizar unidade existente
-        print('🔄 Atualizando unidade existente...');
-        print('   - Unidade ID existente: ${widget.unidade!.id}');
+        debugPrint('🔄 Atualizando unidade existente...');
+        debugPrint('   - Unidade ID existente: ${widget.unidade!.id}');
         sucesso = await UnidadeService.atualizarUnidade(unidade);
         unidadeId = widget.unidade!.id;
 
         // Se atualizou com sucesso, salva as passwords
         if (sucesso) {
-          print('✅ Unidade atualizada com sucesso');
-          print('🔐 Salvando passwords no Firebase...');
-          print('   - Unidade ID para passwords: $unidadeId');
-          print('   - Password projeto: ${passwordProjeto.length} caracteres');
-          print('   - Password admin: ${passwordAdmin.length} caracteres');
+          debugPrint('✅ Unidade atualizada com sucesso');
+          debugPrint('🔐 Salvando passwords no Firebase...');
+          debugPrint('   - Unidade ID para passwords: $unidadeId');
+          debugPrint(
+              '   - Password projeto: ${passwordProjeto.length} caracteres');
+          debugPrint('   - Password admin: ${passwordAdmin.length} caracteres');
 
           await PasswordService.saveProjectPassword(passwordProjeto,
               unidadeId: unidadeId);
           await PasswordService.saveAdminPassword(passwordAdmin,
               unidadeId: unidadeId);
-          print('✅ Passwords salvas no Firebase');
+          debugPrint('✅ Passwords salvas no Firebase');
         }
       }
 
@@ -266,7 +267,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
       await PasswordService.markAsNotFirstTime();
 
       if (sucesso) {
-        print('✅ Unidade salva com sucesso!');
+        debugPrint('✅ Unidade salva com sucesso!');
         if (mounted) {
           Navigator.pop(context, true);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -284,7 +285,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
         throw Exception('Erro ao salvar unidade');
       }
     } catch (e) {
-      print('❌ Erro ao salvar unidade: $e');
+      debugPrint('❌ Erro ao salvar unidade: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
-import 'package:mapa_gabinetes/main.dart';
 
 class DatePickerSection extends StatelessWidget {
   final DateTime selectedDate;
@@ -129,7 +128,7 @@ class DatePickerSection extends StatelessWidget {
               return Expanded(
                 child: GestureDetector(
                   onTap: () {
-                    print(
+                    debugPrint(
                         '🔄 Dia clicado: $dayNumber/${selectedDate.month}/${selectedDate.year}');
                     onDateChanged(date);
                   },

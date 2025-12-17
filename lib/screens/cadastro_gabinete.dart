@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/app_theme.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:mapa_gabinetes/main.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
 import '../services/gabinete_service.dart';
@@ -106,11 +104,12 @@ class CadastroGabineteState extends State<CadastroGabinete> {
         await salvarGabineteCompleto(gabinete, unidade: widget.unidade);
 
         // Volta para a tela anterior apenas se solicitado
-        if (voltar) {
+        if (voltar && mounted) {
           Navigator.pop(context, true);
         }
       } catch (e) {
         debugPrint('Erro ao salvar gabinete: $e');
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erro ao salvar gabinete: $e'),

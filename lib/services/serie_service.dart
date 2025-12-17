@@ -1,5 +1,6 @@
 // lib/services/serie_service.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
@@ -26,9 +27,9 @@ class SerieService {
           .doc(serie.id);
 
       await serieRef.set(serie.toMap());
-      print('✅ Série salva: ${serie.id}');
+      debugPrint('✅ Série salva: ${serie.id}');
     } catch (e) {
-      print('❌ Erro ao salvar série: $e');
+      debugPrint('❌ Erro ao salvar série: $e');
       rethrow;
     }
   }
@@ -88,10 +89,10 @@ class SerieService {
         series.add(serie);
       }
 
-      print('✅ Séries carregadas: ${series.length}');
+      debugPrint('✅ Séries carregadas: ${series.length}');
       return series;
     } catch (e) {
-      print('❌ Erro ao carregar séries: $e');
+      debugPrint('❌ Erro ao carregar séries: $e');
       return [];
     }
   }
@@ -116,13 +117,13 @@ class SerieService {
 
       if (permanente) {
         await serieRef.delete();
-        print('✅ Série removida permanentemente: $serieId');
+        debugPrint('✅ Série removida permanentemente: $serieId');
       } else {
         await serieRef.update({'ativo': false});
-        print('✅ Série desativada: $serieId');
+        debugPrint('✅ Série desativada: $serieId');
       }
     } catch (e) {
-      print('❌ Erro ao remover série: $e');
+      debugPrint('❌ Erro ao remover série: $e');
       rethrow;
     }
   }
@@ -148,9 +149,9 @@ class SerieService {
           .doc(excecao.id);
 
       await excecaoRef.set(excecao.toMap());
-      print('✅ Exceção salva: ${excecao.id}');
+      debugPrint('✅ Exceção salva: ${excecao.id}');
     } catch (e) {
-      print('❌ Erro ao salvar exceção: $e');
+      debugPrint('❌ Erro ao salvar exceção: $e');
       rethrow;
     }
   }
@@ -177,7 +178,7 @@ class SerieService {
         }
         // Debug: mostrar anos que serão carregados
         if (forcarServidor) {
-          print(
+          debugPrint(
               '🔍 Carregando exceções do servidor (sem cache) para anos: $anos (período: ${dataInicio.day}/${dataInicio.month}/${dataInicio.year} até ${dataFim.day}/${dataFim.month}/${dataFim.year})');
         }
       } else {
@@ -200,13 +201,13 @@ class SerieService {
         // Isso é necessário quando uma exceção foi criada recentemente
         final source = forcarServidor ? Source.server : Source.serverAndCache;
         if (forcarServidor) {
-          print(
+          debugPrint(
               '🔍 Carregando exceções do ano $ano do servidor (sem cache) para médico $medicoId');
         }
         final snapshot = await excecoesRef.get(GetOptions(source: source));
 
         if (forcarServidor) {
-          print(
+          debugPrint(
               '📋 Exceções carregadas do ano $ano: ${snapshot.docs.length} documentos');
         }
 
@@ -236,20 +237,20 @@ class SerieService {
       final excecoesComGabinete =
           excecoes.where((e) => e.gabineteId != null).toList();
       if (excecoesComGabinete.isNotEmpty) {
-        print(
+        debugPrint(
             '✅ Exceções carregadas: ${excecoes.length} total, ${excecoesComGabinete.length} com gabinete');
         for (final ex in excecoesComGabinete) {
           final dataKey =
               '${ex.data.year}-${ex.data.month.toString().padLeft(2, '0')}-${ex.data.day.toString().padLeft(2, '0')}';
-          print(
+          debugPrint(
               '   📋 Exceção: série=${ex.serieId}, data=$dataKey, gabinete=${ex.gabineteId}');
         }
       } else {
-        print('✅ Exceções carregadas: ${excecoes.length}');
+        debugPrint('✅ Exceções carregadas: ${excecoes.length}');
       }
       return excecoes;
     } catch (e) {
-      print('❌ Erro ao carregar exceções: $e');
+      debugPrint('❌ Erro ao carregar exceções: $e');
       return [];
     }
   }
@@ -276,9 +277,9 @@ class SerieService {
           .doc(excecaoId);
 
       await excecaoRef.delete();
-      print('✅ Exceção removida: $excecaoId');
+      debugPrint('✅ Exceção removida: $excecaoId');
     } catch (e) {
-      print('❌ Erro ao remover exceção: $e');
+      debugPrint('❌ Erro ao remover exceção: $e');
       rethrow;
     }
   }
@@ -307,7 +308,7 @@ class SerieService {
       await salvarSerie(serie, unidade: unidade);
       return serie;
     } catch (e) {
-      print('❌ Erro ao converter para série: $e');
+      debugPrint('❌ Erro ao converter para série: $e');
       return null;
     }
   }

@@ -1,0 +1,15 @@
+{
+  "dart.flutterSdkPath": null,
+  "dart.enableSdkFormatter": true,
+  "dart.lineLength": 80,
+  "dart.showLintNames": true,
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "Dart-Code.dart-code"
+  },
+  "dart.flutterRunAdditionalArgs": [
+    "--web-renderer=html"
+  ],
+  "dart.flutterHotReloadOnSave": "always"
+}
+

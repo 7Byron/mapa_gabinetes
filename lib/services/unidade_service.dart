@@ -1,5 +1,6 @@
 // lib/services/unidade_service.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
 
@@ -9,17 +10,17 @@ class UnidadeService {
   /// Busca todas as unidades ativas
   static Future<List<Unidade>> buscarUnidades() async {
     try {
-      print('🔍 Buscando unidades no Firebase...');
+      debugPrint('🔍 Buscando unidades no Firebase...');
 
       // Primeiro, vamos buscar todas as unidades sem filtro para debug
       final snapshotAll = await _firestore.collection('unidades').get();
 
-      print(
+      debugPrint(
           '📊 Total de documentos encontrados (sem filtro): ${snapshotAll.docs.length}');
 
       for (final doc in snapshotAll.docs) {
-        print('📄 Documento ID: ${doc.id}');
-        print('📄 Dados completos: ${doc.data()}');
+        debugPrint('📄 Documento ID: ${doc.id}');
+        debugPrint('📄 Dados completos: ${doc.data()}');
       }
 
       // Tentar buscar unidades ativas
@@ -39,20 +40,22 @@ class UnidadeService {
       unidades = unidades.where((unidade) => unidade.ativa).toList();
       unidades.sort((a, b) => a.nome.compareTo(b.nome));
 
-      print('📊 Total de documentos ativos encontrados: ${unidades.length}');
+      debugPrint(
+          '📊 Total de documentos ativos encontrados: ${unidades.length}');
       for (final unidade in unidades) {
-        print('📄 Unidade ativa: ${unidade.nome} - Ativa: ${unidade.ativa}');
+        debugPrint(
+            '📄 Unidade ativa: ${unidade.nome} - Ativa: ${unidade.ativa}');
       }
 
-      print('✅ Unidades carregadas: ${unidades.length}');
+      debugPrint('✅ Unidades carregadas: ${unidades.length}');
       for (final unidade in unidades) {
-        print(
+        debugPrint(
             '🏥 Unidade: ${unidade.nome} (${unidade.tipo}) - Ativa: ${unidade.ativa}');
       }
 
       return unidades;
     } catch (e) {
-      print('❌ Erro ao buscar unidades: $e');
+      debugPrint('❌ Erro ao buscar unidades: $e');
       return [];
     }
   }
@@ -66,7 +69,7 @@ class UnidadeService {
       }
       return null;
     } catch (e) {
-      print('Erro ao buscar unidade por ID: $e');
+      debugPrint('Erro ao buscar unidade por ID: $e');
       return null;
     }
   }
@@ -74,16 +77,16 @@ class UnidadeService {
   /// Cria uma nova unidade
   static Future<String?> criarUnidade(Unidade unidade) async {
     try {
-      print('➕ Criando nova unidade...');
-      print('📝 Dados da unidade: ${unidade.toMap()}');
+      debugPrint('➕ Criando nova unidade...');
+      debugPrint('📝 Dados da unidade: ${unidade.toMap()}');
 
       final docRef =
           await _firestore.collection('unidades').add(unidade.toMap());
 
-      print('✅ Unidade criada com ID: ${docRef.id}');
+      debugPrint('✅ Unidade criada com ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print('❌ Erro ao criar unidade: $e');
+      debugPrint('❌ Erro ao criar unidade: $e');
       return null;
     }
   }
@@ -97,7 +100,7 @@ class UnidadeService {
           .update(unidade.toMap());
       return true;
     } catch (e) {
-      print('Erro ao atualizar unidade: $e');
+      debugPrint('Erro ao atualizar unidade: $e');
       return false;
     }
   }
@@ -108,7 +111,7 @@ class UnidadeService {
       await _firestore.collection('unidades').doc(id).update({'ativa': false});
       return true;
     } catch (e) {
-      print('Erro ao desativar unidade: $e');
+      debugPrint('Erro ao desativar unidade: $e');
       return false;
     }
   }
@@ -119,7 +122,7 @@ class UnidadeService {
       await _firestore.collection('unidades').doc(id).delete();
       return true;
     } catch (e) {
-      print('Erro ao remover unidade: $e');
+      debugPrint('Erro ao remover unidade: $e');
       return false;
     }
   }
@@ -130,7 +133,7 @@ class UnidadeService {
       final doc = await _firestore.collection('unidades').doc(id).get();
       return doc.exists;
     } catch (e) {
-      print('Erro ao verificar se unidade existe: $e');
+      debugPrint('Erro ao verificar se unidade existe: $e');
       return false;
     }
   }
@@ -149,7 +152,7 @@ class UnidadeService {
           .map((doc) => Unidade.fromMap({...doc.data(), 'id': doc.id}))
           .toList();
     } catch (e) {
-      print('Erro ao buscar unidades por tipo: $e');
+      debugPrint('Erro ao buscar unidades por tipo: $e');
       return [];
     }
   }
@@ -170,7 +173,7 @@ class UnidadeService {
       tipos.sort();
       return tipos;
     } catch (e) {
-      print('Erro ao listar tipos de unidades: $e');
+      debugPrint('Erro ao listar tipos de unidades: $e');
       return ['Clínica', 'Hospital', 'Centro Médico', 'Hotel'];
     }
   }

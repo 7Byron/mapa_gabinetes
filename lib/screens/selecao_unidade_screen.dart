@@ -2,7 +2,6 @@
 import '../utils/app_theme.dart';
 
 import 'package:flutter/material.dart';
-import 'package:mapa_gabinetes/main.dart';
 import '../models/unidade.dart';
 import '../services/unidade_service.dart';
 import '../services/password_service.dart';
@@ -27,22 +26,24 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
   }
 
   Future<void> _carregarUnidades() async {
-    print('🔄 Iniciando carregamento de unidades...');
+    debugPrint('🔄 Iniciando carregamento de unidades...');
     setState(() => isLoading = true);
     try {
       final unidadesCarregadas = await UnidadeService.buscarUnidades();
-      print('📋 Unidades carregadas na tela: ${unidadesCarregadas.length}');
+      debugPrint(
+          '📋 Unidades carregadas na tela: ${unidadesCarregadas.length}');
       for (final unidade in unidadesCarregadas) {
-        print(
+        debugPrint(
             '🏥 Unidade na tela: ${unidade.nome} (${unidade.tipo}) - Ativa: ${unidade.ativa}');
       }
       setState(() {
         unidades = unidadesCarregadas;
         isLoading = false;
       });
-      print('✅ Estado atualizado com ${unidades.length} unidades');
+      debugPrint('✅ Estado atualizado com ${unidades.length} unidades');
     } catch (e) {
-      print('❌ Erro ao carregar unidades na tela: $e');
+      debugPrint('❌ Erro ao carregar unidades na tela: $e');
+      if (!mounted) return;
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -105,7 +106,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
       }
     } else {
       // Se não há passwords configuradas, permite editar sem verificação
-      print(
+      debugPrint(
           '⚠️ Nenhuma password configurada no Firebase - permitindo edição temporária');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

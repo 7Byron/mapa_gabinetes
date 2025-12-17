@@ -190,7 +190,6 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       debugPrint('Configurações de encerramento salvas');
 
       if (!mounted) return;
-    
     } catch (e) {
       debugPrint('Erro ao gravar alterações: $e');
       if (!mounted) return;
@@ -227,7 +226,6 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       });
 
       if (!mounted) return;
-    
     } catch (e) {
       debugPrint('Erro ao apagar horários: $e');
       if (!mounted) return;
@@ -277,7 +275,8 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
         await _gravarAlteracoes();
       },
       child: Scaffold(

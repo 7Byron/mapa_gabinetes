@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import 'package:flutter/foundation.dart';
-import 'package:mapa_gabinetes/main.dart';
 import '../services/password_service.dart';
 import '../models/unidade.dart';
 import 'alocacao_medicos_screen.dart';
@@ -54,13 +53,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     // Bypass da password em modo debug
     if (kDebugMode) {
-      print('🔧 MODO DEBUG: Bypass da password ativado');
+      debugPrint('🔧 MODO DEBUG: Bypass da password ativado');
       setState(() => _isLoading = true);
 
       // Simula um pequeno delay para mostrar o loading
       await Future.delayed(const Duration(milliseconds: 500));
 
       // Login automático como administrador em modo debug
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -92,22 +92,23 @@ class _LoginScreenState extends State<LoginScreen> {
       bool isValid = false;
       bool isAdmin = false;
 
-      print('🔐 Tentativa de login:');
-      print('   - Primeira vez: $_isFirstTime');
-      print('   - Lembrar password: $_lembrarPassword');
-      print(
+      debugPrint('🔐 Tentativa de login:');
+      debugPrint('   - Primeira vez: $_isFirstTime');
+      debugPrint('   - Lembrar password: $_lembrarPassword');
+      debugPrint(
           '   - Password introduzida: ${password.isNotEmpty ? "Sim" : "Não"}');
-      print('   - Unidade ID: ${widget.unidade.id}');
+      debugPrint('   - Unidade ID: ${widget.unidade.id}');
 
       // Só verifica passwords configuradas se for primeira vez E quiser lembrar
       if (_isFirstTime && _lembrarPassword) {
         final hasPasswords = await PasswordService.hasPasswordsConfigured(
             unidadeId: widget.unidade.id);
-        print('   - Passwords configuradas: $hasPasswords');
+        debugPrint('   - Passwords configuradas: $hasPasswords');
         if (!hasPasswords) {
           // Se não há passwords configuradas, vai para a tela de seleção de unidades
-          print(
+          debugPrint(
               '   - Redirecionando para seleção de unidades (sem passwords configuradas)');
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -121,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Verifica a password do projeto
       isValid = await PasswordService.verifyProjectPassword(password,
           unidadeId: widget.unidade.id);
-      print('   - Password do projeto válida: $isValid');
+      debugPrint('   - Password do projeto válida: $isValid');
 
       if (!isValid) {
         // Se não for a password do projeto, tenta a password do administrador
@@ -129,12 +130,12 @@ class _LoginScreenState extends State<LoginScreen> {
             unidadeId: widget.unidade.id);
         if (isValid) {
           isAdmin = true;
-          print('   - Password do administrador válida: $isValid');
+          debugPrint('   - Password do administrador válida: $isValid');
         }
       }
 
-      print('   - Login válido: $isValid');
-      print('   - É administrador: $isAdmin');
+      debugPrint('   - Login válido: $isValid');
+      debugPrint('   - É administrador: $isAdmin');
 
       if (isValid) {
         // Guarda a preferência de lembrar password
@@ -149,13 +150,14 @@ class _LoginScreenState extends State<LoginScreen> {
             await PasswordService.saveProjectPassword(password,
                 unidadeId: widget.unidade.id);
           }
-          print('   - Password guardada para lembrar');
+          debugPrint('   - Password guardada para lembrar');
         } else {
-          print('   - Password não guardada (não lembrar)');
+          debugPrint('   - Password não guardada (não lembrar)');
         }
 
         // Login bem-sucedido - vai para a tela de alocação
-        print('   - Redirecionando para tela de alocação');
+        debugPrint('   - Redirecionando para tela de alocação');
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -181,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } else {
         // Password incorreta
-        print('   - Password incorreta');
+        debugPrint('   - Password incorreta');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -192,15 +194,14 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
-      print('   - Erro no login: $e');
-      if (mounted) {
+      debugPrint('   - Erro no login: $e');
+      if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erro ao fazer login: $e'),
             backgroundColor: Colors.red,
           ),
         );
-      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -297,88 +298,105 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 32),
 
-                  // Campo de password
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.lock),
-                      hintText: 'Digite a password do projeto ou administrador',
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                        },
-                      ),
-                    ),
-                    obscureText: !_showPassword,
-                    validator: (value) {
-                      if (kDebugMode) {
-                        // Em modo debug, não valida a password
-                        return null;
-                      }
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Digite a password';
-                      }
-                      return null;
-                    },
-                    onFieldSubmitted: (_) => _login(),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Checkbox "Lembrar password"
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _lembrarPassword,
-                        onChanged: (value) {
-                          setState(() {
-                            _lembrarPassword = value ?? true;
-                          });
-                        },
-                        activeColor: MyAppTheme.azulEscuro,
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'Lembrar password neste dispositivo',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Botão de login
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: MyAppTheme.azulEscuro,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                  // Container para reduzir largura do campo de password e botão em 30%
+                  Align(
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: 420, // 70% de 600 (redução de 30%)
+                      child: Column(
+                        children: [
+                          // Campo de password
+                          TextFormField(
+                            controller: _passwordController,
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.lock),
+                              hintText:
+                                  'Digite a password do projeto ou administrador',
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _showPassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _showPassword = !_showPassword;
+                                  });
+                                },
                               ),
-                            )
-                          : Text(kDebugMode ? 'Entrar (Automático)' : 'Entrar'),
+                            ),
+                            obscureText: !_showPassword,
+                            validator: (value) {
+                              if (kDebugMode) {
+                                // Em modo debug, não valida a password
+                                return null;
+                              }
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Digite a password';
+                              }
+                              return null;
+                            },
+                            onFieldSubmitted: (_) => _login(),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Checkbox "Lembrar password"
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: _lembrarPassword,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _lembrarPassword = value ?? true;
+                                  });
+                                },
+                                activeColor: MyAppTheme.azulEscuro,
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'Lembrar password neste dispositivo',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Botão de login
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: MyAppTheme.azulEscuro,
+                                foregroundColor: Colors.white,
+                                // Aumento de 30% da altura: padding vertical de 16 -> 21 (16 * 1.3 ≈ 21)
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 21),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
+                                      ),
+                                    )
+                                  : Text(kDebugMode
+                                      ? 'Entrar (Automático)'
+                                      : 'Entrar'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 

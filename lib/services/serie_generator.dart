@@ -62,7 +62,7 @@ class SerieGenerator {
       final excecoesComGabinete =
           excecoes.where((e) => e.gabineteId != null).toList();
       if (excecoesComGabinete.isNotEmpty) {
-        print(
+        debugPrint(
             '🔍 SerieGenerator recebeu ${excecoes.length} exceções (${excecoesComGabinete.length} com gabinete)');
       }
     }
@@ -80,7 +80,7 @@ class SerieGenerator {
       excecoesMap[chave] = excecao;
       // Debug para exceções com gabineteId
       if (excecao.gabineteId != null) {
-        print(
+        debugPrint(
             '📋 Exceção indexada: série=${excecao.serieId}, data=$dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
       }
     }
@@ -110,20 +110,20 @@ class SerieGenerator {
 
         // Debug para séries quinzenais e mensais
         if (serie.tipo == 'Mensal' || serie.tipo == 'Quinzenal') {
-          print(
+          debugPrint(
               '🔍 Buscando exceção: tipo=${serie.tipo}, série=${serie.id}, data=$dataKey, chave=$chave, encontrada=${excecao != null}');
           if (excecao != null) {
-            print(
+            debugPrint(
                 '   ✅ Exceção encontrada: gabinete=${excecao.gabineteId}, cancelada=${excecao.cancelada}');
           } else {
-            print(
+            debugPrint(
                 '   ❌ Exceção NÃO encontrada - usando gabinete da série: ${serie.gabineteId}');
             // Debug: mostrar todas as chaves no mapa para ajudar a identificar o problema
-            print('   📋 Chaves disponíveis no mapa de exceções:');
+            debugPrint('   📋 Chaves disponíveis no mapa de exceções:');
             excecoesMap.keys
                 .where((k) => k.startsWith('${serie.id}_'))
                 .take(5)
-                .forEach((k) => print('      - $k'));
+                .forEach((k) => debugPrint('      - $k'));
           }
         }
 
@@ -136,7 +136,7 @@ class SerieGenerator {
         // Debug para séries quinzenais e mensais
         if ((serie.tipo == 'Mensal' || serie.tipo == 'Quinzenal') &&
             excecao?.gabineteId != null) {
-          print(
+          debugPrint(
               '✅ Alocação gerada com exceção: tipo=${serie.tipo}, data=$dataKey, gabinete=$gabineteId (exceção: ${excecao?.gabineteId}, série: ${serie.gabineteId})');
         }
 
@@ -312,7 +312,7 @@ class SerieGenerator {
 
         // Debug para verificar se a exceção está sendo encontrada
         if (excecao != null) {
-          print(
+          debugPrint(
               '🔍 _gerarQuinzenal: Exceção encontrada para data $dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
         }
 
@@ -362,7 +362,7 @@ class SerieGenerator {
 
         // Debug para verificar se a exceção está sendo encontrada
         if (excecao != null) {
-          print(
+          debugPrint(
               '🔍 _gerarMensal: Exceção encontrada para data $dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
         }
 

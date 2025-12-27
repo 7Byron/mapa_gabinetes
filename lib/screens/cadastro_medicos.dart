@@ -138,9 +138,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
     setState(() => _carregandoMedicos = true);
     try {
       final medicos = await buscarMedicos(unidade: widget.unidade);
-      // Ordenar alfabeticamente por nome
-      medicos
-          .sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+      // Ordenar alfabeticamente por nome (sem acentos)
+      medicos.sort((a, b) {
+        final nomeA = _normalize(a.nome);
+        final nomeB = _normalize(b.nome);
+        return nomeA.compareTo(nomeB);
+      });
       setState(() {
         _listaMedicos = medicos;
         _carregandoMedicos = false;
@@ -2811,21 +2814,21 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 style:
                     const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-              if (_medicoAtual != null && _listaMedicos.isNotEmpty) ...[
-                const SizedBox(width: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.3), width: 1),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  child: SizedBox(
-                    width: 260,
-                    child: _carregandoMedicos
-                        ? const Center(
+              const SizedBox(width: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3), width: 1),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                child: SizedBox(
+                  width: 260,
+                  child: _carregandoMedicos
+                      ? const SizedBox(
+                          height: 40,
+                          child: Center(
                             child: SizedBox(
                               width: 16,
                               height: 16,
@@ -2835,189 +2838,233 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                     AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             ),
-                          )
-                        : Autocomplete<Medico>(
-                            optionsBuilder:
-                                (TextEditingValue textEditingValue) {
-                              final texto =
-                                  textEditingValue.text.toLowerCase().trim();
-                              if (texto.isEmpty) {
-                                return _listaMedicos;
-                              }
-                              return _listaMedicos.where((medico) =>
-                                  medico.nome.toLowerCase().contains(texto));
-                            },
-                            displayStringForOption: (Medico medico) =>
-                                medico.nome,
-                            onSelected: (Medico medico) {
-                              _mudarMedico(medico);
-                            },
-                            fieldViewBuilder: (
-                              BuildContext context,
-                              TextEditingController textEditingController,
-                              FocusNode focusNode,
-                              VoidCallback onFieldSubmitted,
-                            ) {
-                              // Sincronizar com o controller local
-                              if (textEditingController.text !=
-                                  _medicoAutocompleteController.text) {
-                                textEditingController.text =
-                                    _medicoAutocompleteController.text;
-                              }
+                          ),
+                        )
+                      : _listaMedicos.isEmpty
+                          ? SizedBox(
+                              height: 40,
+                              child: TextField(
+                                enabled: false,
+                                textAlignVertical: TextAlignVertical.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.0,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Pesquisar médico...',
+                                  hintStyle: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 14,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 12,
+                                  ),
+                                  isDense: true,
+                                ),
+                              ),
+                            )
+                          : SizedBox(
+                              height: 40,
+                              child: Autocomplete<Medico>(
+                                optionsBuilder:
+                                    (TextEditingValue textEditingValue) {
+                                  final texto =
+                                      _normalize(textEditingValue.text.trim());
+                                  if (texto.isEmpty) {
+                                    return _listaMedicos;
+                                  }
+                                  return _listaMedicos.where((medico) {
+                                    final nomeNormalizado =
+                                        _normalize(medico.nome);
+                                    return nomeNormalizado.contains(texto);
+                                  }).toList()
+                                    ..sort((a, b) {
+                                      final nomeA = _normalize(a.nome);
+                                      final nomeB = _normalize(b.nome);
+                                      return nomeA.compareTo(nomeB);
+                                    });
+                                },
+                                displayStringForOption: (Medico medico) =>
+                                    medico.nome,
+                                onSelected: (Medico medico) {
+                                  _mudarMedico(medico);
+                                },
+                                fieldViewBuilder: (
+                                  BuildContext context,
+                                  TextEditingController textEditingController,
+                                  FocusNode focusNode,
+                                  VoidCallback onFieldSubmitted,
+                                ) {
+                                  // Sincronizar com o controller local
+                                  if (textEditingController.text !=
+                                      _medicoAutocompleteController.text) {
+                                    textEditingController.text =
+                                        _medicoAutocompleteController.text;
+                                  }
 
-                              // Criar um StatefulBuilder para atualizar o botão X
-                              return StatefulBuilder(
-                                builder: (context, setStateLocal) {
-                                  // Adicionar listener para atualizar o botão X
-                                  textEditingController.addListener(() {
-                                    if (textEditingController.text !=
-                                        _medicoAutocompleteController.text) {
-                                      _medicoAutocompleteController.text =
-                                          textEditingController.text;
-                                    }
-                                    setStateLocal(() {});
-                                  });
+                                  // Criar um StatefulBuilder para atualizar o botão X
+                                  return StatefulBuilder(
+                                    builder: (context, setStateLocal) {
+                                      // Adicionar listener para atualizar o botão X
+                                      textEditingController.addListener(() {
+                                        if (textEditingController.text !=
+                                            _medicoAutocompleteController
+                                                .text) {
+                                          _medicoAutocompleteController.text =
+                                              textEditingController.text;
+                                        }
+                                        setStateLocal(() {});
+                                      });
 
-                                  return TextField(
-                                    controller: textEditingController,
-                                    focusNode: focusNode,
-                                    textAlignVertical: TextAlignVertical.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      height: 1.0,
-                                    ),
-                                    decoration: InputDecoration(
-                                      hintText: 'Pesquisar médico...',
-                                      hintStyle: TextStyle(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.7),
-                                        fontSize: 14,
-                                      ),
-                                      border: InputBorder.none,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 0,
-                                      ),
-                                      isDense: true,
-                                      suffixIcon: textEditingController
-                                              .text.isNotEmpty
-                                          ? IconButton(
-                                              icon: Icon(
-                                                Icons.clear,
-                                                size: 18,
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.8),
-                                              ),
-                                              onPressed: () {
-                                                textEditingController.clear();
-                                                _medicoAutocompleteController
-                                                    .clear();
-                                                setStateLocal(() {});
-                                                focusNode.requestFocus();
-                                              },
-                                              padding: EdgeInsets.zero,
-                                              constraints:
-                                                  const BoxConstraints(),
-                                            )
-                                          : null,
-                                    ),
-                                    onSubmitted: (String value) {
-                                      onFieldSubmitted();
+                                      return TextField(
+                                        controller: textEditingController,
+                                        focusNode: focusNode,
+                                        textAlignVertical:
+                                            TextAlignVertical.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          height: 1.0,
+                                        ),
+                                        decoration: InputDecoration(
+                                          hintText: 'Pesquisar médico...',
+                                          hintStyle: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.7),
+                                            fontSize: 14,
+                                          ),
+                                          border: InputBorder.none,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 12,
+                                          ),
+                                          isDense: true,
+                                          suffixIcon: textEditingController
+                                                  .text.isNotEmpty
+                                              ? IconButton(
+                                                  icon: Icon(
+                                                    Icons.clear,
+                                                    size: 18,
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.8),
+                                                  ),
+                                                  onPressed: () {
+                                                    textEditingController
+                                                        .clear();
+                                                    _medicoAutocompleteController
+                                                        .clear();
+                                                    setStateLocal(() {});
+                                                    focusNode.requestFocus();
+                                                  },
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(),
+                                                )
+                                              : null,
+                                        ),
+                                        onSubmitted: (String value) {
+                                          onFieldSubmitted();
+                                        },
+                                      );
                                     },
                                   );
                                 },
-                              );
-                            },
-                            optionsViewBuilder: (
-                              BuildContext context,
-                              AutocompleteOnSelected<Medico> onSelected,
-                              Iterable<Medico> options,
-                            ) {
-                              return Align(
-                                alignment: Alignment.topLeft,
-                                child: Material(
-                                  elevation: 8.0,
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxHeight: 300,
-                                      maxWidth: 300,
-                                    ),
-                                    child: ListView.builder(
-                                      shrinkWrap: true,
-                                      padding: EdgeInsets.zero,
-                                      itemCount: options.length,
-                                      itemBuilder:
-                                          (BuildContext context, int index) {
-                                        final Medico medico =
-                                            options.elementAt(index);
-                                        final bool isSelected =
-                                            _medicoAtual != null &&
-                                                medico.id == _medicoAtual!.id;
-                                        return InkWell(
-                                          onTap: () {
-                                            onSelected(medico);
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16.0,
-                                              vertical: 12.0,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: isSelected
-                                                  ? Colors.blue
-                                                      .withValues(alpha: 0.2)
-                                                  : Colors.transparent,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    medico.nome,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      color: isSelected
-                                                          ? Colors.blue[900]
-                                                          : Colors.black87,
-                                                      fontWeight: isSelected
-                                                          ? FontWeight.w600
-                                                          : FontWeight.normal,
-                                                    ),
-                                                  ),
+                                optionsViewBuilder: (
+                                  BuildContext context,
+                                  AutocompleteOnSelected<Medico> onSelected,
+                                  Iterable<Medico> options,
+                                ) {
+                                  return Align(
+                                    alignment: Alignment.topLeft,
+                                    child: Material(
+                                      elevation: 8.0,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxHeight: 300,
+                                          maxWidth: 300,
+                                        ),
+                                        child: ListView.builder(
+                                          shrinkWrap: true,
+                                          padding: EdgeInsets.zero,
+                                          itemCount: options.length,
+                                          itemBuilder: (BuildContext context,
+                                              int index) {
+                                            final Medico medico =
+                                                options.elementAt(index);
+                                            final bool isSelected =
+                                                _medicoAtual != null &&
+                                                    medico.id ==
+                                                        _medicoAtual!.id;
+                                            return InkWell(
+                                              onTap: () {
+                                                onSelected(medico);
+                                              },
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 16.0,
+                                                  vertical: 12.0,
                                                 ),
-                                                if (isSelected)
-                                                  Icon(
-                                                    Icons.check,
-                                                    size: 18,
-                                                    color: Colors.blue[900],
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
+                                                decoration: BoxDecoration(
+                                                  color: isSelected
+                                                      ? Colors.blue.withValues(
+                                                          alpha: 0.2)
+                                                      : Colors.transparent,
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        medico.nome,
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          color: isSelected
+                                                              ? Colors.blue[900]
+                                                              : Colors.black87,
+                                                          fontWeight: isSelected
+                                                              ? FontWeight.w600
+                                                              : FontWeight
+                                                                  .normal,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (isSelected)
+                                                      Icon(
+                                                        Icons.check,
+                                                        size: 18,
+                                                        color: Colors.blue[900],
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                                  );
+                                },
+                              ),
+                            ),
+                ),
+              ),
+              if (_medicoAtual != null && _anoVisualizado != null) ...[
+                const SizedBox(width: 12),
+                Text(
+                  _anoVisualizado.toString(),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-                if (_medicoAtual != null && _anoVisualizado != null) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    _anoVisualizado.toString(),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
               ],
             ],
           ),
@@ -4289,6 +4336,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
       ),
     );
   }
+
+  /// Normaliza string removendo acentos e convertendo para minúsculas
+  /// para ordenação e pesquisa corretas
+  String _normalize(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r"[áàâã]"), 'a')
+      .replaceAll(RegExp(r"[éê]"), 'e')
+      .replaceAll(RegExp(r"[í]"), 'i')
+      .replaceAll(RegExp(r"[óôõ]"), 'o')
+      .replaceAll(RegExp(r"[ú]"), 'u')
+      .replaceAll(RegExp(r"[ç]"), 'c');
 
   @override
   void dispose() {

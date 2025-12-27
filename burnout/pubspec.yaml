@@ -1,0 +1,48 @@
+name: burnout
+description: "Teste de Burnout"
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.9.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  get: ^4.7.3
+  google_mobile_ads: ^7.0.0
+  auto_size_text: ^3.0.0
+  url_launcher: ^6.3.2
+  get_storage: ^2.1.1
+  in_app_purchase: ^3.2.3
+  pie_chart: ^5.4.0
+  intl: ^0.20.2
+  widget_and_text_animator: ^1.1.5
+  connectivity_plus: ^7.0.0
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.7
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+    - flags/
+  fonts:
+    - family: Kalam
+      fonts:
+        - asset: fonts/Kalam-Light.ttf
+        - asset: fonts/Kalam-Regular.ttf
+        - asset: fonts/Kalam-Bold.ttf
+
+flutter_native_splash:
+  color: "#fef8e0"
+  image: assets/depressao3.png
+  android: true
+  ios: true
+  android_gravity: center
+  ios_content_mode: scaleAspectFit

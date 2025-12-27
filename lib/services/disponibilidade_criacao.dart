@@ -5,11 +5,15 @@ import '../models/disponibilidade.dart';
 /// [dataInicial] é a primeira data escolhida,
 /// [tipo] pode ser: 'Única', 'Semanal', 'Quinzenal', 'Mensal', 'Consecutivo:X' (onde X é o número de dias),
 /// [limitarAoAno] define se vamos criar apenas até o final do mesmo ano ou não.
+/// [usarUltimoQuandoNaoExiste5] se true, usa o último dia da semana quando não existe a 5ª ocorrência (apenas para séries mensais).
+/// [usarUltimoQuandoExiste5] se true, usa o último dia da semana quando existe 5ª ocorrência mas escolheu 4ª (apenas para séries mensais).
 List<Disponibilidade> criarDisponibilidadesSerie(
   DateTime dataInicial,
   String tipo, {
   required String medicoId, // <--- agora exigimos medicoId
   bool limitarAoAno = true,
+  bool usarUltimoQuandoNaoExiste5 = false,
+  bool usarUltimoQuandoExiste5 = false,
 }) {
   final List<Disponibilidade> lista = [];
 
@@ -118,6 +122,8 @@ List<Disponibilidade> criarDisponibilidadesSerie(
               mesCorreto,
               weekdayDesejado,
               n,
+              usarUltimoQuandoNaoExiste5: usarUltimoQuandoNaoExiste5,
+              usarUltimoQuandoExiste5: usarUltimoQuandoExiste5,
             );
 
             if (novaData != null) {
@@ -144,6 +150,8 @@ List<Disponibilidade> criarDisponibilidadesSerie(
               mes,
               weekdayDesejado,
               n,
+              usarUltimoQuandoNaoExiste5: usarUltimoQuandoNaoExiste5,
+              usarUltimoQuandoExiste5: usarUltimoQuandoExiste5,
             );
 
             if (novaData != null) {
@@ -216,20 +224,49 @@ int _descobrirOcorrenciaNoMes(DateTime data) {
 }
 
 /// Retorna a data do n-ésimo [weekdayDesejado] do mês [ano, mes].
-/// Se não existir (ex.: 5ª terça), retorna null.
+/// Se não existir (ex.: 5ª terça), retorna null ou o último dia da semana se [usarUltimoQuandoNaoExiste5] for true.
+/// Se [usarUltimoQuandoExiste5] for true e n==4, retorna o último dia da semana mesmo que exista 5ª ocorrência.
 DateTime? _pegarNthWeekdayDoMes(
   int ano,
   int mes,
   int weekdayDesejado,
-  int n,
-) {
+  int n, {
+  bool usarUltimoQuandoNaoExiste5 = false,
+  bool usarUltimoQuandoExiste5 = false,
+}) {
   final weekdayDia1 = DateTime(ano, mes, 1).weekday;
   final offset = (weekdayDesejado - weekdayDia1 + 7) % 7;
   final primeiroNoMes = 1 + offset;
   final dia = primeiroNoMes + 7 * (n - 1);
 
   final ultimoDiaMes = _ultimoDiaDoMes(ano, mes);
+  
+  // Se usarUltimoQuandoExiste5 está ativo e n==4, verificar se existe 5ª ocorrência
+  if (usarUltimoQuandoExiste5 && n == 4) {
+    final dia5 = primeiroNoMes + 7 * 4; // 5ª ocorrência
+    if (dia5 <= ultimoDiaMes) {
+      // Existe 5ª ocorrência, então retornar o último dia da semana
+      for (int d = ultimoDiaMes; d >= 1; d--) {
+        final dataTeste = DateTime(ano, mes, d);
+        if (dataTeste.weekday == weekdayDesejado) {
+          return dataTeste;
+        }
+      }
+    }
+  }
+  
   if (dia > ultimoDiaMes) {
+    // Se não existe o n-ésimo dia e a opção está ativa, retornar o último dia da semana
+    if (usarUltimoQuandoNaoExiste5 && n == 5) {
+      // Encontrar o último dia da semana desejada no mês
+      // Começar do último dia do mês e ir retrocedendo até encontrar o weekday correto
+      for (int d = ultimoDiaMes; d >= 1; d--) {
+        final dataTeste = DateTime(ano, mes, d);
+        if (dataTeste.weekday == weekdayDesejado) {
+          return dataTeste;
+        }
+      }
+    }
     return null;
   }
 

@@ -347,9 +347,18 @@ class SerieGenerator {
     DateTime mesAtual = DateTime(inicio.year, inicio.month, 1);
     final fimMes = DateTime(fim.year, fim.month + 1, 0);
 
+    // Verificar se deve usar último quando não existe 5ª ocorrência
+    final usarUltimoQuandoNaoExiste5 =
+        serie.parametros['usarUltimoQuandoNaoExiste5'] == true;
+    // Verificar se deve usar último quando existe 5ª ocorrência mas escolheu 4ª
+    final usarUltimoQuandoExiste5 =
+        serie.parametros['usarUltimoQuandoExiste5'] == true;
+
     while (mesAtual.isBefore(fimMes.add(const Duration(days: 1)))) {
       final data = _pegarNthWeekdayDoMes(
-          mesAtual.year, mesAtual.month, weekday, ocorrencia);
+          mesAtual.year, mesAtual.month, weekday, ocorrencia,
+          usarUltimoQuandoNaoExiste5: usarUltimoQuandoNaoExiste5,
+          usarUltimoQuandoExiste5: usarUltimoQuandoExiste5);
 
       if (data != null &&
           data.isAfter(inicio.subtract(const Duration(days: 1))) &&
@@ -441,16 +450,51 @@ class SerieGenerator {
   }
 
   /// Pega o n-ésimo weekday do mês
-  static DateTime? _pegarNthWeekdayDoMes(int ano, int mes, int weekday, int n) {
+  static DateTime? _pegarNthWeekdayDoMes(
+    int ano,
+    int mes,
+    int weekday,
+    int n, {
+    bool usarUltimoQuandoNaoExiste5 = false,
+    bool usarUltimoQuandoExiste5 = false,
+  }) {
     final weekdayDia1 = DateTime(ano, mes, 1).weekday;
     final offset = (weekday - weekdayDia1 + 7) % 7;
     final primeiroNoMes = 1 + offset;
     final dia = primeiroNoMes + 7 * (n - 1);
 
     final ultimoDiaMes = DateTime(ano, mes + 1, 0).day;
+    
+    // Se usarUltimoQuandoExiste5 está ativo e n==4, verificar se existe 5ª ocorrência
+    if (usarUltimoQuandoExiste5 && n == 4) {
+      final dia5 = primeiroNoMes + 7 * 4; // 5ª ocorrência
+      if (dia5 <= ultimoDiaMes) {
+        // Existe 5ª ocorrência, então retornar o último dia da semana
+        for (int d = ultimoDiaMes; d >= 1; d--) {
+          final dataTeste = DateTime(ano, mes, d);
+          if (dataTeste.weekday == weekday) {
+            return dataTeste;
+          }
+        }
+      }
+    }
+    
     if (dia <= ultimoDiaMes) {
       return DateTime(ano, mes, dia);
     }
+    
+    // Se não existe o n-ésimo dia e a opção está ativa, retornar o último dia da semana
+    if (usarUltimoQuandoNaoExiste5 && n == 5) {
+      // Encontrar o último dia da semana desejada no mês
+      // Começar do último dia do mês e ir retrocedendo até encontrar o weekday correto
+      for (int d = ultimoDiaMes; d >= 1; d--) {
+        final dataTeste = DateTime(ano, mes, d);
+        if (dataTeste.weekday == weekday) {
+          return dataTeste;
+        }
+      }
+    }
+    
     return null;
   }
 

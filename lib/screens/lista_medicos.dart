@@ -48,6 +48,10 @@ class ListaMedicosState extends State<ListaMedicos> {
       if (hasQuery && !_fullyLoaded && !_loadingAll) {
         // Carregar tudo uma única vez para pesquisa local
         _carregarTodosMedicos();
+      } else if (!hasQuery && _fullyLoaded && !_loadingAll) {
+        // Quando limpa a pesquisa e já tinha carregado tudo, recarregar lista paginada
+        _fullyLoaded = false;
+        _carregarMedicos(refresh: true);
       } else {
         // Apenas refazer o build para aplicar o filtro
         setState(() {});
@@ -84,15 +88,34 @@ class ListaMedicosState extends State<ListaMedicos> {
         ocupantesRef = FirebaseFirestore.instance.collection('medicos');
       }
 
-      Query query = ocupantesRef.orderBy('nome').limit(_pageSize);
-      if (_lastDoc != null) {
-        final lastNome = (_lastDoc!.data() as Map<String, dynamic>)['nome'];
-        query = query.startAfter([lastNome]);
+      // Usa nomeSearch para ordenação correta (sem acentos)
+      QuerySnapshot snapshot;
+      try {
+        Query query = ocupantesRef.orderBy('nomeSearch').limit(_pageSize);
+        if (_lastDoc != null) {
+          final lastNomeSearch =
+              (_lastDoc!.data() as Map<String, dynamic>)['nomeSearch'] ??
+                  _normalize(
+                      (_lastDoc!.data() as Map<String, dynamic>)['nome'] ?? '');
+          query = query.startAfter([lastNomeSearch]);
+        }
+        // Quando refresh é true, força buscar do servidor (sem cache) para garantir dados atualizados
+        snapshot = await query.get(
+          GetOptions(source: refresh ? Source.server : Source.serverAndCache),
+        );
+      } catch (e) {
+        // Fallback: se nomeSearch não existir em alguns documentos, usa ordenação por nome
+        // e depois ordena localmente
+        Query query = ocupantesRef.orderBy('nome').limit(_pageSize);
+        if (_lastDoc != null) {
+          final lastNome =
+              (_lastDoc!.data() as Map<String, dynamic>)['nome'] ?? '';
+          query = query.startAfter([lastNome]);
+        }
+        snapshot = await query.get(
+          GetOptions(source: refresh ? Source.server : Source.serverAndCache),
+        );
       }
-      // Quando refresh é true, força buscar do servidor (sem cache) para garantir dados atualizados
-      final snapshot = await query.get(
-        GetOptions(source: refresh ? Source.server : Source.serverAndCache),
-      );
       debugPrint(
           '🔍 Buscando médicos na unidade: ${widget.unidade?.id ?? 'global'}');
       debugPrint('📊 Página carregada: ${snapshot.docs.length}');
@@ -113,8 +136,24 @@ class ListaMedicosState extends State<ListaMedicos> {
           ));
         }
       }
+      // Ordenar localmente para garantir ordenação correta (sem acentos)
+      medicosCarregados.sort((a, b) {
+        final nomeA = _normalize(a.nome);
+        final nomeB = _normalize(b.nome);
+        return nomeA.compareTo(nomeB);
+      });
       setState(() {
-        medicos.addAll(medicosCarregados);
+        if (refresh) {
+          medicos = medicosCarregados;
+        } else {
+          medicos.addAll(medicosCarregados);
+          // Reordenar toda a lista após adicionar novos itens
+          medicos.sort((a, b) {
+            final nomeA = _normalize(a.nome);
+            final nomeB = _normalize(b.nome);
+            return nomeA.compareTo(nomeB);
+          });
+        }
         if (snapshot.docs.isNotEmpty) {
           _lastDoc = snapshot.docs.last;
         }
@@ -165,12 +204,12 @@ class ListaMedicosState extends State<ListaMedicos> {
             .where('nomeSearch', isLessThanOrEqualTo: end);
       }
       // Fallback: tokens
-      var snapshot = await (query ?? ocupantesRef.orderBy('nome'))
+      var snapshot = await (query ?? ocupantesRef.orderBy('nomeSearch'))
           .get(const GetOptions(source: Source.serverAndCache));
       if (q.isNotEmpty && snapshot.docs.isEmpty) {
         // Coleção antiga sem nomeSearch: traz tudo e filtramos localmente
         snapshot = await ocupantesRef
-            .orderBy('nome')
+            .orderBy('nomeSearch')
             .get(const GetOptions(source: Source.serverAndCache));
       }
       final todos = <Medico>[];
@@ -189,6 +228,13 @@ class ListaMedicosState extends State<ListaMedicos> {
           ));
         }
       }
+      // Ordenar localmente caso algum documento não tenha nomeSearch
+      // Isso garante ordenação correta mesmo para dados antigos
+      todos.sort((a, b) {
+        final nomeA = _normalize(a.nome);
+        final nomeB = _normalize(b.nome);
+        return nomeA.compareTo(nomeB);
+      });
       setState(() {
         medicos = todos; // substituir para garantir coleção completa
         _fullyLoaded = true;

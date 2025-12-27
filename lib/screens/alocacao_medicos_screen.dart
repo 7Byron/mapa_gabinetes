@@ -771,10 +771,30 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             alocacoesMap[chave] = aloc;
           }
 
+          // CORREÇÃO CRÍTICA: Verificar se a alocação é do dia selecionado antes de preservar
+          // Isso evita que alocações de dias anteriores sejam transportadas para o dia atual
+          final selectedDateNormalized = DateTime(
+            selectedDate.year,
+            selectedDate.month,
+            selectedDate.day,
+          );
+
           // Depois, preservar alocações otimistas que correspondem a alocações reais no servidor
           // (mesmo médico, mesmo gabinete, mesmo dia) - essas são alocações confirmadas mas
           // que ainda têm ID otimista temporário
+          // IMPORTANTE: Apenas preservar alocações do dia selecionado
           for (final aloc in alocacoes) {
+            // CORREÇÃO: Verificar se a alocação é do dia selecionado antes de preservar
+            final alocDateNormalized = DateTime(
+              aloc.data.year,
+              aloc.data.month,
+              aloc.data.day,
+            );
+            if (alocDateNormalized != selectedDateNormalized) {
+              // Pular alocações de outros dias - não devem ser preservadas
+              continue;
+            }
+
             if (aloc.id.startsWith('otimista_')) {
               final chave =
                   '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
@@ -866,7 +886,25 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // CORREÇÃO CRÍTICA: Preservar atualização otimista durante regeneração
       // Primeiro, adicionar alocações que NÃO são de séries ou que não serão regeneradas
       // MAS sempre preservar alocações otimistas do médico em transição
+      // IMPORTANTE: Apenas preservar alocações do dia selecionado
+      final selectedDateNormalized = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+      );
+
       for (final aloc in alocacoes) {
+        // CORREÇÃO: Verificar se a alocação é do dia selecionado antes de preservar
+        final alocDateNormalized = DateTime(
+          aloc.data.year,
+          aloc.data.month,
+          aloc.data.day,
+        );
+        if (alocDateNormalized != selectedDateNormalized) {
+          // Pular alocações de outros dias - não devem ser preservadas
+          continue;
+        }
+
         // CORREÇÃO: Se é uma alocação otimista do médico em transição, SEMPRE preservar
         if (_medicoEmTransicao != null && aloc.medicoId == _medicoEmTransicao) {
           alocacoesAtualizadas.add(aloc);
@@ -1704,6 +1742,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       isCarregando = true;
       progressoCarregamento = 0.0;
       mensagemProgresso = 'A iniciar...';
+      // CORREÇÃO CRÍTICA: Limpar dados do dia anterior antes de carregar novos dados
+      // Isso evita que dados de um dia sejam transportados para outro dia
+      disponibilidades.clear();
+      alocacoes.clear();
+      medicosDisponiveis.clear();
     });
 
     // Recarregar dados do dia (cache foi invalidado, então vai recarregar)

@@ -37,6 +37,150 @@ class DisponibilidadeDataGestaoService {
     AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
   }
 
+  /// Verifica se uma série mensal com ocorrência 5 pode não existir em alguns meses
+  /// Retorna true se alguns meses podem não ter a 5ª ocorrência
+  static bool _verificarOcorrencia5PodeFaltar(DateTime date) {
+    final ocorrencia = SeriesHelper.descobrirOcorrenciaNoMes(date);
+    if (ocorrencia != 5) return false;
+
+    // Verificar se alguns meses do ano não têm a 5ª ocorrência
+    final weekday = date.weekday;
+    final ano = date.year;
+    int mesesSemOcorrencia5 = 0;
+
+    for (int mes = 1; mes <= 12; mes++) {
+      final ultimoDia = DateTime(ano, mes + 1, 0).day;
+      final primeiroDia = DateTime(ano, mes, 1);
+      final weekdayDia1 = primeiroDia.weekday;
+      final offset = (weekday - weekdayDia1 + 7) % 7;
+      final primeiroNoMes = 1 + offset;
+      final dia5 = primeiroNoMes + 7 * 4; // 5ª ocorrência (0-indexed, então *4)
+
+      if (dia5 > ultimoDia) {
+        mesesSemOcorrencia5++;
+      }
+    }
+
+    return mesesSemOcorrencia5 > 0;
+  }
+
+  /// Verifica se uma série mensal com ocorrência 4 pode ter meses com 5 ocorrências
+  /// Retorna true se alguns meses têm 5 ocorrências (ou seja, a 4ª não é a última)
+  static bool _verificarOcorrencia4PodeTer5(DateTime date) {
+    final ocorrencia = SeriesHelper.descobrirOcorrenciaNoMes(date);
+    if (ocorrencia != 4) return false;
+
+    // Verificar se alguns meses do ano têm 5 ocorrências desse dia da semana
+    final weekday = date.weekday;
+    final ano = date.year;
+    int mesesComOcorrencia5 = 0;
+
+    for (int mes = 1; mes <= 12; mes++) {
+      final ultimoDia = DateTime(ano, mes + 1, 0).day;
+      final primeiroDia = DateTime(ano, mes, 1);
+      final weekdayDia1 = primeiroDia.weekday;
+      final offset = (weekday - weekdayDia1 + 7) % 7;
+      final primeiroNoMes = 1 + offset;
+      final dia5 = primeiroNoMes + 7 * 4; // 5ª ocorrência (0-indexed, então *4)
+
+      if (dia5 <= ultimoDia) {
+        mesesComOcorrencia5++;
+      }
+    }
+
+    return mesesComOcorrencia5 > 0;
+  }
+
+  /// Pergunta ao utilizador como lidar com meses que não têm a 5ª ocorrência
+  static Future<bool?> _perguntarPreferenciaOcorrencia5(
+    BuildContext context,
+    DateTime date,
+  ) async {
+    final weekday = date.weekday;
+    final nomesDias = [
+      'Segunda-feira',
+      'Terça-feira',
+      'Quarta-feira',
+      'Quinta-feira',
+      'Sexta-feira',
+      'Sábado',
+      'Domingo'
+    ];
+    final nomeDia = nomesDias[weekday - 1];
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Série Mensal - 5ª Ocorrência'),
+        content: Text(
+          'Escolheu criar uma série mensal para o 5º $nomeDia do mês.\n\n'
+          'Alguns meses podem não ter 5 ${nomeDia}s. Como deseja proceder?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text(
+              'Apenas quando existe 5º',
+              style: TextStyle(color: Colors.orange),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Último $nomeDia de todos os meses',
+              style: const TextStyle(color: Colors.blue),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pergunta ao utilizador como lidar com meses que têm 5 ocorrências quando escolheu a 4ª
+  static Future<bool?> _perguntarPreferenciaOcorrencia4(
+    BuildContext context,
+    DateTime date,
+  ) async {
+    final weekday = date.weekday;
+    final nomesDias = [
+      'Segunda-feira',
+      'Terça-feira',
+      'Quarta-feira',
+      'Quinta-feira',
+      'Sexta-feira',
+      'Sábado',
+      'Domingo'
+    ];
+    final nomeDia = nomesDias[weekday - 1];
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Série Mensal - 4ª Ocorrência'),
+        content: Text(
+          'Escolheu criar uma série mensal para o 4º $nomeDia do mês.\n\n'
+          'Alguns meses têm 5 ${nomeDia}s. Deseja usar sempre a 4ª $nomeDia ou a última $nomeDia de cada mês?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Sempre a 4ª $nomeDia',
+              style: const TextStyle(color: Colors.orange),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Última $nomeDia de cada mês',
+              style: const TextStyle(color: Colors.blue),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Cria uma série recorrente e retorna informações sobre o resultado
   static Future<Map<String, dynamic>> criarSerieRecorrente(
     BuildContext context,
@@ -46,6 +190,45 @@ class DisponibilidadeDataGestaoService {
     Unidade? unidade,
   ) async {
     try {
+      // Verificar se é série mensal que precisa de confirmação do utilizador
+      bool usarUltimoQuandoNaoExiste = false;
+      bool usarUltimoQuandoExiste5 = false;
+
+      if (tipo == 'Mensal') {
+        final ocorrencia = SeriesHelper.descobrirOcorrenciaNoMes(date);
+
+        // Caso 1: Ocorrência 5 que pode faltar em alguns meses
+        if (ocorrencia == 5 && _verificarOcorrencia5PodeFaltar(date)) {
+          final preferencia =
+              await _perguntarPreferenciaOcorrencia5(context, date);
+          if (preferencia == null) {
+            // Utilizador cancelou
+            return {'sucesso': false, 'erro': 'Cancelado pelo utilizador'};
+          }
+          usarUltimoQuandoNaoExiste = preferencia;
+        }
+
+        // Caso 2: Ocorrência 4 que pode ter meses com 5 ocorrências
+        if (ocorrencia == 4 && _verificarOcorrencia4PodeTer5(date)) {
+          final preferencia =
+              await _perguntarPreferenciaOcorrencia4(context, date);
+          if (preferencia == null) {
+            // Utilizador cancelou
+            return {'sucesso': false, 'erro': 'Cancelado pelo utilizador'};
+          }
+          usarUltimoQuandoExiste5 = preferencia;
+        }
+      }
+
+      // Preparar parâmetros da série
+      Map<String, dynamic> parametros = {};
+      if (usarUltimoQuandoNaoExiste) {
+        parametros['usarUltimoQuandoNaoExiste5'] = true;
+      }
+      if (usarUltimoQuandoExiste5) {
+        parametros['usarUltimoQuandoExiste5'] = true;
+      }
+
       final serie = await DisponibilidadeSerieService.criarSerie(
         medicoId: medicoId,
         dataInicial: date,
@@ -53,6 +236,7 @@ class DisponibilidadeDataGestaoService {
         horarios: [],
         unidade: unidade,
         dataFim: null,
+        parametros: parametros,
       );
 
       invalidarCachesRelacionados(date, medicoId);
@@ -62,6 +246,8 @@ class DisponibilidadeDataGestaoService {
         tipo,
         medicoId: medicoId,
         limitarAoAno: true,
+        usarUltimoQuandoNaoExiste5: usarUltimoQuandoNaoExiste,
+        usarUltimoQuandoExiste5: usarUltimoQuandoExiste5,
       );
 
       if (context.mounted) {

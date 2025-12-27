@@ -21,6 +21,7 @@ class DisponibilidadeSerieService {
     String? gabineteId,
     bool usarSerie =
         true, // Se false, cria cartões individuais (compatibilidade)
+    Map<String, dynamic>? parametros,
   }) async {
     // Se não deve usar série, retornar série vazia (será tratado pelo código antigo)
     if (!usarSerie) {
@@ -31,11 +32,11 @@ class DisponibilidadeSerieService {
     final serieId = 'serie_${DateTime.now().millisecondsSinceEpoch}';
 
     // Preparar parâmetros específicos
-    Map<String, dynamic> parametros = {};
+    Map<String, dynamic> parametrosFinal = parametros ?? {};
     if (tipo.startsWith('Consecutivo:')) {
       final numeroDiasStr = tipo.split(':')[1];
       final numeroDias = int.tryParse(numeroDiasStr) ?? 5;
-      parametros['numeroDias'] = numeroDias;
+      parametrosFinal['numeroDias'] = numeroDias;
       tipo = 'Consecutivo';
     }
 
@@ -48,7 +49,7 @@ class DisponibilidadeSerieService {
       tipo: tipo,
       horarios: horarios,
       gabineteId: gabineteId,
-      parametros: parametros,
+      parametros: parametrosFinal,
       ativo: true,
     );
 

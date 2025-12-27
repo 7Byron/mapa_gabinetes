@@ -453,6 +453,28 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                 '🔄 Alocações regeneradas: $antesRegen -> $depoisRegen (${alocacoesSeries.length} de séries)');
           }
 
+          // CORREÇÃO CRÍTICA: Atualizar cache após regenerar alocações de séries
+          // Isso garante que mudanças em séries sejam refletidas no cache
+          final inicio =
+              DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+          final alocacoesDoDiaAposRegen = alocacoes.where((a) {
+            final ad = DateTime(a.data.year, a.data.month, a.data.day);
+            return ad == inicio;
+          }).toList();
+
+          final disponibilidadesDoDiaAposRegen = disponibilidades.where((d) {
+            final dd = DateTime(d.data.year, d.data.month, d.data.day);
+            return dd == inicio;
+          }).toList();
+
+          logic.AlocacaoMedicosLogic.updateCacheForDay(
+            day: inicio,
+            alocacoes: alocacoesDoDiaAposRegen,
+            disponibilidades: disponibilidadesDoDiaAposRegen,
+          );
+          debugPrint(
+              '💾 Cache atualizado após regenerar séries para ${inicio.day}/${inicio.month}/${inicio.year}: ${disponibilidadesDoDiaAposRegen.length} disponibilidades, ${alocacoesDoDiaAposRegen.length} alocações');
+
           // CORREÇÃO CRÍTICA: Atualizar médicos disponíveis após regenerar alocações
           // Isso garante que médicos alocados não apareçam como disponíveis
           // CORREÇÃO: Ignorar se está processando alocação para evitar "piscar"
@@ -497,12 +519,27 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             '📊 Listener Alocações: Alocações atualizadas: $antes -> $depois (diferença: ${depois - antes})');
       }
 
-      final doDia = alocacoes.where((a) {
+      // CORREÇÃO CRÍTICA: Atualizar cache do dia quando o listener detecta mudanças
+      // Isso garante que quando um administrador faz alterações, o cache seja atualizado
+      // para que outros funcionários vejam as mudanças quando abrirem o app
+      final alocacoesDoDia = alocacoes.where((a) {
         final ad = DateTime(a.data.year, a.data.month, a.data.day);
         return ad == inicio;
       }).toList();
+
+      final disponibilidadesDoDia = disponibilidades.where((d) {
+        final dd = DateTime(d.data.year, d.data.month, d.data.day);
+        return dd == inicio;
+      }).toList();
+
       logic.AlocacaoMedicosLogic.updateCacheForDay(
-          day: inicio, alocacoes: doDia);
+        day: inicio,
+        alocacoes: alocacoesDoDia,
+        disponibilidades: disponibilidadesDoDia,
+      );
+      debugPrint(
+          '💾 Cache atualizado pelo listener para ${inicio.day}/${inicio.month}/${inicio.year}: ${disponibilidadesDoDia.length} disponibilidades, ${alocacoesDoDia.length} alocações');
+
       // Agendar atualização com debounce para evitar atualizações parciais
       // quando disponibilidades e alocações chegam em momentos diferentes
       // Ignorar se estamos no meio do carregamento inicial
@@ -928,6 +965,37 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Atualizar lista de alocações
       alocacoes.clear();
       alocacoes.addAll(alocacoesAtualizadas);
+
+      // CORREÇÃO CRÍTICA: Atualizar cache do dia após carregar todos os dados
+      // Isso garante que o cache contenha os dados corretos do dia selecionado
+      // e que outros funcionários possam usar o cache quando abrirem o app no mesmo dia
+      final disponibilidadesDoDia = disponibilidades.where((d) {
+        final dDate = DateTime(d.data.year, d.data.month, d.data.day);
+        final selectedDateNormalized = DateTime(
+          selectedDate.year,
+          selectedDate.month,
+          selectedDate.day,
+        );
+        return dDate == selectedDateNormalized;
+      }).toList();
+
+      final alocacoesDoDia = alocacoes.where((a) {
+        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+        final selectedDateNormalized = DateTime(
+          selectedDate.year,
+          selectedDate.month,
+          selectedDate.day,
+        );
+        return aDate == selectedDateNormalized;
+      }).toList();
+
+      logic.AlocacaoMedicosLogic.updateCacheForDay(
+        day: selectedDate,
+        disponibilidades: disponibilidadesDoDia,
+        alocacoes: alocacoesDoDia,
+      );
+      debugPrint(
+          '💾 Cache atualizado para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}: ${disponibilidadesDoDia.length} disponibilidades, ${alocacoesDoDia.length} alocações');
 
       // CORREÇÃO: Atualizar médicos disponíveis apenas se não estiver processando alocação
       // Isso evita múltiplas atualizações durante drag and drop
@@ -1731,7 +1799,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     });
   }
 
-  void _onDateChanged(DateTime newDate) {
+  void _onDateChanged(DateTime newDate) async {
+    // CORREÇÃO CRÍTICA: Cancelar listeners ANTES de qualquer operação
+    // Isso previne que listeners do dia anterior adicionem dados após limpar as listas
+    await _dispSub?.cancel();
+    await _alocSub?.cancel();
+    _dispSub = null;
+    _alocSub = null;
+
     // CORREÇÃO: Invalidar cache do dia anterior e do novo dia para garantir dados atualizados
     // Isso garante que quando o usuário cria uma nova série e muda de dia, os dados sejam recarregados
     logic.AlocacaoMedicosLogic.invalidateCacheForDay(selectedDate);
@@ -1751,6 +1826,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
     // Recarregar dados do dia (cache foi invalidado, então vai recarregar)
     // A verificação de encerramento será feita dentro de _carregarDadosIniciais
+    // Os listeners serão reiniciados dentro de _carregarDadosIniciais com a nova data
     _carregarDadosIniciais();
   }
 
@@ -1920,6 +1996,26 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // Aguardar um pouco para que o listener do Firestore processe a atualização
       await Future.delayed(const Duration(milliseconds: 200));
+
+      // CORREÇÃO CRÍTICA: Atualizar cache após alocação ser salva no Firestore
+      // Isso garante que o cache seja atualizado imediatamente, mesmo antes do listener processar
+      final alocacoesDoDiaAposAlocacao = alocacoes.where((a) {
+        final ad = DateTime(a.data.year, a.data.month, a.data.day);
+        return ad == dataAlvoNormalizada;
+      }).toList();
+
+      final disponibilidadesDoDiaAposAlocacao = disponibilidades.where((d) {
+        final dd = DateTime(d.data.year, d.data.month, d.data.day);
+        return dd == dataAlvoNormalizada;
+      }).toList();
+
+      logic.AlocacaoMedicosLogic.updateCacheForDay(
+        day: dataAlvoNormalizada,
+        alocacoes: alocacoesDoDiaAposAlocacao,
+        disponibilidades: disponibilidadesDoDiaAposAlocacao,
+      );
+      debugPrint(
+          '💾 Cache atualizado após alocação para ${dataAlvoNormalizada.day}/${dataAlvoNormalizada.month}/${dataAlvoNormalizada.year}: ${disponibilidadesDoDiaAposAlocacao.length} disponibilidades, ${alocacoesDoDiaAposAlocacao.length} alocações');
 
       // REATIVAR listener e limpar flags
       // O listener do Firestore vai atualizar a alocação otimista com o ID real

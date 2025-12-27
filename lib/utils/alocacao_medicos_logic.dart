@@ -1038,13 +1038,22 @@ class AlocacaoMedicosLogic {
       }
     }
 
-    // Atualiza cache para o dia afetado (com a lista já atualizada)
-    final diaKey = _keyDia(dataAlvo);
+    // CORREÇÃO CRÍTICA: Atualiza cache para o dia afetado (com as listas já atualizadas)
+    // Isso garante que quando um administrador desaloca, o cache seja atualizado
     final alocDoDiaAtualizadas = alocacoes.where((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return aDate == dataAlvo;
     }).toList();
-    _cacheAlocPorDia[diaKey] = alocDoDiaAtualizadas;
+    final dispDoDiaAtualizadas = disponibilidades.where((d) {
+      final dDate = DateTime(d.data.year, d.data.month, d.data.day);
+      return dDate == dataAlvo;
+    }).toList();
+    
+    updateCacheForDay(
+      day: dataAlvo,
+      alocacoes: alocDoDiaAtualizadas,
+      disponibilidades: dispDoDiaAtualizadas,
+    );
 
     // Chamar onAlocacoesChanged() DEPOIS de invalidar cache e atualizar lista local
     onAlocacoesChanged();

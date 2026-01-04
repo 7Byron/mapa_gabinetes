@@ -1,10 +1,6 @@
-// lib/screens/relatorios_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
-
-// Importe seu RelatoriosService, DatabaseHelper, etc.
 import '../services/relatorios_service.dart';
 import '../models/gabinete.dart';
 
@@ -33,8 +29,8 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   // Listas
   List<Gabinete> todosGabinetes = [];
-  List<String> setores = [];         // pisos disponíveis
-  List<String> especialidades = [];  // lista vinda do DB
+  List<String> setores = [];
+  List<String> especialidades = [];
 
   @override
   void initState() {
@@ -44,19 +40,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   /// Carrega do DB: gabinetes, especialidades
   Future<void> _carregarDadosIniciais() async {
-    // TODO: Refatorar tela para usar Firestore diretamente.
-    // Toda referência a DatabaseHelper removida. Adapte para usar serviços Firebase.
-    // Carrega gabinetes
-    // todosGabinetes = await DatabaseHelper.buscarGabinetes();
-    // Extrai setores únicos
-    // final setSetores = todosGabinetes.map((g) => g.setor).toSet();
-    // setores = setSetores.toList()..sort();
-
-    // Carrega especialidades do DB (tabela "especialidades")
-    // final listaEsp = await DatabaseHelper.buscarEspecialidades();
-    // Se tiver outra fonte, ajuste
-    // especialidades = listaEsp..sort();
-
     setState(() {});
   }
 
@@ -111,7 +94,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         padding: const EdgeInsets.all(16.0),
         child: ListView(
           children: [
-            // PERÍODO
             const Text(
               'Selecione o Período',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -155,14 +137,12 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
             const Divider(),
 
-            // FILTRO DE SETOR
             const Text(
               'Filtrar por Piso (Setor)',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             _buildDropdownSetor(),
 
-            // FILTRO DE GABINETE
             const SizedBox(height: 8),
             const Text(
               'Filtrar por Gabinete',
@@ -170,7 +150,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
             _buildDropdownGabinete(),
 
-            // FILTRO DE ESPECIALIDADE
             const SizedBox(height: 8),
             const Text(
               'Filtrar por Especialidade',
@@ -185,7 +164,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
 
             const SizedBox(height: 24),
-            // RESULTADOS
             _buildGraficoTaxa(
               label: 'Taxa Geral',
               valor: resultadoGeral,
@@ -213,8 +191,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   /// Dropdown para selecionar Setor
   Widget _buildDropdownSetor() {
-    // "Nenhum" -> sem filtro
-    // Se a lista estiver vazia, mostramos "Carregando..."
     if (setores.isEmpty) {
       return const Text('Nenhum setor encontrado ou carregando...');
     }
@@ -238,8 +214,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       onChanged: (value) {
         setState(() {
           setorSelecionado = value ?? '';
-          // Se quiser limpar gabinete se o setor mudar, pode
-          // gabineteSelecionado = '';
         });
       },
     );
@@ -247,11 +221,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   /// Dropdown para selecionar Gabinete
   Widget _buildDropdownGabinete() {
-    // Se não tiver gabinetes, mostramos algo
     if (todosGabinetes.isEmpty) {
       return const Text('Nenhum gabinete encontrado ou carregando...');
     }
-    // Monta a lista com a opção '' => (Nenhum)
     final items = <DropdownMenuItem<String>>[
       const DropdownMenuItem(
         value: '',
@@ -278,7 +250,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   /// Dropdown para selecionar Especialidade
   Widget _buildDropdownEspecialidade() {
-    // Se não tiver especialidades, usamos algo
     if (especialidades.isEmpty) {
       return const Text('Nenhuma especialidade cadastrada ou carregando...');
     }
@@ -309,8 +280,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   /// Widget para exibir o "gráfico de barras" + label
   Widget _buildGraficoTaxa({required String label, required double valor}) {
-    // valor = de 0.0 a 100.0
-    final perc = valor.clamp(0.0, 100.0) / 100.0; // de 0..1
+    final perc = valor.clamp(0.0, 100.0) / 100.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -319,7 +289,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 6),
-        // Uma barra horizontal
         SizedBox(
           height: 20,
           child: LinearProgressIndicator(

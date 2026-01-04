@@ -4,7 +4,6 @@ import '../models/medico.dart';
 import '../models/unidade.dart';
 import 'cadastro_medicos.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../utils/alocacao_medicos_logic.dart';
 
 class ListaMedicos extends StatefulWidget {
   final Unidade? unidade;
@@ -28,6 +27,9 @@ class ListaMedicosState extends State<ListaMedicos> {
   final FocusNode _searchFocusNode = FocusNode();
   bool _fullyLoaded = false; // indica se já carregámos toda a coleção
   bool _loadingAll = false; // carregamento em progresso sem quebrar foco
+  
+  // Filtro de ativo/inativo
+  bool _mostrarInativos = false; // Por padrão, mostra apenas ativos (false = ativos, true = inativos)
 
   @override
   void initState() {
@@ -123,9 +125,9 @@ class ListaMedicosState extends State<ListaMedicos> {
       final medicosCarregados = <Medico>[];
       for (final doc in snapshot.docs) {
         final dados = doc.data() as Map<String, dynamic>;
-        // Filtrar apenas médicos ativos na lista principal
         final ativo = dados['ativo'] ?? true;
-        if (ativo) {
+        // Filtrar conforme o switch: false = apenas ativos, true = apenas inativos
+        if ((!_mostrarInativos && ativo) || (_mostrarInativos && !ativo)) {
           medicosCarregados.add(Medico(
             id: dados['id'],
             nome: dados['nome'] ?? '',
@@ -157,7 +159,10 @@ class ListaMedicosState extends State<ListaMedicos> {
         if (snapshot.docs.isNotEmpty) {
           _lastDoc = snapshot.docs.last;
         }
-        _hasMore = snapshot.docs.length == _pageSize;
+        // Se após filtrar não há médicos carregados, mas ainda há documentos no snapshot,
+        // pode haver mais páginas. Mas se já filtramos e não encontramos nada, vamos parar
+        // se não há mais documentos ou se encontramos menos que o tamanho da página
+        _hasMore = snapshot.docs.length == _pageSize && medicosCarregados.isNotEmpty;
         isLoading = false;
         _isLoadingMore = false;
       });
@@ -215,9 +220,9 @@ class ListaMedicosState extends State<ListaMedicos> {
       final todos = <Medico>[];
       for (final doc in snapshot.docs) {
         final dados = doc.data() as Map<String, dynamic>;
-        // Filtrar apenas médicos ativos na lista principal
         final ativo = dados['ativo'] ?? true;
-        if (ativo) {
+        // Filtrar conforme o switch: false = apenas ativos, true = apenas inativos
+        if ((!_mostrarInativos && ativo) || (_mostrarInativos && !ativo)) {
           todos.add(Medico(
             id: dados['id'],
             nome: dados['nome'] ?? '',
@@ -229,7 +234,6 @@ class ListaMedicosState extends State<ListaMedicos> {
         }
       }
       // Ordenar localmente caso algum documento não tenha nomeSearch
-      // Isso garante ordenação correta mesmo para dados antigos
       todos.sort((a, b) {
         final nomeA = _normalize(a.nome);
         final nomeB = _normalize(b.nome);
@@ -268,6 +272,7 @@ class ListaMedicosState extends State<ListaMedicos> {
 
       CollectionReference ocupantesRef;
       CollectionReference disponibilidadesRef;
+      CollectionReference excecoesRef;
 
       if (widget.unidade != null) {
         // Deleta ocupante da unidade específica
@@ -277,16 +282,17 @@ class ListaMedicosState extends State<ListaMedicos> {
             .collection('ocupantes');
         disponibilidadesRef =
             ocupantesRef.doc(id).collection('disponibilidades');
+        excecoesRef = ocupantesRef.doc(id).collection('excecoes');
       } else {
         // Deleta da coleção antiga (fallback)
         ocupantesRef = firestore.collection('medicos');
         disponibilidadesRef =
             ocupantesRef.doc(id).collection('disponibilidades');
+        excecoesRef = ocupantesRef.doc(id).collection('excecoes');
       }
 
       // 1. Apaga disponibilidades do médico
       final anosSnapshot = await disponibilidadesRef.get();
-      int disponibilidadesRemovidas = 0;
       for (final anoDoc in anosSnapshot.docs) {
         final registosRef = anoDoc.reference.collection('registos');
         // Buscar todos os registos e filtrar localmente para evitar necessidade de índice
@@ -312,7 +318,6 @@ class ListaMedicosState extends State<ListaMedicos> {
                     dataRegistoNormalizada.isAfter(dataAtualNormalizada));
             if (deveRemover) {
               await doc.reference.delete();
-              disponibilidadesRemovidas++;
             }
           }
         }
@@ -325,8 +330,47 @@ class ListaMedicosState extends State<ListaMedicos> {
         }
       }
 
-      // 2. Apaga alocações do médico
-      int alocacoesRemovidas = 0;
+      // 2. Apaga exceções do médico
+      final excecoesAnosSnapshot = await excecoesRef.get();
+      for (final anoDoc in excecoesAnosSnapshot.docs) {
+        final registosRef = anoDoc.reference.collection('registos');
+        final todosRegistos = await registosRef.get();
+        for (final doc in todosRegistos.docs) {
+          final data = doc.data();
+          final dataExcecao = data['data'] as String?;
+
+          if (dataExcecao != null) {
+            final dataExcecaoDate = DateTime.parse(dataExcecao);
+            final dataExcecaoNormalizada = DateTime(
+              dataExcecaoDate.year,
+              dataExcecaoDate.month,
+              dataExcecaoDate.day,
+            );
+
+            // Se apagarTodos, remove tudo. Senão, remove apenas a partir de hoje (>= hoje)
+            final deveRemover = apagarTodos ||
+                (dataExcecaoNormalizada.isAtSameMomentAs(dataAtualNormalizada) ||
+                    dataExcecaoNormalizada.isAfter(dataAtualNormalizada));
+            if (deveRemover) {
+              await doc.reference.delete();
+            }
+          } else {
+            // Se não tem data, remover apenas se apagarTodos
+            if (apagarTodos) {
+              await doc.reference.delete();
+            }
+          }
+        }
+
+        // Verificar se ainda há registos no ano
+        final registosRestantes = await registosRef.get();
+        if (registosRestantes.docs.isEmpty) {
+          // Remove o documento do ano se estiver vazio
+          await anoDoc.reference.delete();
+        }
+      }
+
+      // 3. Apaga alocações do médico
       if (widget.unidade != null) {
         final unidadeId = widget.unidade!.id;
         // Buscar alocações do ano atual e próximo ano
@@ -365,14 +409,13 @@ class ListaMedicosState extends State<ListaMedicos> {
                       dataAlocacaoNormalizada.isAfter(dataAtualNormalizada));
               if (deveRemover) {
                 await doc.reference.delete();
-                alocacoesRemovidas++;
               }
             }
           }
         }
       }
 
-      // 3. Se apagarTodos, deleta o documento do médico completamente
+      // 4. Se apagarTodos, deleta o documento do médico completamente
       // Senão, apenas marca como inativo para preservar histórico
       if (apagarTodos) {
         // Deleta o documento do médico completamente
@@ -391,30 +434,15 @@ class ListaMedicosState extends State<ListaMedicos> {
         });
       }
 
-      // Mostra mensagem de sucesso
-      if (mounted) {
-        final mensagem = apagarTodos
-            ? 'Médico e todos os dados removidos: $disponibilidadesRemovidas disponibilidade(s) e $alocacoesRemovidas alocação(ões) deletadas.'
-            : 'Médico marcado como inativo: $disponibilidadesRemovidas disponibilidade(s) e $alocacoesRemovidas alocação(ões) futuras removidas. O histórico foi preservado.';
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(mensagem),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-
       // Invalida o cache de todos os dias futuros para garantir que os cartões desapareçam
       // Isso é importante para que quando o usuário voltar ao menu principal,
       // os cartões futuros não apareçam mais (nem alocados, nem na lista de não alocados)
       if (!apagarTodos) {
         // Se é "a partir de hoje", invalida o cache de todos os dias futuros
-        AlocacaoMedicosLogic.invalidateCacheFromDate(dataAtualNormalizada);
+        // AlocacaoMedicosLogic.invalidateCacheFromDate(dataAtualNormalizada);
       } else {
         // Se é "todos os dados", limpa todo o cache
-        AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(2000, 1, 1));
+        // AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(2000, 1, 1));
       }
 
       // Recarrega a lista completa para garantir sincronização
@@ -506,7 +534,9 @@ class ListaMedicosState extends State<ListaMedicos> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: TextField(
+                      child: Column(
+                        children: [
+                          TextField(
                         controller: _searchController,
                         focusNode: _searchFocusNode,
                         decoration: InputDecoration(
@@ -533,10 +563,82 @@ class ListaMedicosState extends State<ListaMedicos> {
                                     )
                                   : null),
                         ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Switch para filtrar ativos/inativos
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      _mostrarInativos ? Icons.cancel : Icons.check_circle,
+                                      color: _mostrarInativos ? Colors.red : Colors.green,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _mostrarInativos ? 'Mostrar apenas inativos' : 'Mostrar apenas ativos',
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                                Switch(
+                                  value: _mostrarInativos,
+                                  onChanged: (valor) {
+                                    setState(() {
+                                      _mostrarInativos = valor;
+                                    });
+                                    // Recarregar lista quando o switch muda
+                                    final hasQuery = _searchController.text.trim().isNotEmpty;
+                                    if (hasQuery) {
+                                      _carregarTodosMedicos();
+                                    } else {
+                                      _carregarMedicos(refresh: true);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Expanded(
-                      child: ListView.builder(
+                      child: _filtered().isEmpty && !isLoading && !_isLoadingMore
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      _mostrarInativos ? Icons.cancel : Icons.search_off,
+                                      size: 64,
+                                      color: Colors.grey,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _mostrarInativos
+                                          ? 'Sem médicos inativos'
+                                          : 'Nenhum médico encontrado',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
                         controller: _scrollController,
                         itemCount:
                             _filtered().length + (_showTailLoader() ? 1 : 0),
@@ -558,15 +660,34 @@ class ListaMedicosState extends State<ListaMedicos> {
                                 horizontal: 16,
                               ),
                               child: ListTile(
+                                leading: Icon(
+                                  medico.ativo ? Icons.check_circle : Icons.cancel,
+                                  color: medico.ativo ? Colors.green : Colors.grey,
+                                  size: 24,
+                                ),
                                 title: Text(
                                   medico.nome,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w600,
+                                    color: medico.ativo ? null : Colors.grey,
                                   ),
                                 ),
-                                subtitle: (medico.especialidade).isNotEmpty
-                                    ? Text(medico.especialidade)
-                                    : null,
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if ((medico.especialidade).isNotEmpty)
+                                      Text(medico.especialidade),
+                                    if (!medico.ativo)
+                                      const Text(
+                                        'Inativo',
+                                        style: TextStyle(
+                                          color: Colors.red,
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -615,7 +736,6 @@ class ListaMedicosState extends State<ListaMedicos> {
   }
 
   bool _showTailLoader() {
-    // Só mostrar loader extra se não estiver a pesquisar e ainda houver páginas
     final hasQuery = _searchController.text.trim().isNotEmpty;
     return !hasQuery && _hasMore;
   }
@@ -629,3 +749,4 @@ class ListaMedicosState extends State<ListaMedicos> {
       .replaceAll(RegExp(r"[ú]"), 'u')
       .replaceAll(RegExp(r"[ç]"), 'c');
 }
+

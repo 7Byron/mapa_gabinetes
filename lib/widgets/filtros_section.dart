@@ -38,56 +38,89 @@ class FiltrosSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: MyAppTheme.azulEscuro.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
                 Icons.filter_list,
-                color: Colors.blue.shade900,
+                  color: MyAppTheme.azulEscuro,
                 size: 20,
+                ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Text(
                 'Filtros',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.blue.shade900,
+                style: MyAppTheme.heading2.copyWith(
+                  fontSize: 18,
+                  color: MyAppTheme.azulEscuro,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text('Pisos:', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 20),
+          Text(
+            'Pisos',
+            style: MyAppTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[800],
+            ),
+          ),
+          const SizedBox(height: 8),
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
+            spacing: 8,
+            runSpacing: 8,
             children: todosSetores.map((setor) {
+              final isSelected = pisosSelecionados.contains(setor);
               return FilterChip(
                 label: Text(
                   setor,
                   style: TextStyle(
-                    color: pisosSelecionados.contains(setor)
-                        ? Colors.white
-                        : Colors.black,
+                    color: isSelected ? Colors.white : Colors.grey[800],
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 13,
                   ),
                 ),
-                selected: pisosSelecionados.contains(setor),
+                selected: isSelected,
                 onSelected: (selected) => onTogglePiso(setor, selected),
-                selectedColor:
-                    MyAppTheme.roxo, // Cor do chip quando selecionado
-                backgroundColor:
-                    Colors.grey.shade200, // Cor do chip quando não selecionado
-                checkmarkColor: Colors.white, // Cor da marca de seleção
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8), // Bordas arredondadas
+                selectedColor: MyAppTheme.azulEscuro,
+                backgroundColor: Colors.grey.shade100,
+                checkmarkColor: Colors.white,
+                side: BorderSide(
+                  color: isSelected 
+                      ? MyAppTheme.azulEscuro 
+                      : Colors.grey.shade300,
+                  width: 1,
                 ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
               );
             }).toList(),
           ),
-          const SizedBox(height: 16),
-          const Text('Ocupação:',
-              style: TextStyle(fontWeight: FontWeight.w600)),
-          DropdownButton<String>(
+          const SizedBox(height: 20),
+          Text(
+            'Ocupação',
+            style: MyAppTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[800],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButton<String>(
             value: filtroOcupacao,
-            isExpanded: true, // Ocupa toda a largura
+              isExpanded: true,
+              underline: const SizedBox(),
             items: const [
               DropdownMenuItem(value: 'Todos', child: Text('Todos')),
               DropdownMenuItem(value: 'Livres', child: Text('Livres')),
@@ -97,12 +130,27 @@ class FiltrosSection extends StatelessWidget {
               if (value != null) onFiltroOcupacaoChanged(value);
             },
           ),
-          const SizedBox(height: 16),
-          const Text('Especialidade do Gabinete:',
-              style: TextStyle(fontWeight: FontWeight.w600)),
-          DropdownButton<String>(
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Especialidade do Gabinete',
+            style: MyAppTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[800],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButton<String>(
             value: filtroEspecialidadeGabinete,
-            isExpanded: true, // Ocupa toda a largura
+              isExpanded: true,
+              underline: const SizedBox(),
             hint: const Text('Todas especialidades'),
             items: [
               const DropdownMenuItem<String>(
@@ -117,14 +165,29 @@ class FiltrosSection extends StatelessWidget {
             ],
             onChanged: onFiltroEspecialidadeGabineteChanged,
           ),
-          const SizedBox(height: 16),
-          CheckboxListTile(
-            title: const Text('Mostrar Conflitos'),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: CheckboxListTile(
+              title: Text(
+                'Mostrar Conflitos',
+                style: MyAppTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             controlAffinity: ListTileControlAffinity.leading,
             value: mostrarConflitos,
+              activeColor: MyAppTheme.azulEscuro,
             onChanged: (val) {
               if (val != null) onMostrarConflitosChanged(val);
             },
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
           ),
         ],
       ),

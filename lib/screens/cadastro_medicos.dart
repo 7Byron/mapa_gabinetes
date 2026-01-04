@@ -30,7 +30,6 @@ import '../widgets/date_picker_customizado.dart';
 import 'package:intl/intl.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../utils/alocacao_medicos_logic.dart';
 import '../utils/series_helper.dart';
 import '../utils/cadastro_medicos_helper.dart';
 import 'alocacao_medicos_screen.dart';
@@ -55,6 +54,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
       false; // mostra progress enquanto atualiza horários
   double progressoAtualizandoHorarios = 0.0;
   String mensagemAtualizandoHorarios = 'A atualizar horários...';
+  bool _criandoExcecao = false; // mostra progress enquanto cria exceções
+  double progressoCriandoExcecao = 0.0;
+  String mensagemCriandoExcecao = 'A criar exceção...';
 
   // Mantém o ID do médico numa variável interna
   late String _medicoId;
@@ -82,6 +84,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
   TextEditingController especialidadeController = TextEditingController();
   TextEditingController nomeController = TextEditingController();
   TextEditingController observacoesController = TextEditingController();
+  
+  // Estado do campo ativo
+  bool _medicoAtivo = true;
 
   bool isLoadingDisponibilidades = false;
   double progressoCarregamentoDisponibilidades = 0.0;
@@ -107,11 +112,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
     _medicoAtual = widget.medico;
 
     if (widget.medico != null) {
-      // Editando um médico existente
+      // Editando um médico existente - carregar dados do médico passado
+      // mas depois recarregar do Firestore para garantir dados atualizados
       nomeController.text = widget.medico!.nome;
       especialidadeController.text = widget.medico!.especialidade;
       observacoesController.text = widget.medico!.observacoes ?? '';
       _medicoAutocompleteController.text = widget.medico!.nome;
+      _medicoAtivo = widget.medico!.ativo; // Carregar estado ativo do médico
+      
+      // Recarregar médico do Firestore para garantir dados atualizados (especialmente o campo ativo)
+      _recarregarMedicoDoFirestore(widget.medico!.id);
+      
       // Carregar disponibilidades do ano atual por padrão
       _anoVisualizado = DateTime.now().year;
       _dataCalendario = DateTime.now();
@@ -131,6 +142,60 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     // Carregar lista de médicos para o dropdown
     _carregarListaMedicos();
+  }
+  
+  /// Recarrega um médico do Firestore para garantir dados atualizados
+  Future<void> _recarregarMedicoDoFirestore(String medicoId) async {
+    try {
+      final firestore = FirebaseFirestore.instance;
+      DocumentReference medicoRef;
+      
+      if (widget.unidade != null) {
+        medicoRef = firestore
+            .collection('unidades')
+            .doc(widget.unidade!.id)
+            .collection('ocupantes')
+            .doc(medicoId);
+      } else {
+        medicoRef = firestore.collection('medicos').doc(medicoId);
+      }
+      
+      final doc = await medicoRef.get(const GetOptions(source: Source.server));
+      if (doc.exists && mounted) {
+        final dados = doc.data() as Map<String, dynamic>;
+        final ativoAtualizado = dados['ativo'] ?? true;
+        
+        debugPrint('🔄 [RECARREGAR-MÉDICO] Médico $medicoId: ativo no Firestore=$ativoAtualizado, ativo local=$_medicoAtivo, houveMudancas=$_houveMudancas');
+        
+        // Sempre atualizar o campo ativo do Firestore quando recarregar
+        // (mas apenas se não houver mudanças não salvas do usuário)
+        if (!_houveMudancas) {
+          if (_medicoAtivo != ativoAtualizado) {
+            debugPrint('✅ [RECARREGAR-MÉDICO] Atualizando campo ativo de $_medicoAtivo para $ativoAtualizado');
+            setState(() {
+              _medicoAtivo = ativoAtualizado;
+              // Atualizar também o médico atual
+              if (_medicoAtual != null) {
+                _medicoAtual = Medico(
+                  id: _medicoAtual!.id,
+                  nome: _medicoAtual!.nome,
+                  especialidade: _medicoAtual!.especialidade,
+                  observacoes: _medicoAtual!.observacoes,
+                  disponibilidades: _medicoAtual!.disponibilidades,
+                  ativo: ativoAtualizado,
+                );
+              }
+            });
+          } else {
+            debugPrint('ℹ️ [RECARREGAR-MÉDICO] Campo ativo já está sincronizado: $ativoAtualizado');
+          }
+        } else {
+          debugPrint('⚠️ [RECARREGAR-MÉDICO] Ignorando atualização: usuário já fez mudanças (houveMudancas=$_houveMudancas)');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Erro ao recarregar médico do Firestore: $e');
+    }
   }
 
   /// Carrega a lista de médicos para o dropdown
@@ -157,6 +222,32 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
     }
   }
+  
+  bool _jaRecarregouAoVoltar = false;
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Quando a tela volta ao foco, recarregar o médico do Firestore
+    // para garantir que o campo ativo está atualizado
+    if (widget.medico != null && !_jaRecarregouAoVoltar) {
+      final route = ModalRoute.of(context);
+      if (route != null && route.isCurrent) {
+        _jaRecarregouAoVoltar = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _recarregarMedicoDoFirestore(widget.medico!.id);
+            // Resetar flag após um delay para permitir recarregamento futuro
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                _jaRecarregouAoVoltar = false;
+              }
+            });
+          }
+        });
+      }
+    }
+  }
 
   /// Verifica se houve mudanças nos dados
   void _verificarMudancas() {
@@ -174,7 +265,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
 
     // CORREÇÃO CRÍTICA: Verificar mudanças nas disponibilidades "Única" primeiro
-    // Isso garante que disponibilidades "Única" novas sejam sempre detectadas,
     // mesmo quando múltiplas séries são criadas rapidamente
     final disponibilidadesUnicas =
         CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
@@ -204,7 +294,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
 
     // CORREÇÃO: Verificar mudanças nas disponibilidades usando comparação por ID
-    // Isso garante que disponibilidades "Única" novas sejam detectadas
     if (!mudancas &&
         disponibilidades.length != _disponibilidadesOriginal.length) {
       mudancas = true;
@@ -270,13 +359,11 @@ class CadastroMedicoState extends State<CadastroMedico> {
       return !existeOriginal;
     });
     // CORREÇÃO CRÍTICA: Sempre forçar verificação de mudanças antes de sair
-    // Isso garante que _houveMudancas esteja atualizado mesmo quando múltiplas séries são criadas
     // IMPORTANTE: Chamar _verificarMudancas() novamente para garantir estado atualizado
     // (já foi chamado no PopScope, mas garantir novamente aqui)
     _verificarMudancas();
 
     // CORREÇÃO: Recalcular disponibilidades únicas após verificar mudanças
-    // Isso garante que temos a lista mais atualizada (pode ter mudado desde a primeira verificação)
     final disponibilidadesUnicasRecalculadas =
         CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
             disponibilidades, _medicoId);
@@ -457,6 +544,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       especialidadeController.text = medico.especialidade;
       observacoesController.text = medico.observacoes ?? '';
       _medicoAutocompleteController.text = medico.nome;
+      _medicoAtivo = medico.ativo; // Carregar estado ativo do médico
 
       // Limpar dados antigos
       disponibilidades.clear();
@@ -475,6 +563,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
       _anoVisualizado = DateTime.now().year;
       _dataCalendario = DateTime.now();
     });
+
+    // Recarregar médico do Firestore para garantir dados atualizados (especialmente campo ativo)
+    await _recarregarMedicoDoFirestore(medico.id);
 
     // Carregar disponibilidades do novo médico
     await _carregarDisponibilidadesFirestore(medico.id, ano: _anoVisualizado);
@@ -678,7 +769,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       });
 
       // Invalidar cache
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(2000, 1, 1));
+      // AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(2000, 1, 1));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -933,7 +1024,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // CORREÇÃO: Adicionar disponibilidades "Única" carregadas do Firestore
         // IMPORTANTE: As disponibilidades únicas já adicionadas localmente (ainda não salvas)
         // têm prioridade sobre as do Firestore para a mesma chave
-        // Isso garante que disponibilidades recém-adicionadas não sejam perdidas
         for (final dispUnica in dispsUnicas) {
           final chave =
               '${dispUnica.medicoId}_${dispUnica.data.year}-${dispUnica.data.month}-${dispUnica.data.day}_${dispUnica.tipo}';
@@ -1098,7 +1188,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
               'A carregar disponibilidades...';
 
           // CORREÇÃO: Guardar disponibilidades originais de forma síncrona
-          // Isso garante que _disponibilidadesOriginal esteja sempre atualizada
           // quando o usuário cria novas disponibilidades
           // IMPORTANTE: Incluir também as disponibilidades únicas não salvas
           _disponibilidadesOriginal = this
@@ -1230,32 +1319,27 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
     }
 
-    // Atualiza cache do dia adicionado
-    AlocacaoMedicosLogic.updateCacheForDay(
-      day: CadastroMedicosHelper.normalizarData(date),
-      disponibilidades: disponibilidades,
-    );
   }
 
   /// Remove data(s) do calendário, depois ordena a lista
   Future<void> _removerData(DateTime date, {bool removeSerie = false}) async {
+    // Encontrar a disponibilidade na data antes de remover
+    final disponibilidadeNaData = disponibilidades.firstWhere(
+      (d) =>
+          d.data.year == date.year &&
+          d.data.month == date.month &&
+          d.data.day == date.day,
+      orElse: () => Disponibilidade(
+        id: '',
+        medicoId: _medicoId,
+        data: date,
+        horarios: [],
+        tipo: 'Única',
+      ),
+    );
+
     // Se está removendo a série inteira, encontrar e remover do Firestore
     if (removeSerie) {
-      // Encontrar a disponibilidade na data para identificar a série
-      final disponibilidadeNaData = disponibilidades.firstWhere(
-        (d) =>
-            d.data.year == date.year &&
-            d.data.month == date.month &&
-            d.data.day == date.day,
-        orElse: () => Disponibilidade(
-          id: '',
-          medicoId: _medicoId,
-          data: date,
-          horarios: [],
-          tipo: 'Única',
-        ),
-      );
-
       // Se a disponibilidade é de uma série, encontrar e remover a série do Firestore
       if (disponibilidadeNaData.id.startsWith('serie_') &&
           disponibilidadeNaData.tipo != 'Única') {
@@ -1282,6 +1366,27 @@ class CadastroMedicoState extends State<CadastroMedico> {
           }
         }
       }
+    } else {
+      // Removendo apenas uma data (não a série inteira)
+      // Se for uma disponibilidade única, remover do Firestore
+      if (disponibilidadeNaData.tipo == 'Única' &&
+          widget.unidade != null &&
+          disponibilidadeNaData.id.isNotEmpty) {
+        try {
+          await AlocacaoDisponibilidadeRemocaoService
+              .removerAlocacoesEDisponibilidadesPorData(
+            widget.unidade!.id,
+            _medicoId,
+            date,
+          );
+          debugPrint(
+              '✅ Disponibilidade única removida do Firestore: ${disponibilidadeNaData.id}, data: ${date.day}/${date.month}/${date.year}');
+        } catch (e) {
+          debugPrint(
+              '❌ Erro ao remover disponibilidade única do Firestore: $e');
+          // Continuar mesmo se houver erro - ainda vamos remover da lista local
+        }
+      }
     }
 
     setState(() {
@@ -1300,15 +1405,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
     // Verifica mudanças após remover dados
     _verificarMudancas();
 
-    // Atualiza cache do dia removido
-    AlocacaoMedicosLogic.updateCacheForDay(
-      day: CadastroMedicosHelper.normalizarData(date),
-      disponibilidades: disponibilidades,
-    );
 
     // Invalidar cache de séries para garantir que não apareçam ao recarregar
     if (removeSerie && _medicoAtual != null) {
-      AlocacaoMedicosLogic.invalidateCacheFromDate(date);
+      // AlocacaoMedicosLogic.invalidateCacheFromDate(date);
     }
   }
 
@@ -1640,11 +1740,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
       });
 
       // CORREÇÃO: Invalidar cache para garantir que apareça no ecrã de alocação
-      AlocacaoMedicosLogic.invalidateCacheForDay(dataNovaSerie);
-      final anoSerie = dataNovaSerie.year;
-      AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(_medicoId, anoSerie);
-      // Invalidar cache de todo o ano para garantir que apareça em todos os dias relevantes
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
 
       // Gerar cartões visuais para a nova série
       final geradas = criarDisponibilidadesSerie(
@@ -1817,10 +1912,24 @@ class CadastroMedicoState extends State<CadastroMedico> {
   /// Cria exceção de período geral (remove todos os cartões no período, independente das séries)
   Future<void> _criarExcecaoPeriodoGeral(
       DateTime dataInicio, DateTime dataFim) async {
+    // Iniciar barra de progresso
+    if (mounted) {
+      setState(() {
+        _criandoExcecao = true;
+        progressoCriandoExcecao = 0.0;
+        mensagemCriandoExcecao = 'A iniciar...';
+      });
+    }
+
     try {
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.2;
+          mensagemCriandoExcecao = 'A criar exceções...';
+        });
+      }
       // Usar serviço para criar exceções
-      final totalExcecoesCriadas =
-          await ExcecaoSerieCriacaoService.criarExcecoesParaPeriodoGeral(
+      await ExcecaoSerieCriacaoService.criarExcecoesParaPeriodoGeral(
         series,
         excecoes,
         dataInicio,
@@ -1837,8 +1946,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
         },
       );
 
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.5;
+          mensagemCriandoExcecao = 'A remover alocações...';
+        });
+      }
       // Remover alocações e disponibilidades do Firestore para as datas do período
-      // Isso garante que os cartões desapareçam do menu principal, quer estejam alocados ou não
       if (widget.unidade != null && _medicoAtual != null) {
         await AlocacaoDisponibilidadeRemocaoService
             .removerAlocacoesEDisponibilidades(
@@ -1869,23 +1983,26 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
       }
 
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.7;
+          mensagemCriandoExcecao = 'A processar...';
+        });
+      }
       // CORREÇÃO: Aguardar mais tempo para garantir que o Firestore processou todas as remoções
       // e que a Cloud Function teve tempo de atualizar a vista diária
       await Future.delayed(const Duration(milliseconds: 1500));
 
       // Invalidar cache de séries para este médico e ano
       if (widget.unidade != null && _medicoAtual != null) {
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-            _medicoAtual!.id, _anoVisualizado);
-        // Invalidar também o cache de disponibilidades do dia para forçar recarregamento no menu principal
-        // Invalidar para todas as datas do período da exceção
-        DateTime dataAtual = dataInicio;
-        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
-          AlocacaoMedicosLogic.invalidateCacheForDay(dataAtual);
-          dataAtual = dataAtual.add(const Duration(days: 1));
-        }
       }
 
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.9;
+          mensagemCriandoExcecao = 'A recarregar disponibilidades...';
+        });
+      }
       // Recarregar disponibilidades para refletir as exceções
       if (widget.unidade != null && _medicoAtual != null) {
         await _carregarDisponibilidadesFirestore(_medicoAtual!.id,
@@ -1895,16 +2012,26 @@ class CadastroMedicoState extends State<CadastroMedico> {
       _verificarMudancas();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Exceção de período criada: $totalExcecoesCriadas exceção(ões) criada(s) para o período ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        setState(() {
+          progressoCriandoExcecao = 1.0;
+          mensagemCriandoExcecao = 'Concluído!';
+        });
+        // Aguardar um pouco para mostrar 100% antes de esconder
+        await Future.delayed(const Duration(milliseconds: 300));
+        setState(() {
+          _criandoExcecao = false;
+          progressoCriandoExcecao = 0.0;
+          mensagemCriandoExcecao = 'A criar exceção...';
+        });
       }
+
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _criandoExcecao = false;
+          progressoCriandoExcecao = 0.0;
+          mensagemCriandoExcecao = 'A criar exceção...';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erro ao criar exceção de período: $e'),
@@ -1918,10 +2045,24 @@ class CadastroMedicoState extends State<CadastroMedico> {
   /// Cria exceção para cancelar um período de uma série (ex: férias)
   Future<void> _criarExcecaoPeriodo(
       SerieRecorrencia serie, DateTime dataInicio, DateTime dataFim) async {
+    // Iniciar barra de progresso
+    if (mounted) {
+      setState(() {
+        _criandoExcecao = true;
+        progressoCriandoExcecao = 0.0;
+        mensagemCriandoExcecao = 'A iniciar...';
+      });
+    }
+
     try {
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.2;
+          mensagemCriandoExcecao = 'A criar exceções...';
+        });
+      }
       // Usar serviço para criar exceções
-      final excecoesCriadas =
-          await ExcecaoSerieCriacaoService.criarExcecoesParaPeriodoSerie(
+      await ExcecaoSerieCriacaoService.criarExcecoesParaPeriodoSerie(
         serie,
         excecoes,
         dataInicio,
@@ -1938,8 +2079,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
         },
       );
 
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.5;
+          mensagemCriandoExcecao = 'A remover alocações...';
+        });
+      }
       // Remover alocações e disponibilidades do Firestore para as datas com exceções
-      // Isso garante que os cartões desapareçam do menu principal, quer estejam alocados ou não
       if (widget.unidade != null && _medicoAtual != null) {
         // Filtrar apenas datas dentro do período da série
         DateTime dataAtual = dataInicio;
@@ -1969,27 +2115,23 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
       }
 
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.7;
+          mensagemCriandoExcecao = 'A processar...';
+        });
+      }
       // Aguardar um pouco para garantir que o Firestore processou todas as exceções
       await Future.delayed(const Duration(milliseconds: 200));
 
       // Invalidar cache de séries para este médico e ano
-      if (widget.unidade != null && _medicoAtual != null) {
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-            _medicoAtual!.id, _anoVisualizado);
-        // Invalidar também o cache de disponibilidades do dia para forçar recarregamento no menu principal
-        // Invalidar para todas as datas do período da exceção
-        DateTime dataAtual = dataInicio;
-        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1))) &&
-            dataAtual
-                .isAfter(serie.dataInicio.subtract(const Duration(days: 1))) &&
-            (serie.dataFim == null ||
-                dataAtual
-                    .isBefore(serie.dataFim!.add(const Duration(days: 1))))) {
-          AlocacaoMedicosLogic.invalidateCacheForDay(dataAtual);
-          dataAtual = dataAtual.add(const Duration(days: 1));
-        }
-      }
 
+      if (mounted) {
+        setState(() {
+          progressoCriandoExcecao = 0.9;
+          mensagemCriandoExcecao = 'A recarregar disponibilidades...';
+        });
+      }
       // Recarregar disponibilidades para refletir as exceções
       // IMPORTANTE: Isso vai recarregar as exceções do Firestore e gerar disponibilidades sem as datas canceladas
       if (widget.unidade != null && _medicoAtual != null) {
@@ -2000,16 +2142,26 @@ class CadastroMedicoState extends State<CadastroMedico> {
       _verificarMudancas();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Exceção criada para $excecoesCriadas dia(s): ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        setState(() {
+          progressoCriandoExcecao = 1.0;
+          mensagemCriandoExcecao = 'Concluído!';
+        });
+        // Aguardar um pouco para mostrar 100% antes de esconder
+        await Future.delayed(const Duration(milliseconds: 300));
+        setState(() {
+          _criandoExcecao = false;
+          progressoCriandoExcecao = 0.0;
+          mensagemCriandoExcecao = 'A criar exceção...';
+        });
       }
+
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _criandoExcecao = false;
+          progressoCriandoExcecao = 0.0;
+          mensagemCriandoExcecao = 'A criar exceção...';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erro ao criar exceção: $e'),
@@ -2071,11 +2223,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         excecoes.removeWhere((e) => idsParaRemover.contains(e.id));
       });
 
-      // Invalidar cache de séries para este médico e ano
-      if (_medicoAtual != null && _anoVisualizado != null) {
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-            _medicoAtual!.id, _anoVisualizado);
-      }
 
       // Recarregar disponibilidades UMA VEZ após remover todas as exceções
       if (_medicoAtual != null && _anoVisualizado != null) {
@@ -2089,15 +2236,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         mensagemSaving = 'A guardar...';
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '${excecoesParaRemover.length} exceção(ões) removida(s) com sucesso'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e) {
       setState(() {
         _saving = false;
@@ -2160,13 +2298,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         debugPrint(
             '✅ Disponibilidade única salva ao editar horários: ID=${disponibilidade.id}, data=${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
 
-        // CORREÇÃO: Invalidar cache do dia da disponibilidade após salvar
-        final d = DateTime(disponibilidade.data.year,
-            disponibilidade.data.month, disponibilidade.data.day);
-        AlocacaoMedicosLogic.invalidateCacheForDay(d);
-        // Invalidar também cache do ano da disponibilidade
-        AlocacaoMedicosLogic.invalidateCacheFromDate(
-            DateTime(disponibilidade.data.year, 1, 1));
 
         // Atualizar na lista local
         setState(() {
@@ -2186,15 +2317,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
           }
         });
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Disponibilidade salva!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
 
         return;
       } catch (e) {
@@ -2250,7 +2372,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         );
 
         // Estratégia 2: Se não encontrou, tentar correspondência parcial
-        // Isso garante compatibilidade com formatos antigos ou variações
         if (serieEncontrada.id.isEmpty) {
           for (final serie in series) {
             // Verificar se o ID da disponibilidade contém o ID da série
@@ -2327,11 +2448,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         debugPrint(
             '✅ Série atualizada com novos horários: ${serieAtualizada.id}');
 
-        // CORREÇÃO: Invalidar cache para garantir que mudanças apareçam no ecrã de alocação
-        final anoSerie = serieAtualizada.dataInicio.year;
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(
-            _medicoId, anoSerie);
-        AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
 
         if (mounted) {
           setState(() {
@@ -2363,15 +2479,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
           });
         }
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Horários atualizados na série!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
       } else {
         debugPrint('⚠️ Série não encontrada para atualizar horários');
         if (mounted) {
@@ -2432,12 +2539,41 @@ class CadastroMedicoState extends State<CadastroMedico> {
         excecoes,
         _disponibilidadesOriginal,
         widget.unidade,
+        ativo: _medicoAtivo,
       );
 
       if (!mounted) return;
 
       if (!resultado['sucesso']) {
         return; // Erro já foi mostrado pelo serviço
+      }
+
+      // Verificar se o valor foi realmente salvo no Firestore
+      // Aguardar um pouco para garantir que o Firestore processou
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        final firestore = FirebaseFirestore.instance;
+        DocumentReference medicoRef;
+        if (widget.unidade != null) {
+          medicoRef = firestore
+              .collection('unidades')
+              .doc(widget.unidade!.id)
+              .collection('ocupantes')
+              .doc(_medicoId);
+        } else {
+          medicoRef = firestore.collection('medicos').doc(_medicoId);
+        }
+        final docVerificacao = await medicoRef.get(const GetOptions(source: Source.server));
+        if (docVerificacao.exists) {
+          final dadosVerificacao = docVerificacao.data() as Map<String, dynamic>;
+          final ativoSalvo = dadosVerificacao['ativo'] ?? true;
+          debugPrint('🔍 [VERIFICAÇÃO-PÓS-SALVAR] Valor salvo no Firestore: ativo=$ativoSalvo, esperado=$_medicoAtivo');
+          if (ativoSalvo != _medicoAtivo) {
+            debugPrint('⚠️ [VERIFICAÇÃO-PÓS-SALVAR] DISCREPÂNCIA! Valor no Firestore ($ativoSalvo) diferente do esperado ($_medicoAtivo)');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ [VERIFICAÇÃO-PÓS-SALVAR] Erro ao verificar: $e');
       }
 
       // Reseta as mudanças após salvar com sucesso
@@ -2454,8 +2590,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
           especialidade: especialidadeController.text,
           observacoes: observacoesController.text,
           disponibilidades: disponibilidades,
-          ativo: true,
+          ativo: _medicoAtivo,
         );
+        // Atualizar médico na lista local também
+        final index = _listaMedicos.indexWhere((m) => m.id == _medicoId);
+        if (index != -1) {
+          _listaMedicos[index] = _medicoAtual!;
+        }
       });
 
       // Retorna à lista sem flicker: agenda o pop para o próximo frame
@@ -2508,6 +2649,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
         excecoes,
         _disponibilidadesOriginal,
         widget.unidade,
+        ativo: _medicoAtivo,
       );
 
       if (!mounted) return false;
@@ -2530,8 +2672,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
           especialidade: especialidadeController.text,
           observacoes: observacoesController.text,
           disponibilidades: disponibilidades,
-          ativo: true,
+          ativo: _medicoAtivo,
         );
+        // Atualizar médico na lista local também
+        final index = _listaMedicos.indexWhere((m) => m.id == _medicoId);
+        if (index != -1) {
+          _listaMedicos[index] = _medicoAtual!;
+        }
         progressoSaving = 1.0;
         mensagemSaving = 'Concluído!';
         // Desligar progress bar após um pequeno delay para mostrar 100%
@@ -2585,6 +2732,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       especialidade: especialidadeController.text,
       observacoes: observacoesController.text,
       disponibilidades: [],
+      ativo: _medicoAtivo,
     );
 
     try {
@@ -2650,15 +2798,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         });
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Médico criado com sucesso! Agora pode criar disponibilidades.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       if (mounted) {
@@ -2725,6 +2864,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 especialidadeController: especialidadeController,
                 observacoesController: observacoesController,
                 unidade: widget.unidade,
+                ativo: _medicoAtivo,
+                onAtivoChanged: (novoValor) async {
+                  setState(() {
+                    _medicoAtivo = novoValor;
+                    _houveMudancas = true;
+                  });
+                  // Salvar automaticamente quando o switch muda
+                  if (widget.medico != null && nomeController.text.trim().isNotEmpty) {
+                    await _salvarMedicoSemSair();
+                  }
+                },
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
@@ -2765,7 +2915,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         if (didPop) return;
 
         // CORREÇÃO CRÍTICA: Forçar verificação de mudanças antes de confirmar saída
-        // Isso garante que _houveMudancas esteja atualizado mesmo quando múltiplas séries são criadas
         _verificarMudancas();
 
         final podeSair = await _confirmarSaida();
@@ -3097,7 +3246,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
         body: Stack(
           children: [
             // LinearProgressIndicator no topo quando carregando disponibilidades (mais suave)
-            if (isLoadingDisponibilidades && !_saving && !_atualizandoHorarios)
+            if (isLoadingDisponibilidades && !_saving && !_atualizandoHorarios && !_criandoExcecao)
               Positioned(
                 top: 0,
                 left: 0,
@@ -3114,7 +3263,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
               padding: EdgeInsets.only(
                 top: (isLoadingDisponibilidades &&
                         !_saving &&
-                        !_atualizandoHorarios)
+                        !_atualizandoHorarios &&
+                        !_criandoExcecao)
                     ? 3
                     : 0,
                 left: 16.0,
@@ -3145,6 +3295,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                         observacoesController:
                                             observacoesController,
                                         unidade: widget.unidade,
+                                        ativo: _medicoAtivo,
+                                        onAtivoChanged: (novoValor) {
+                                          setState(() {
+                                            _medicoAtivo = novoValor;
+                                            _houveMudancas = true;
+                                          });
+                                        },
                                       ),
                                       const SizedBox(height: 16),
                                       CalendarioDisponibilidades(
@@ -3554,6 +3711,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                       especialidadeController,
                                   observacoesController: observacoesController,
                                   unidade: widget.unidade,
+                                  ativo: _medicoAtivo,
+                                  onAtivoChanged: (novoValor) {
+                                    setState(() {
+                                      _medicoAtivo = novoValor;
+                                      _houveMudancas = true;
+                                    });
+                                  },
                                 ),
                                 const SizedBox(height: 16),
                                 // Botão para criar exceções em séries
@@ -4317,6 +4481,63 @@ class CadastroMedicoState extends State<CadastroMedico> {
                               // Percentagem
                               Text(
                                 '${(progressoAtualizandoHorarios * 100).toInt()}%',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            // Overlay de criação de exceções
+            if (_criandoExcecao)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Mensagem de status
+                        Text(
+                          mensagemCriandoExcecao,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        // Barra de progresso horizontal
+                        Container(
+                          width: 300,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            children: [
+                              // Barra de progresso
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: progressoCriandoExcecao,
+                                  backgroundColor:
+                                      Colors.white.withValues(alpha: 0.3),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                  minHeight: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // Percentagem
+                              Text(
+                                '${(progressoCriandoExcecao * 100).toInt()}%',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,

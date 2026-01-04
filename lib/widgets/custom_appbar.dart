@@ -5,6 +5,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onZoomIn;
   final VoidCallback? onZoomOut;
   final double? currentZoom;
+  final VoidCallback? onRefresh;
 
   const CustomAppBar({
     super.key,
@@ -12,6 +13,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onZoomIn,
     this.onZoomOut,
     this.currentZoom,
+    this.onRefresh,
   });
 
   @override
@@ -22,6 +24,13 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
       ),
       actions: [
+        // Botão de refresh (laranja)
+        if (onRefresh != null)
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.orange),
+            onPressed: onRefresh,
+            tooltip: 'Atualizar dados (limpar cache e recarregar)',
+          ),
         // Botões de zoom se fornecidos
         if (onZoomIn != null || onZoomOut != null) ...[
           if (currentZoom != null)

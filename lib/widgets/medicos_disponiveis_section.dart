@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/medico.dart';
 import '../models/disponibilidade.dart';
+import '../utils/app_theme.dart';
 import 'medico_card.dart';
 
 class MedicosDisponiveisSection extends StatelessWidget {
@@ -45,11 +46,44 @@ class MedicosDisponiveisSection extends StatelessWidget {
       ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
     
     return Container(
-      padding: const EdgeInsets.all(8),
-      child: Wrap(
-        spacing: 8, // Espaçamento horizontal entre os cartões
-        runSpacing: 8, // Espaçamento vertical entre as linhas
-        children: medicosOrdenados.map((medico) {
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Se não há médicos, retornar container vazio mínimo para permitir drop
+          if (medicosOrdenados.isEmpty) {
+            return const SizedBox(
+              height: 0,
+            );
+          }
+          
+          // Calcular altura baseada no número de linhas necessárias
+          final larguraDisponivel = constraints.maxWidth.isFinite && constraints.maxWidth > 0
+              ? constraints.maxWidth
+              : 400.0; // Fallback
+          const larguraCartao = 180.0;
+          const spacing = 6.0;
+          final cartoesPorLinha = (larguraDisponivel / (larguraCartao + spacing)).floor();
+          final numLinhas = (medicosOrdenados.length / (cartoesPorLinha > 0 ? cartoesPorLinha : 1)).ceil();
+          
+          // Altura do cartão (~100px) + runSpacing (6px) por linha
+          const alturaCartao = 100.0;
+          final alturaNecessaria = (alturaCartao * numLinhas) + (6 * (numLinhas - 1));
+          
+          // Se tem 2 ou mais linhas, garantir altura mínima para 2 linhas
+          final minHeight = numLinhas >= 2 
+              ? (alturaCartao * 2) + 6 
+              : alturaNecessaria;
+          
+          // Remover SingleChildScrollView para permitir que DragTarget capture gestos
+          // Usar apenas Wrap com ConstrainedBox
+          return ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: minHeight,
+            ),
+            child: Wrap(
+                spacing: 6, // Espaçamento horizontal reduzido
+                runSpacing: 6, // Espaçamento vertical reduzido
+                children: medicosOrdenados.map((medico) {
           final dispDoMedico = disponibilidades.where((d) {
             final dd = DateTime(d.data.year, d.data.month, d.data.day);
             return d.medicoId == medico.id &&
@@ -66,10 +100,16 @@ class MedicosDisponiveisSection extends StatelessWidget {
 
           final isValido = dispDoMedico.any((d) => _validarDisponibilidade(d));
 
-          return Card(
-            elevation: 2,
+          return MouseRegion(
+            cursor: SystemMouseCursors.grab,
+            child: Card(
+              elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Colors.grey.shade200,
+                  width: 1,
+                ),
             ),
             child: Draggable<String>(
               data: medico.id,
@@ -79,40 +119,106 @@ class MedicosDisponiveisSection extends StatelessWidget {
                 child: _buildMedicoCardContent(medico, horariosStr, isValido),
               ),
               child: _buildMedicoCardContent(medico, horariosStr, isValido),
+              ),
             ),
           );
         }).toList(),
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildMedicoCardContent(Medico medico, String horarios, bool isValid) {
     return Container(
-      width: 160,
-      padding: const EdgeInsets.all(8),
+      width: 180,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: isValid ? Colors.grey[200] : Colors.red[200],
-        borderRadius: BorderRadius.circular(8),
+        color: isValid 
+            ? MyAppTheme.medicoDisponivelCard
+            : Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isValid 
+              ? MyAppTheme.azulClaro.withValues(alpha: 0.4)
+              : Colors.red.shade300,
+          width: isValid ? 1.5 : 1,
+        ),
+        boxShadow: MyAppTheme.shadowMedicoCard,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Nome do médico centralizado
-          Text(
+          // Nome do médico
+          Row(
+            children: [
+              Expanded(
+                child: Text(
             medico.nome,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  style: MyAppTheme.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Horários com ícone
+          if (horarios.isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(
+                  Icons.access_time,
+                  size: 12,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    horarios,
+                    style: MyAppTheme.bodySmall.copyWith(
+                      color: Colors.grey[700],
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
           ),
           const SizedBox(height: 4),
-          // Horários e especialidade centralizados
-          Text(
-            "$horarios ${medico.especialidade}",
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
-            textAlign: TextAlign.center,
+          ],
+          // Especialidade com ícone
+          if (medico.especialidade.isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(
+                  Icons.medical_services,
+                  size: 12,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    medico.especialidade,
+                    style: MyAppTheme.bodySmall.copyWith(
+                      color: Colors.grey[700],
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
           ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

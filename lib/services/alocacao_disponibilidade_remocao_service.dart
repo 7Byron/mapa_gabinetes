@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../utils/alocacao_medicos_logic.dart';
 
 /// Serviço para remover alocações e disponibilidades do Firestore
 /// Extracted from cadastro_medicos.dart to reduce code duplication
@@ -127,7 +126,8 @@ class AlocacaoDisponibilidadeRemocaoService {
         }
 
         // Invalidar cache para esta data específica
-        AlocacaoMedicosLogic.invalidateCacheFromDate(inicio);
+        // Cache removido - não precisa invalidar
+        // AlocacaoMedicosLogic.invalidateCacheFromDate(inicio);
       } catch (e) {
         // Erro ao remover - continuar para próxima data
       }

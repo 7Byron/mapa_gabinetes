@@ -77,6 +77,7 @@ Future<void> salvarMedicoCompleto(
 
   debugPrint('✅ Médico salvo: ${medico.nome} (ID: ${medico.id})');
   debugPrint('📊 Disps (novas): ${medico.disponibilidades.length}');
+  debugPrint('🔄 Campo ativo salvo: ${medico.ativo}');
 
   // Caminho base das disponibilidades
   final dispRef = medicoRef.collection('disponibilidades');

@@ -2,7 +2,7 @@ import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import '../models/serie_recorrencia.dart';
 import '../services/serie_service.dart';
-import 'alocacao_medicos_logic.dart';
+import '../utils/alocacao_medicos_logic.dart';
 
 /// Helper functions for cadastro_medicos.dart
 /// Extracted to improve code organization and reduce file size

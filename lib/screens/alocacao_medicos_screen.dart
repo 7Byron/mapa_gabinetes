@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
+import '../utils/ui_alocar_cartoes_unicos.dart';
+import '../utils/ui_desalocar_cartao_unico.dart';
+import '../utils/ui_desalocar_cartao_serie.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Se criou o custom_drawer.dart
 import '../widgets/custom_drawer.dart';
+import '../utils/app_theme.dart';
 
 // Widgets locais
 import '../widgets/calendario_disponibilidades.dart';
@@ -16,6 +20,7 @@ import '../widgets/pesquisa_section.dart';
 
 // Lógica separada
 import '../utils/alocacao_medicos_logic.dart' as logic;
+import '../utils/ui_atualizar_dia.dart';
 
 // Models
 import '../models/gabinete.dart';
@@ -23,8 +28,6 @@ import '../models/medico.dart';
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 import '../models/unidade.dart';
-import '../models/serie_recorrencia.dart';
-import '../models/excecao_serie.dart';
 
 // Services
 import '../services/password_service.dart';
@@ -54,25 +57,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     with WidgetsBindingObserver {
   bool isCarregando = true;
   double progressoCarregamento = 0.0; // Progresso de 0.0 a 1.0
+  double _progressoAlvo = 0.0; // Progresso alvo para animação suave
   String mensagemProgresso =
       'A iniciar...'; // Mensagem de status do carregamento
+  bool _isDesalocandoSerie =
+      false; // Flag para controlar progress bar durante desalocação
+  double _progressoDesalocacao = 0.0;
+  String _mensagemDesalocacao = 'A iniciar...';
   Timer? _debounceTimer;
-  Timer?
-      _debounceRegeneracaoSeries; // Timer para debounce das atualizações dos listeners
-  Timer?
-      _debounceAtualizarMedicosDisponiveis; // Timer para debounce de atualização de médicos disponíveis
+  Timer? _timerProgresso; // Timer para atualizar progresso gradualmente
+  DateTime?
+      _ultimaAtualizacaoMedicos; // Última vez que médicos disponíveis foram atualizados
   Timer?
       _timeoutFlagsTransicao; // Timer para limpar flags presas automaticamente
   DateTime selectedDate = DateTime.now();
-  bool _ignorarPrimeirasAtualizacoesListeners =
-      false; // Flag para ignorar primeiras atualizações dos listeners
-  bool _jaRecarregouAoVoltar =
-      false; // Flag para evitar múltiplos recarregamentos
-  bool _isProcessandoAlocacao =
-      false; // Flag para evitar múltiplas atualizações durante alocação/realocação
-  // NOVO: Controle de transição para melhorar comportamento visual
-  String?
-      _medicoEmTransicao; // ID do médico que está sendo movido durante transição
 
   // Controle de layout responsivo
   bool mostrarColunaEsquerda = true; // Para ecrãs pequenos
@@ -119,436 +117,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   bool mostrarConflitos = false;
   String? filtroEspecialidadeGabinete; // Filtro por especialidade do gabinete
 
-  // Listeners em tempo real do dia atual
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _dispSub;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _alocSub;
-  bool _listenerPausado =
-      false; // Flag para pausar listener completamente durante transição
-
-  Future<void> _restartDayListeners() async {
-    await _dispSub?.cancel();
-    await _alocSub?.cancel();
-
-    final firestore = FirebaseFirestore.instance;
-    final inicio =
-        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-    final fim = inicio.add(const Duration(days: 1));
-    final startIso = inicio.toIso8601String();
-    final endIso = fim.toIso8601String();
-
-    // NOVO MODELO: Não há mais disponibilidades individuais no Firestore
-    // As disponibilidades são geradas dinamicamente a partir de séries
-    // O listener de séries será implementado se necessário, mas por enquanto
-    // recarregamos os dados quando necessário (ao mudar de dia, etc.)
-    _dispSub =
-        null; // Listener desativado - disponibilidades são geradas dinamicamente
-
-    final ano = inicio.year.toString();
-    _alocSub = firestore
-        .collection('unidades')
-        .doc(widget.unidade.id)
-        .collection('alocacoes')
-        .doc(ano)
-        .collection('registos')
-        .where('data', isGreaterThanOrEqualTo: startIso)
-        .where('data', isLessThan: endIso)
-        .snapshots()
-        .listen((snap) {
-      // CORREÇÃO CRÍTICA: Verificar pausa ANTES de processar qualquer dado
-      // Isso previne que atualizações do Firestore sobrescrevam a atualização otimista
-      if (_isProcessandoAlocacao ||
-          _medicoEmTransicao != null ||
-          _listenerPausado) {
-        debugPrint(
-            '⚠️ [LISTENER] PAUSADO: _isProcessandoAlocacao=$_isProcessandoAlocacao, _medicoEmTransicao=$_medicoEmTransicao, _listenerPausado=$_listenerPausado');
-        debugPrint(
-            '⚠️ [LISTENER] Ignorando atualização do Firestore para preservar atualização otimista');
-
-        return;
-      }
-
-      if (!mounted) return;
-
-      final alocDia = snap.docs.map((d) => Alocacao.fromMap(d.data())).toList();
-      debugPrint(
-          '📥 [LISTENER] Processando ${alocDia.length} alocações do Firestore');
-
-      // IMPORTANTE: Usar Map para evitar duplicatas ao mesclar alocações
-      // Criar um Map com todas as alocações atuais (incluindo geradas de séries)
-      final alocacoesMap = <String, Alocacao>{};
-
-      // CORREÇÃO CRÍTICA: Preservar atualização otimista ANTES de processar Firestore
-      // Primeiro, adicionar TODAS as alocações atuais ao Map (preservar todas)
-      // MAS dar prioridade especial às alocações otimistas do médico em transição
-      final alocacoesOtimistas = <String>[];
-      final alocacoesReais = <String>[];
-      for (final aloc in alocacoes) {
-        final chave =
-            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-        // Se é uma alocação otimista (médico em transição), marcar para preservar
-        if (_medicoEmTransicao != null && aloc.medicoId == _medicoEmTransicao) {
-          debugPrint(
-              '🔵 [LISTENER] Preservando alocação otimista: ${aloc.id} (médico: ${aloc.medicoId})');
-        }
-        if (aloc.id.startsWith('otimista_')) {
-          alocacoesOtimistas.add('${aloc.medicoId}_${aloc.gabineteId}');
-        } else {
-          alocacoesReais.add('${aloc.medicoId}_${aloc.gabineteId}');
-        }
-        alocacoesMap[chave] = aloc;
-      }
-
-      // Depois, adicionar novas alocações do Firestore ao Map
-      // IMPORTANTE: Alocações do Firestore têm prioridade sobre geradas de séries
-      // Para alocações otimistas: substituir pela real quando chegar do servidor
-      int adicionadas = 0;
-      int substituidas = 0;
-
-      for (final aloc in alocDia) {
-        final chave =
-            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-
-        final alocExistente = alocacoesMap[chave];
-
-        // CORREÇÃO MELHORADA: Se existe uma alocação otimista e chegou a real do Firestore,
-        // substituir a otimista pela real (mesmo gabinete = mesma alocação, só atualizar ID)
-        if (alocExistente != null && alocExistente.id.startsWith('otimista_')) {
-          // Alocação otimista encontrada - substituir pela real do Firestore
-          alocacoesMap[chave] = aloc;
-          substituidas++;
-          debugPrint(
-              '✅ [LISTENER] Substituindo alocação otimista pela real: ${alocExistente.id} -> ${aloc.id}');
-
-          continue;
-        }
-
-        // CORREÇÃO CRÍTICA: Se não encontrou no Map, verificar se há uma alocação correspondente na lista original
-        // que corresponde a esta alocação do Firestore (mesmo médico, gabinete e data)
-        // Isso pode acontecer se o listener processar antes de a alocação estar no Map, ou se foi movida pela atualização otimista
-        if (alocExistente == null) {
-          final alocacaoCorrespondente = alocacoes.firstWhere(
-            (a) {
-              final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-              final alocDate =
-                  DateTime(aloc.data.year, aloc.data.month, aloc.data.day);
-              // Verificar se corresponde (mesmo médico, gabinete e data), independentemente do ID
-              return a.medicoId == aloc.medicoId &&
-                  a.gabineteId == aloc.gabineteId &&
-                  aDate == alocDate;
-            },
-            orElse: () => Alocacao(
-              id: '',
-              medicoId: '',
-              gabineteId: '',
-              data: DateTime(1900, 1, 1),
-              horarioInicio: '',
-              horarioFim: '',
-            ),
-          );
-
-          if (alocacaoCorrespondente.id.isNotEmpty) {
-            // Encontrou alocação correspondente - substituir pela real do Firestore
-            alocacoesMap[chave] = aloc;
-            substituidas++;
-            debugPrint(
-                '✅ [LISTENER] Substituindo alocação correspondente pela real (encontrada na lista): ${alocacaoCorrespondente.id} -> ${aloc.id}');
-
-            continue;
-          }
-        }
-
-        // CORREÇÃO CRÍTICA: Se há transição em andamento e a alocação do Firestore
-        // tem gabinete diferente da otimista, preservar a otimista (realocação em progresso)
-        if (_medicoEmTransicao != null && aloc.medicoId == _medicoEmTransicao) {
-          if (alocExistente != null &&
-              alocExistente.gabineteId != aloc.gabineteId &&
-              alocExistente.id.startsWith('otimista_')) {
-            // Alocação otimista tem gabinete diferente - preservar a otimista
-            debugPrint(
-                '🔵 [LISTENER] Preservando alocação otimista (gabinete diferente): ${alocExistente.gabineteId} vs ${aloc.gabineteId}');
-            continue; // Não substituir
-          }
-        }
-
-        if (!alocacoesMap.containsKey(chave)) {
-          // Não existe, adicionar
-          alocacoesMap[chave] = aloc;
-          adicionadas++;
-        } else if (alocacoesMap[chave]!.id.startsWith('serie_')) {
-          // Existe mas é de série, substituir pela do Firestore (prioridade)
-          alocacoesMap[chave] = aloc;
-          substituidas++;
-        } else {
-          // Já existe e não é de série, substituir pela do Firestore (atualização)
-          alocacoesMap[chave] = aloc;
-          substituidas++;
-        }
-      }
-
-      // CORREÇÃO CRÍTICA: NÃO remover alocações geradas de séries
-      // Alocações de séries não estão no Firestore (são geradas dinamicamente)
-      // Se removermos, elas desaparecem quando o listener é acionado
-      // Calcular quais alocações foram removidas (estavam nas alocações antigas mas não estão no Firestore)
-      final chavesFirestore = alocDia.map((aloc) {
-        return '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-      }).toSet();
-
-      final chavesAntigas = alocacoes.map((aloc) {
-        return '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-      }).toSet();
-
-      final chavesRemovidas = chavesAntigas.difference(chavesFirestore);
-
-      int removidas = 0;
-      for (final chave in chavesRemovidas) {
-        // Verificar se é uma alocação gerada de série (começa com 'serie_')
-        // Se for, NÃO remover - essas são geradas dinamicamente e não estão no Firestore
-        final alocacao = alocacoesMap[chave];
-        if (alocacao != null) {
-          if (alocacao.id.startsWith('serie_')) {
-            // Manter alocação gerada de série - não remover
-            debugPrint(
-                '✅ Preservando alocação gerada de série: ${alocacao.id} (médico: ${alocacao.medicoId}, gabinete: ${alocacao.gabineteId})');
-          } else if (alocacao.id.startsWith('otimista_')) {
-            // CORREÇÃO: Se é uma alocação otimista que não está no Firestore,
-            // verificar se ainda está em transição. Se não, remover (erro ou cancelamento)
-
-            if (_medicoEmTransicao != null &&
-                alocacao.medicoId == _medicoEmTransicao) {
-              // Ainda em transição - preservar otimista
-              debugPrint(
-                  '🔵 [LISTENER] Preservando alocação otimista em transição: ${alocacao.id}');
-            } else {
-              // Não está mais em transição e não está no Firestore - remover (erro)
-              alocacoesMap.remove(chave);
-              removidas++;
-              debugPrint(
-                  '🗑️ Removendo alocação otimista não confirmada: ${alocacao.id} (médico: ${alocacao.medicoId})');
-            }
-          } else {
-            // Remover apenas alocações "Única" que não estão mais no Firestore
-            alocacoesMap.remove(chave);
-            removidas++;
-            debugPrint(
-                '🗑️ Removendo alocação apagada do Firebase: ${alocacao.id} (médico: ${alocacao.medicoId})');
-          }
-        }
-      }
-
-      if (adicionadas > 0 || substituidas > 0 || removidas > 0) {
-        debugPrint(
-            '📊 Listener Alocações: $adicionadas adicionadas, $substituidas substituídas, $removidas removidas');
-      }
-
-      // Atualizar lista de alocações com o Map (sem duplicatas)
-      final antes = alocacoes.length;
-      alocacoes.clear();
-      alocacoes.addAll(alocacoesMap.values);
-      final depois = alocacoes.length;
-
-      // CORREÇÃO MELHORADA: Atualizar UI imediatamente se houve mudanças significativas
-      // Isso garante que quando a alocação otimista é substituída pela real, a UI seja atualizada suavemente
-      if (mounted && (adicionadas > 0 || substituidas > 0 || removidas > 0)) {
-        // Se não está em processamento, atualizar UI imediatamente
-        // Se está em processamento, a UI será atualizada quando o processamento terminar
-        if (!_isProcessandoAlocacao && !_listenerPausado) {
-          setState(() {
-            // Estado já foi atualizado acima (alocacoes.clear/addAll)
-            // Este setState apenas força o rebuild da UI
-          });
-        }
-      }
-
-      // CORREÇÃO: Ignorar regeneração durante operações de alocação para evitar "piscar"
-      if (_isProcessandoAlocacao ||
-          _medicoEmTransicao != null ||
-          _listenerPausado) {
-        debugPrint(
-            '⚠️ Ignorando regeneração de séries durante alocação/transição');
-        return;
-      }
-
-      // CORREÇÃO CRÍTICA: Regenerar alocações de séries após processar listener
-      // Isso garante que alocações de séries alocadas sejam sempre exibidas,
-      // mesmo quando o listener do Firestore é acionado
-      // (alocações de séries não são salvas no Firestore, são geradas dinamicamente)
-      // CORREÇÃO: Usar debounce para evitar múltiplas regenerações rápidas
-      _debounceRegeneracaoSeries?.cancel();
-      _debounceRegeneracaoSeries = Timer(const Duration(milliseconds: 200), () {
-        _regenerarAlocacoesSeries().then((alocacoesSeries) {
-          if (!mounted) return;
-
-          // CORREÇÃO: Verificar novamente se não está processando (pode ter mudado)
-          if (_isProcessandoAlocacao || _medicoEmTransicao != null) {
-            debugPrint(
-                '⚠️ Ignorando atualização de séries durante alocação/transição');
-            return;
-          }
-
-          // CORREÇÃO CRÍTICA: Remover alocações antigas de séries antes de adicionar novas
-          // Isso garante que quando uma exceção muda o gabinete, a alocação antiga é removida
-          // A chave de mesclagem inclui o gabineteId, então precisamos remover manualmente
-          // todas as alocações de séries do mesmo médico/data antes de adicionar as novas
-
-          // Criar um conjunto de chaves de séries para identificar quais remover
-          final chavesSeriesParaRemover = <String>{};
-          for (final aloc in alocacoesSeries) {
-            // Criar chave sem gabineteId para identificar todas as alocações da mesma série/data
-            final chaveSemGabinete =
-                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
-            chavesSeriesParaRemover.add(chaveSemGabinete);
-          }
-
-          // Adicionar alocações geradas de séries ao Map
-          final alocacoesMapAtualizado = <String, Alocacao>{};
-
-          // CORREÇÃO CRÍTICA: Preservar atualização otimista durante regeneração
-          // Primeiro, adicionar todas as alocações atuais, EXCETO alocações de séries que serão regeneradas
-          // MAS preservar alocações otimistas do médico em transição
-          for (final aloc in alocacoes) {
-            // CORREÇÃO: Se é uma alocação otimista do médico em transição, SEMPRE preservar
-            if (_medicoEmTransicao != null &&
-                aloc.medicoId == _medicoEmTransicao) {
-              final chave =
-                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-              alocacoesMapAtualizado[chave] = aloc;
-              debugPrint(
-                  '✅ Preservando alocação otimista durante regeneração: ${aloc.id}');
-              continue;
-            }
-
-            // Se é uma alocação de série que será regenerada, não adicionar agora
-            if (aloc.id.startsWith('serie_')) {
-              final chaveSemGabinete =
-                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
-              if (chavesSeriesParaRemover.contains(chaveSemGabinete)) {
-                // Esta alocação de série será regenerada, pular para evitar duplicação
-                continue;
-              }
-            }
-
-            final chave =
-                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-            alocacoesMapAtualizado[chave] = aloc;
-          }
-
-          // Depois, adicionar/atualizar com alocações geradas de séries
-          // Isso substitui qualquer alocação antiga da mesma série/data
-          for (final aloc in alocacoesSeries) {
-            final chave =
-                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-            // Alocações geradas de séries têm prioridade sobre alocações "Única" do Firestore
-            // para o mesmo médico/data/gabinete
-            alocacoesMapAtualizado[chave] = aloc;
-          }
-
-          // Atualizar lista final
-          final antesRegen = alocacoes.length;
-          alocacoes.clear();
-          alocacoes.addAll(alocacoesMapAtualizado.values);
-          final depoisRegen = alocacoes.length;
-
-          if (antesRegen != depoisRegen) {
-            debugPrint(
-                '🔄 Alocações regeneradas: $antesRegen -> $depoisRegen (${alocacoesSeries.length} de séries)');
-          }
-
-          // CORREÇÃO CRÍTICA: Atualizar cache após regenerar alocações de séries
-          // Isso garante que mudanças em séries sejam refletidas no cache
-          final inicio =
-              DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-          final alocacoesDoDiaAposRegen = alocacoes.where((a) {
-            final ad = DateTime(a.data.year, a.data.month, a.data.day);
-            return ad == inicio;
-          }).toList();
-
-          final disponibilidadesDoDiaAposRegen = disponibilidades.where((d) {
-            final dd = DateTime(d.data.year, d.data.month, d.data.day);
-            return dd == inicio;
-          }).toList();
-
-          logic.AlocacaoMedicosLogic.updateCacheForDay(
-            day: inicio,
-            alocacoes: alocacoesDoDiaAposRegen,
-            disponibilidades: disponibilidadesDoDiaAposRegen,
-          );
-          debugPrint(
-              '💾 Cache atualizado após regenerar séries para ${inicio.day}/${inicio.month}/${inicio.year}: ${disponibilidadesDoDiaAposRegen.length} disponibilidades, ${alocacoesDoDiaAposRegen.length} alocações');
-
-          // CORREÇÃO CRÍTICA: Atualizar médicos disponíveis após regenerar alocações
-          // Isso garante que médicos alocados não apareçam como disponíveis
-          // CORREÇÃO: Ignorar se está processando alocação para evitar "piscar"
-          // CORREÇÃO: Usar debounce para evitar múltiplas chamadas
-          if (mounted &&
-              !_isProcessandoAlocacao &&
-              _medicoEmTransicao == null &&
-              !_listenerPausado) {
-            _debounceAtualizarMedicosDisponiveis?.cancel();
-            _debounceAtualizarMedicosDisponiveis =
-                Timer(const Duration(milliseconds: 300), () {
-              if (mounted &&
-                  !_isProcessandoAlocacao &&
-                  _medicoEmTransicao == null &&
-                  !_listenerPausado) {
-                _atualizarMedicosDisponiveis().catchError((e) {
-                  debugPrint(
-                      '❌ Erro ao atualizar médicos disponíveis após regenerar alocações: $e');
-                });
-              }
-            });
-          }
-
-          // CORREÇÃO CRÍTICA: NÃO atualizar UI durante transição para evitar "piscar"
-          // A atualização otimista já atualizou a UI, então não precisamos atualizar novamente aqui
-          if (mounted &&
-              !_isProcessandoAlocacao &&
-              _medicoEmTransicao == null &&
-              !_listenerPausado) {
-            setState(() {
-              // Forçar rebuild apenas se não há transição em andamento
-            });
-          } else {
-            debugPrint(
-                '⚠️ Ignorando setState durante regeneração de séries (transição em andamento)');
-          }
-        }); // Fechar .then()
-      }); // Fechar Timer
-
-      if (antes != depois) {
-        debugPrint(
-            '📊 Listener Alocações: Alocações atualizadas: $antes -> $depois (diferença: ${depois - antes})');
-      }
-
-      // CORREÇÃO CRÍTICA: Atualizar cache do dia quando o listener detecta mudanças
-      // Isso garante que quando um administrador faz alterações, o cache seja atualizado
-      // para que outros funcionários vejam as mudanças quando abrirem o app
-      final alocacoesDoDia = alocacoes.where((a) {
-        final ad = DateTime(a.data.year, a.data.month, a.data.day);
-        return ad == inicio;
-      }).toList();
-
-      final disponibilidadesDoDia = disponibilidades.where((d) {
-        final dd = DateTime(d.data.year, d.data.month, d.data.day);
-        return dd == inicio;
-      }).toList();
-
-      logic.AlocacaoMedicosLogic.updateCacheForDay(
-        day: inicio,
-        alocacoes: alocacoesDoDia,
-        disponibilidades: disponibilidadesDoDia,
-      );
-      debugPrint(
-          '💾 Cache atualizado pelo listener para ${inicio.day}/${inicio.month}/${inicio.year}: ${disponibilidadesDoDia.length} disponibilidades, ${alocacoesDoDia.length} alocações');
-
-      // Agendar atualização com debounce para evitar atualizações parciais
-      // quando disponibilidades e alocações chegam em momentos diferentes
-      // Ignorar se estamos no meio do carregamento inicial
-      if (!_ignorarPrimeirasAtualizacoesListeners) {
-        _agendarAtualizacaoMedicosDisponiveis();
-      }
-    });
-  }
-
   // Pesquisa
   String? pesquisaNome;
   String? pesquisaEspecialidade;
@@ -566,6 +134,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // CORREÇÃO: Marcar app como em foco ao inicializar
+    logic.AlocacaoMedicosLogic.setAppEmFoco(true);
     _carregarDadosIniciais();
     // Carregar passwords em background (não bloqueia a UI)
     _carregarPasswordsDoFirebase();
@@ -580,78 +150,29 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // Quando o app volta ao foco (resumed), invalidar cache e recarregar
-    // CORREÇÃO CRÍTICA: NÃO recarregar durante operações de alocação/realocação
-    // Isso causa "piscar" massivo e interfere com atualizações otimistas
-    if (state == AppLifecycleState.resumed) {
-      if (!_isProcessandoAlocacao &&
-          _medicoEmTransicao == null &&
-          !_listenerPausado) {
-        _invalidarCacheERecarregar();
-      } else {
-        debugPrint(
-            '⚠️ [LIFECYCLE] Ignorando recarregamento: _isProcessandoAlocacao=$_isProcessandoAlocacao, _medicoEmTransicao=$_medicoEmTransicao, _listenerPausado=$_listenerPausado');
-      }
+
+    // Apenas atualizar flag de foco para estratégia de cache, mas SEM recarregar dados automaticamente
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App voltou ao foco - apenas atualizar flag, SEM recarregar dados
+        logic.AlocacaoMedicosLogic.setAppEmFoco(true);
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        // App perdeu foco - marcar como não em foco para forçar busca do servidor na próxima interação
+        logic.AlocacaoMedicosLogic.setAppEmFoco(false);
+        break;
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        logic.AlocacaoMedicosLogic.setAppEmFoco(false);
+        break;
     }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // CORREÇÃO: Quando a tela volta ao foco (ex: voltar do ecrã de edição),
-    // invalidar cache e recarregar dados para garantir dados atualizados
-    // Isso resolve o problema de cartões não aparecerem ao voltar do ecrã de edição
-    final route = ModalRoute.of(context);
-    if (route != null && route.isCurrent && !_jaRecarregouAoVoltar) {
-      // Usar postFrameCallback para garantir que só recarrega após o build completo
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && route.isCurrent) {
-          _jaRecarregouAoVoltar = true;
-          _invalidarCacheERecarregar();
-          // Resetar flag após um delay para permitir recarregamento futuro
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              _jaRecarregouAoVoltar = false;
-            }
-          });
-        }
-      });
-    }
-  }
-
-  /// Invalida cache e recarrega dados quando a tela volta ao foco
-  void _invalidarCacheERecarregar() {
-    // Tela está ativa - invalidar cache de disponibilidades e alocações do dia atual
-    // e também invalidar cache de séries para garantir que novas séries apareçam
-    logic.AlocacaoMedicosLogic.invalidateCacheForDay(selectedDate);
-
-    // CORREÇÃO CRÍTICA: Invalidar cache de séries para TODOS os médicos e anos
-    // Isso garante que novas séries criadas apareçam imediatamente
-    final anoAtual = selectedDate.year;
-    // Invalidar cache de séries para o ano atual e próximo ano (força recarregamento)
-    logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
-        DateTime(anoAtual, 1, 1));
-    logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
-        DateTime(anoAtual + 1, 1, 1));
-
-    // CORREÇÃO: NÃO invalidar cache de TODOS os médicos - isso causa "piscar" massivo
-    // Apenas invalidar cache do dia atual e anos relevantes é suficiente
-    // Invalidar cache de séries apenas quando necessário (ex: após criar nova série)
-
-    // CORREÇÃO CRÍTICA: Invalidar cache de médicos ativos quando volta do ecrã de cadastro
-    // Isso garante que novos médicos ou médicos com disponibilidades recém-criadas apareçam
-    logic.AlocacaoMedicosLogic.invalidateMedicosAtivosCache(
-        unidadeId: widget.unidade.id);
-    debugPrint(
-        '🔄 Cache de médicos ativos invalidado para unidade ${widget.unidade.id}');
-
-    debugPrint(
-        '🔄 Tela voltou ao foco - cache invalidado para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} e todas as séries');
-
-    // CORREÇÃO CRÍTICA: Recarregar dados quando volta ao foco
-    // Forçar recarregamento de médicos para garantir que novos médicos apareçam
-    // Isso garante que novas séries criadas apareçam imediatamente
-    _carregarDadosIniciais(recarregarMedicos: true);
+    // Dados só serão carregados quando o usuário interagir explicitamente
   }
 
   Future<void> _carregarPasswordsDoFirebase() async {
@@ -659,39 +180,179 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Carrega as passwords do Firebase para cache local
       await PasswordService.loadPasswordsFromFirebase(widget.unidade.id);
     } catch (e) {
-      // Silencioso - não é crítico para a UI
+    }
+  }
+
+  bool _isCarregandoDadosIniciais =
+      false; // Lock para evitar múltiplas chamadas simultâneas
+  bool _isRefreshing = false; // Estado de refresh para mostrar progress bar
+
+  /// Atualiza o progresso de forma gradual e suave até o valor alvo
+  void _atualizarProgressoGradual(double alvo, String mensagem) {
+    // Cancelar timer anterior se existir
+    _timerProgresso?.cancel();
+
+    _progressoAlvo = alvo;
+    if (mounted) {
+      setState(() {
+        mensagemProgresso = mensagem;
+      });
+    }
+
+    // Se o alvo é menor ou igual ao progresso atual, atualizar imediatamente
+    if (alvo <= progressoCarregamento) {
+      if (mounted) {
+        setState(() {
+          progressoCarregamento = alvo;
+        });
+      }
+      return;
+    }
+
+    // Calcular incremento baseado na diferença
+    // Atualizar a cada 100ms para uma progressão suave e uniforme
+    const duracaoAtualizacao = Duration(milliseconds: 100);
+    final diferenca = alvo - progressoCarregamento;
+
+    // Para progressões maiores (como de 0.2 para 0.8), usar incrementos menores
+    // para uma progressão mais uniforme. Para progressões menores, usar incrementos maiores.
+    final incrementoPorAtualizacao = diferenca > 0.3
+        ? 0.01 // Incrementos de 1% para progressões grandes (mais uniforme)
+        : 0.02; // Incrementos de 2% para progressões pequenas (mais rápido)
+
+    final numAtualizacoes = (diferenca / incrementoPorAtualizacao).ceil();
+    final incremento = diferenca / numAtualizacoes;
+
+    _timerProgresso = Timer.periodic(duracaoAtualizacao, (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        progressoCarregamento += incremento;
+        if (progressoCarregamento >= _progressoAlvo) {
+          progressoCarregamento = _progressoAlvo;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  /// Função de refresh: invalida todo o cache e recarrega os dados
+  Future<void> _refreshDados() async {
+    // Evitar múltiplos refreshes simultâneos
+    if (_isRefreshing) {
+      debugPrint('⚠️ Refresh já em andamento, ignorando chamada duplicada');
+      return;
+    }
+
+    // Iniciar progress bar
+    if (mounted) {
+      setState(() {
+        _isRefreshing = true;
+        progressoCarregamento = 0.0;
+      });
+    }
+
+    try {
+      // CORREÇÃO: Invalidar cache ANTES de limpar flags para garantir invalidação
+      // Invalidar todo o cache do ano atual
+      final anoAtual = selectedDate.year;
+      final dataNormalizada =
+          DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+
+      // Invalidar cache do dia e do ano
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+      logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(anoAtual, 1, 1));
+
+      // Atualizar progresso
+      if (mounted) {
+        setState(() {
+          progressoCarregamento = 0.2;
+        });
+      }
+
+      // Aguardar um pouco para garantir que a invalidação foi processada
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Recarregar dados
+      await _carregarDadosIniciais(recarregarMedicos: true);
+    } catch (e) {
+      debugPrint('❌ Erro ao fazer refresh: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
     }
   }
 
   Future<void> _carregarDadosIniciais({bool recarregarMedicos = false}) async {
-    // CORREÇÃO CRÍTICA: Invalidar cache ANTES de recarregar dados
-    // Isso garante que quando uma série é alocada, os dados sejam recarregados do servidor
-    // e não do cache antigo
-    logic.AlocacaoMedicosLogic.invalidateCacheForDay(selectedDate);
-    final anoAtual = selectedDate.year;
-    // Invalidar cache de séries para o ano atual para garantir dados atualizados
-    logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
-        DateTime(anoAtual, 1, 1));
+    // CORREÇÃO: Permitir carregamento mesmo se já estiver carregando se for refresh forçado
+    // Mas ainda prevenir múltiplas chamadas simultâneas desnecessárias
+    if (_isCarregandoDadosIniciais && !recarregarMedicos) {
+      debugPrint(
+          '⚠️ [LOCK] Ignorando chamada duplicada a _carregarDadosIniciais (já em execução)');
+      return;
+    }
+
+    _isCarregandoDadosIniciais = true;
+
+    // CORREÇÃO: Limpar dados antes de carregar para evitar dados vazios
+    if (recarregarMedicos) {
+      // Limpar apenas se for refresh forçado
+      disponibilidades.clear();
+      alocacoes.clear();
+      medicosDisponiveis.clear();
+    }
+    Timer?
+        timerProgressaoDados; // Timer para progressão automática durante carregamento
 
     try {
       // Inicializar progresso
-      if (mounted) {
-        setState(() {
-          progressoCarregamento = 0.0;
-          mensagemProgresso = 'A verificar configurações...';
-        });
-      }
+      _atualizarProgressoGradual(0.0, 'A verificar configurações...');
 
       // FASE 0: Carregar dados de encerramento PRIMEIRO (feriados, dias de encerramento, horários)
       // Isso permite verificar se a clínica está encerrada ANTES de carregar dados do Firestore
-      await Future.wait([
-        _carregarFeriados(),
-        _carregarDiasEncerramento(),
-        _carregarHorariosEConfiguracoes(),
-      ]);
+      try {
+        await Future.wait([
+          _carregarFeriados(),
+          _carregarDiasEncerramento(),
+          _carregarHorariosEConfiguracoes(),
+        ]);
+      } catch (e) {
+        debugPrint(
+            '⚠️ Erro ao carregar dados de encerramento: $e - assumindo clínica aberta');
+        // Se houver erro, assumir que a clínica está aberta para não bloquear o carregamento
+        if (mounted) {
+          setState(() {
+            clinicaFechada = false;
+            mensagemClinicaFechada = '';
+          });
+        }
+      }
 
       // Verificar se a clínica está encerrada ANTES de carregar dados do Firestore
-      _verificarClinicaFechada();
+      // CORREÇÃO: Só verificar se os dados foram carregados corretamente
+      // Se nuncaEncerra não foi definido, significa que os dados não foram carregados
+      if (horariosClinica.isNotEmpty ||
+          encerraDias.isNotEmpty ||
+          feriados.isNotEmpty ||
+          diasEncerramento.isNotEmpty) {
+        _verificarClinicaFechada();
+      } else {
+        debugPrint(
+            '⚠️ Dados de encerramento vazios - assumindo clínica aberta');
+        if (mounted) {
+          setState(() {
+            clinicaFechada = false;
+            mensagemClinicaFechada = '';
+          });
+        }
+      }
 
       debugPrint(
           '🔍 Verificação de encerramento: clinicaFechada=$clinicaFechada, mensagem="$mensagemClinicaFechada"');
@@ -706,9 +367,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         // Clínica está encerrada - não carregar dados do Firestore
         debugPrint(
             '🚫 Clínica encerrada - pulando carregamento de dados do Firestore');
-        // Cancelar listeners se estiverem ativos
-        await _dispSub?.cancel();
-        await _alocSub?.cancel();
         if (mounted) {
           setState(() {
             // Limpar dados existentes
@@ -717,26 +375,23 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             medicosDisponiveis.clear();
             // Desligar progress bar
             isCarregando = false;
-            progressoCarregamento = 0.0;
-            mensagemProgresso = 'A iniciar...';
+            _atualizarProgressoGradual(0.0, 'A iniciar...');
           });
         }
+        _isCarregandoDadosIniciais = false;
         return; // Sair sem carregar mais nada - NÃO chamar carregarDadosIniciais
       }
 
       // FASE 1: Carregar exceções canceladas UMA ÚNICA VEZ (otimização de performance)
       // Isso evita carregar exceções múltiplas vezes em diferentes métodos
-      if (mounted) {
-        setState(() {
-          progressoCarregamento = 0.1;
-          mensagemProgresso = 'A verificar exceções...';
-        });
-      }
+      _atualizarProgressoGradual(0.1, 'A verificar exceções...');
+
       final datasComExcecoesCanceladas =
           await logic.AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
         widget.unidade.id,
         selectedDate,
       );
+
       debugPrint(
           '⚡ Exceções canceladas carregadas: ${datasComExcecoesCanceladas.length}');
 
@@ -744,12 +399,37 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Só chega aqui se a clínica NÃO estiver encerrada
       // NÃO chamar setState() nos callbacks individuais para evitar atualizações parciais
       // que causam o efeito de cartões aparecendo na área branca e depois sendo movidos
-      if (mounted) {
-        setState(() {
-          progressoCarregamento = 0.2;
-          mensagemProgresso = 'A carregar dados...';
-        });
+      _atualizarProgressoGradual(0.2, 'A carregar dados...');
+
+      // Iniciar progressão automática durante carregamento de dados (0.2 -> 0.75)
+
+      timerProgressaoDados =
+          Timer.periodic(const Duration(milliseconds: 200), (timer) {
+        if (!mounted || progressoCarregamento >= 0.75) {
+          timer.cancel();
+          return;
+        }
+        // Avançar gradualmente: 0.01 a cada 200ms (aproximadamente 5% por segundo)
+        if (mounted) {
+          setState(() {
+            progressoCarregamento =
+                (progressoCarregamento + 0.01).clamp(0.0, 0.75);
+          });
+        }
+      });
+
+      // CORREÇÃO: Se for refresh, garantir que cache está invalidado antes de carregar
+      if (recarregarMedicos) {
+        final dataNormalizada =
+            DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+        logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
+            DateTime(selectedDate.year, 1, 1));
+
+        await Future.delayed(
+            const Duration(milliseconds: 50)); // Garantir invalidação
       }
+
       await logic.AlocacaoMedicosLogic.carregarDadosIniciais(
         gabinetes: gabinetes,
         medicos: medicos,
@@ -790,8 +470,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
         },
         onDisponibilidades: (d) {
+          debugPrint(
+              '📋 onDisponibilidades chamado com ${d.length} disponibilidades');
+          if (d.isNotEmpty) {
+            debugPrint(
+                '  🔍 Primeiras 3 datas das disponibilidades recebidas:');
+            for (var i = 0; i < d.length && i < 3; i++) {
+              final disp = d[i];
+              debugPrint(
+                  '    ${i + 1}. ${disp.medicoId}: ${disp.data.day}/${disp.data.month}/${disp.data.year}');
+            }
+          }
           disponibilidades = d;
-          debugPrint('📋 Disponibilidades carregadas: ${d.length} total');
+          debugPrint(
+              '📋 Disponibilidades atualizadas na tela: ${disponibilidades.length} total');
           // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
         },
         onAlocacoes: (a) {
@@ -838,7 +530,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
               // Se existe uma alocação real no servidor para esta chave, substituir a otimista pela real
               if (alocacoesMap.containsKey(chave)) {
-                // Já existe no servidor - não precisa preservar otimista
                 debugPrint(
                     '✅ Substituindo alocação otimista pela real durante recarregamento: ${aloc.id} -> ${alocacoesMap[chave]!.id}');
               } else {
@@ -876,37 +567,23 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             datasComExcecoesCanceladas, // Passar exceções já carregadas
       );
 
-      // Iniciar listeners ANTES de atualizar a UI
-      // Isso evita que os listeners disparem atualizações imediatamente após serem iniciados
-      if (mounted) {
-        setState(() {
-          progressoCarregamento = 0.8;
-          mensagemProgresso = 'A configurar atualizações em tempo real...';
-        });
-      }
-      _ignorarPrimeirasAtualizacoesListeners = true;
-      await _restartDayListeners();
+      // Cancelar timer de progressão automática após carregamento de dados
 
-      // Não aguardar - os listeners já têm os dados do cache ou do carregamento inicial
-      // O delay estava causando lentidão desnecessária
-      _ignorarPrimeirasAtualizacoesListeners = false;
+      timerProgressaoDados.cancel();
+
+      // Listeners removidos - não há mais listeners em tempo real
+      _atualizarProgressoGradual(0.8, 'A finalizar carregamento...');
 
       // Atualizar médicos disponíveis (agora com todos os dados carregados)
-      if (mounted) {
-        setState(() {
-          progressoCarregamento = 0.9;
-          mensagemProgresso = 'A processar médicos disponíveis...';
-        });
-      }
+      _atualizarProgressoGradual(0.9, 'A processar médicos disponíveis...');
       // Chamar fora do setState porque é assíncrono e atualiza o estado internamente
       // IMPORTANTE: Sempre chamar, mesmo quando dados vêm do cache, para verificar exceções
       // CORREÇÃO: Forçar recarregamento de alocações após carregar dados iniciais
-      // Isso garante que alocações de séries sejam geradas corretamente
 
       // CORREÇÃO CRÍTICA: Regenerar alocações de séries ANTES de atualizar médicos disponíveis
-      // Isso garante que médicos com alocações de séries não apareçam como disponíveis
       debugPrint(
           '🔄 Regenerando alocações de séries antes de atualizar médicos disponíveis...');
+
       final alocacoesSeriesRegeneradas = await _regenerarAlocacoesSeries();
 
       // Atualizar lista de alocações com as alocações regeneradas
@@ -942,11 +619,26 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           continue;
         }
 
-        // CORREÇÃO: Se é uma alocação otimista do médico em transição, SEMPRE preservar
-        if (_medicoEmTransicao != null && aloc.medicoId == _medicoEmTransicao) {
-          alocacoesAtualizadas.add(aloc);
-          debugPrint(
-              '✅ Preservando alocação otimista durante regeneração em _carregarDadosIniciais: ${aloc.id}');
+        // CORREÇÃO: Se é uma alocação otimista, preservar apenas se não há alocação real correspondente
+        if (aloc.id.startsWith('otimista_serie_')) {
+          // Verificar se há uma alocação real correspondente nas alocações regeneradas
+          final temAlocacaoReal = alocacoesSeriesRegeneradas.any((a) {
+            return a.medicoId == aloc.medicoId &&
+                a.gabineteId == aloc.gabineteId &&
+                a.data.year == aloc.data.year &&
+                a.data.month == aloc.data.month &&
+                a.data.day == aloc.data.day;
+          });
+          if (!temAlocacaoReal) {
+            // Não há alocação real - preservar otimista temporariamente
+            alocacoesAtualizadas.add(aloc);
+            debugPrint(
+                '✅ Preservando alocação otimista durante regeneração em _carregarDadosIniciais (sem real): ${aloc.id}');
+          } else {
+            // Há alocação real - não preservar otimista
+            debugPrint(
+                '⚠️ Não preservando alocação otimista - já existe real correspondente: ${aloc.id}');
+          }
           continue;
         }
 
@@ -967,7 +659,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       alocacoes.addAll(alocacoesAtualizadas);
 
       // CORREÇÃO CRÍTICA: Atualizar cache do dia após carregar todos os dados
-      // Isso garante que o cache contenha os dados corretos do dia selecionado
       // e que outros funcionários possam usar o cache quando abrirem o app no mesmo dia
       final disponibilidadesDoDia = disponibilidades.where((d) {
         final dDate = DateTime(d.data.year, d.data.month, d.data.day);
@@ -989,33 +680,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         return aDate == selectedDateNormalized;
       }).toList();
 
-      logic.AlocacaoMedicosLogic.updateCacheForDay(
-        day: selectedDate,
-        disponibilidades: disponibilidadesDoDia,
-        alocacoes: alocacoesDoDia,
-      );
       debugPrint(
           '💾 Cache atualizado para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}: ${disponibilidadesDoDia.length} disponibilidades, ${alocacoesDoDia.length} alocações');
 
-      // CORREÇÃO: Atualizar médicos disponíveis apenas se não estiver processando alocação
-      // Isso evita múltiplas atualizações durante drag and drop
-      // CORREÇÃO: Usar debounce para evitar múltiplas chamadas
-      if (!_isProcessandoAlocacao &&
-          _medicoEmTransicao == null &&
-          !_listenerPausado) {
-        _debounceAtualizarMedicosDisponiveis?.cancel();
-        _debounceAtualizarMedicosDisponiveis =
-            Timer(const Duration(milliseconds: 300), () {
-          if (mounted &&
-              !_isProcessandoAlocacao &&
-              _medicoEmTransicao == null &&
-              !_listenerPausado) {
-            debugPrint(
-                '🔄 Chamando _atualizarMedicosDisponiveis após regenerar alocações de séries...');
-            _atualizarMedicosDisponiveis().catchError((e) {
-              debugPrint('❌ Erro ao atualizar médicos disponíveis: $e');
-            });
-          }
+      // CORREÇÃO: Atualizar médicos disponíveis após regenerar alocações de séries
+      if (mounted) {
+        debugPrint(
+            '🔄 Chamando _atualizarMedicosDisponiveis após regenerar alocações de séries...');
+        _atualizarMedicosDisponiveis().catchError((e) {
+          debugPrint('❌ Erro ao atualizar médicos disponíveis: $e');
         });
       } else {
         debugPrint(
@@ -1024,18 +697,26 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // CORREÇÃO: Atualizar UI apenas se não estiver processando alocação
       // Isso evita múltiplas atualizações durante drag and drop
-      if (mounted && !_isProcessandoAlocacao) {
+      if (mounted) {
         setState(() {
           // Inicializar filtros de piso com todos os setores selecionados por padrão
           _inicializarFiltrosPiso();
           // Verificar novamente se a clínica está fechada (já foi verificado antes, mas garantir)
           _verificarClinicaFechada();
           // Completar carregamento
-          progressoCarregamento = 1.0;
-          mensagemProgresso = 'Concluído!';
+
+          // Cancelar qualquer timer de progressão em andamento
+          _timerProgresso?.cancel();
+          // Atualizar imediatamente para 100% (sem animação gradual para não adicionar tempo)
+          if (mounted) {
+            setState(() {
+              progressoCarregamento = 1.0;
+              mensagemProgresso = 'Concluído!';
+            });
+          }
           // Desligar progress bar após um pequeno delay para mostrar 100%
           Future.delayed(const Duration(milliseconds: 300), () {
-            if (mounted && !_isProcessandoAlocacao) {
+            if (mounted) {
               setState(() {
                 isCarregando = false;
                 progressoCarregamento = 0.0;
@@ -1047,13 +728,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       }
     } catch (e) {
       debugPrint('❌ Erro ao carregar dados iniciais: $e');
+
       if (mounted) {
         setState(() {
           isCarregando = false;
-          progressoCarregamento = 0.0;
-          mensagemProgresso = 'A iniciar...';
         });
+        _atualizarProgressoGradual(0.0, 'A iniciar...');
       }
+    } finally {
+      // Cancelar timer de progressão automática se ainda estiver ativo
+      // NÃO cancelar _timerProgresso aqui - ele precisa continuar para completar a animação até 100%
+
+      timerProgressaoDados?.cancel();
+      // NÃO cancelar _timerProgresso - ele precisa completar a animação até 100%
+      _isCarregandoDadosIniciais = false; // Liberar lock
     }
   }
 
@@ -1241,8 +929,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
     // PRIMEIRO: Verificar se há um dia específico de encerramento configurado
     // Verificar tanto em diasEncerramento quanto em feriados (se configurado como feriado)
-    debugPrint(
-        '  🔍 Verificando ${diasEncerramento.length} dias de encerramento para $dataFormatada');
     for (final d in diasEncerramento) {
       final dataDia = d['data'] as String? ?? '';
       debugPrint(
@@ -1260,7 +946,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               dataDiaParsed.month == dataFormatadaParsed.month &&
               dataDiaParsed.day == dataFormatadaParsed.day;
         } catch (e) {
-          // Se não conseguir fazer parse, comparar strings diretamente
           return dataDia == dataFormatada;
         }
       },
@@ -1299,12 +984,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
 
     // TERCEIRO: Verificar se é feriado e se está configurado para encerrar em feriados
-    debugPrint(
-        '  🔍 Verificando ${feriados.length} feriados para $dataFormatada');
-    for (final f in feriados) {
-      debugPrint('    - Feriado: ${f['data']} - ${f['descricao']}');
-    }
-
     final feriado = feriados.firstWhere(
       (f) {
         final dataFeriado = f['data']?.toString() ?? '';
@@ -1316,7 +995,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               dataFeriadoParsed.month == dataFormatadaParsed.month &&
               dataFeriadoParsed.day == dataFormatadaParsed.day;
         } catch (e) {
-          // Se não conseguir fazer parse, comparar strings diretamente
           return dataFeriado == dataFormatada;
         }
       },
@@ -1348,27 +1026,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     mensagemClinicaFechada = '';
   }
 
-  /// Agenda a atualização de médicos disponíveis com debounce
-  /// Isso evita atualizações parciais quando disponibilidades e alocações
-  /// chegam em momentos diferentes dos listeners
-  void _agendarAtualizacaoMedicosDisponiveis() {
-    // Cancelar timer anterior se existir
-    _debounceTimer?.cancel();
-
-    // Agendar nova atualização após um delay maior
-    // Isso permite que ambos os listeners (disponibilidades e alocações)
-    // processem seus dados antes de atualizar a UI
-    // Aumentado para 400ms para evitar o comportamento de "piscar" quando alocamos séries
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
-      if (mounted) {
-        // Chamar assincronamente para não bloquear o listener
-        _atualizarMedicosDisponiveis().catchError((e) {
-          debugPrint('❌ Erro ao atualizar médicos disponíveis no listener: $e');
-        });
-      }
-    });
-  }
-
   /// Regenera alocações de séries para o dia atual
   /// Isso garante que alocações de séries alocadas sejam sempre exibidas
   Future<List<Alocacao>> _regenerarAlocacoesSeries() async {
@@ -1377,168 +1034,60 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
       final dataFim = dataInicio.add(const Duration(days: 1));
 
-      // OTIMIZAÇÃO CRÍTICA: Usar apenas médicos que já têm séries alocadas no cache
-      // Isso evita carregar séries de todos os médicos quando só precisa das séries alocadas
-      final anoParaCache = selectedDate.year;
-      final medicosComSeriesAlocadasNoCache =
-          logic.AlocacaoMedicosLogic.obterMedicosComSeriesAlocadasNoCache(
-              anoParaCache);
+      // SEMPRE buscar do Firestore (cache removido)
+      // Extrair médicos que têm alocações de séries para o dia atual
+      final alocacoesSeriesDoDia = alocacoes.where((a) {
+        final ad = DateTime(a.data.year, a.data.month, a.data.day);
+        final sd =
+            DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        return ad == sd && a.id.startsWith('serie_');
+      }).toList();
 
-      // Se não encontrou médicos no cache, verificar se há alocações existentes
-      // Se não há alocações, não precisa processar nenhum médico
-      if (medicosComSeriesAlocadasNoCache.isEmpty) {
-        // Verificar se há alocações para o dia atual
-        final alocacoesDoDia = alocacoes.where((a) {
-          final ad = DateTime(a.data.year, a.data.month, a.data.day);
-          final sd =
-              DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-          return ad == sd;
-        }).toList();
-
-        if (alocacoesDoDia.isEmpty) {
-          // Não há alocações e não há séries alocadas no cache
-          // Não precisa processar nenhum médico
-          debugPrint(
-              '⚡ OTIMIZAÇÃO: Nenhuma alocação para o dia, pulando regeneração de alocações de séries');
-          return <Alocacao>[];
-        }
+      if (alocacoesSeriesDoDia.isEmpty) {
+        // Não há alocações de séries para o dia, não precisa processar nenhum médico
+        return <Alocacao>[];
       }
 
-      // OTIMIZAÇÃO: Se não encontrou médicos no cache, verificar se há alocações de séries
-      // Se não há alocações de séries, não precisa processar nenhum médico
-      List<String> medicoIds;
-      if (medicosComSeriesAlocadasNoCache.isNotEmpty) {
-        // Usar médicos do cache
-        medicoIds = medicosComSeriesAlocadasNoCache;
-      } else {
-        // Verificar se há alocações de séries (que começam com "serie_")
-        final alocacoesSeriesDoDia = alocacoes.where((a) {
-          final ad = DateTime(a.data.year, a.data.month, a.data.day);
-          final sd =
-              DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-          return ad == sd && a.id.startsWith('serie_');
-        }).toList();
+      // Extrair os médicos dessas alocações
+      final medicoIds =
+          alocacoesSeriesDoDia.map((a) => a.medicoId).toSet().toList();
 
-        if (alocacoesSeriesDoDia.isEmpty) {
-          // Não há alocações de séries para o dia, não precisa processar nenhum médico
-          debugPrint(
-              '⚡ OTIMIZAÇÃO: Nenhuma alocação de série para o dia, pulando regeneração');
+      // OTIMIZAÇÃO: Paralelizar processamento de médicos
+      final futures = medicoIds.map((medicoId) async {
+        // Carregar séries do Firestore
+        final seriesCarregadas = await SerieService.carregarSeries(
+          medicoId,
+          unidade: widget.unidade,
+          dataInicio: null,
+          dataFim: dataInicio.add(const Duration(days: 1)),
+        );
+
+        // Filtrar apenas séries com gabineteId (alocadas)
+        final series = seriesCarregadas
+            .where((s) =>
+                s.ativo && s.gabineteId != null && s.gabineteId!.isNotEmpty)
+            .toList();
+
+        if (series.isEmpty) {
           return <Alocacao>[];
         }
 
-        // Se há alocações de séries, extrair os médicos dessas alocações
-        final medicosDasAlocacoes =
-            alocacoesSeriesDoDia.map((a) => a.medicoId).toSet().toList();
-        medicoIds = medicosDasAlocacoes;
-        debugPrint(
-            '⚡ OTIMIZAÇÃO: Processando apenas ${medicosDasAlocacoes.length} médicos com alocações de séries (de ${medicos.where((m) => m.ativo).length} total)');
-      }
+        // Carregar exceções (usar cache quando apropriado)
+        final excecoesCarregadas = await SerieService.carregarExcecoes(
+          medicoId,
+          unidade: widget.unidade,
+          dataInicio: dataInicio,
+          dataFim: dataFim,
+          forcarServidor: false, // Usar cache quando apropriado
+        );
 
-      final alocacoesGeradas = <Alocacao>[];
-
-      for (final medicoId in medicoIds) {
-        // OTIMIZAÇÃO: Tentar usar cache primeiro antes de carregar do servidor
-        final cacheFoiInvalidado =
-            logic.AlocacaoMedicosLogic.cacheFoiInvalidado(
-                medicoId, anoParaCache);
-
-        // CORREÇÃO: Verificar se o médico teve cache invalidado para qualquer ano
-        // Se sim, considerar que o cache foi invalidado também para este ano
-        // Isso é importante quando invalida com null (todos os anos)
-        // Se o médico tem cache invalidado para qualquer ano, forçar recarregamento do servidor
-        final medicoTemCacheInvalidado =
-            logic.AlocacaoMedicosLogic.medicoTemCacheInvalidado(medicoId);
-        final cacheFoiInvalidadoParaMedico =
-            cacheFoiInvalidado || medicoTemCacheInvalidado;
-
-        List<SerieRecorrencia> series;
-        List<ExcecaoSerie> excecoes;
-
-        // Verificar se há cache disponível
-        final cachedData = logic.AlocacaoMedicosLogic.obterSeriesDoCache(
-            medicoId, anoParaCache);
-        // CORREÇÃO: Não usar cache se foi invalidado para este ano OU se o médico tem cache invalidado
-        if (cachedData != null && !cacheFoiInvalidadoParaMedico) {
-          series = (cachedData['series'] as List).cast<SerieRecorrencia>();
-          excecoes = (cachedData['excecoes'] as List).cast<ExcecaoSerie>();
-
-          // Filtrar apenas séries com gabineteId (alocadas) e exceções do dia
-          series = series
-              .where((s) =>
-                  s.ativo && s.gabineteId != null && s.gabineteId!.isNotEmpty)
-              .toList();
-          excecoes = excecoes
-              .where((e) =>
-                  e.data.year == dataInicio.year &&
-                  e.data.month == dataInicio.month &&
-                  e.data.day == dataInicio.day)
-              .toList();
-
-          // Mensagem de debug removida para reduzir ruído no terminal
-          // debugPrint('  📦 Usando cache para $medicoId: ${series.length} séries alocadas');
-        } else {
-          // Debug quando cache foi invalidado
-          if (cacheFoiInvalidadoParaMedico) {
-            debugPrint(
-                '🔄 Cache invalidado para médico $medicoId (ano: $anoParaCache) - forçando recarregamento do servidor');
-            debugPrint(
-                '   📅 Carregando exceções para data: ${dataInicio.day}/${dataInicio.month}/${dataInicio.year}');
-          }
-
-          // Carregar séries do servidor apenas se não há cache
-          final seriesCarregadas = await SerieService.carregarSeries(
-            medicoId,
-            unidade: widget.unidade,
-            dataInicio: null,
-            dataFim: dataInicio.add(const Duration(days: 1)),
-          );
-
-          // Filtrar apenas séries com gabineteId (alocadas)
-          series = seriesCarregadas
-              .where((s) =>
-                  s.ativo && s.gabineteId != null && s.gabineteId!.isNotEmpty)
-              .toList();
-
-          if (series.isEmpty) {
-            continue;
-          }
-
-          // Carregar exceções apenas para o dia atual
-          // CORREÇÃO: Forçar servidor quando cache foi invalidado para garantir exceções recém-criadas
-          final excecoesCarregadas = await SerieService.carregarExcecoes(
-            medicoId,
-            unidade: widget.unidade,
-            dataInicio: dataInicio,
-            dataFim: dataFim,
-            forcarServidor:
-                cacheFoiInvalidadoParaMedico, // Forçar servidor se cache foi invalidado
-          );
-
-          // Debug: mostrar exceções carregadas
-          if (cacheFoiInvalidadoParaMedico) {
-            final excecoesComGabinete =
-                excecoesCarregadas.where((e) => e.gabineteId != null).toList();
-            debugPrint(
-                '📋 Exceções carregadas do servidor: ${excecoesCarregadas.length} total, ${excecoesComGabinete.length} com gabinete');
-            for (final ex in excecoesComGabinete) {
-              debugPrint(
-                  '   📋 Exceção: série=${ex.serieId}, data=${ex.data.day}/${ex.data.month}/${ex.data.year}, gabinete=${ex.gabineteId}');
-            }
-          }
-
-          // Filtrar exceções apenas para o dia atual
-          excecoes = excecoesCarregadas
-              .where((e) =>
-                  e.data.year == dataInicio.year &&
-                  e.data.month == dataInicio.month &&
-                  e.data.day == dataInicio.day)
-              .toList();
-
-          if (cacheFoiInvalidadoParaMedico) {
-            debugPrint(
-                '📋 Exceções filtradas para o dia: ${excecoes.length} (${excecoes.where((e) => e.gabineteId != null).length} com gabinete)');
-          }
-        }
+        // Filtrar exceções apenas para o dia atual
+        final excecoes = excecoesCarregadas
+            .where((e) =>
+                e.data.year == dataInicio.year &&
+                e.data.month == dataInicio.month &&
+                e.data.day == dataInicio.day)
+            .toList();
 
         // Filtrar apenas séries com gabineteId != null (já filtrado acima, mas manter para compatibilidade)
         final seriesComGabinete = series
@@ -1546,7 +1095,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             .toList();
 
         if (seriesComGabinete.isEmpty) {
-          continue;
+          return <Alocacao>[];
         }
 
         // Gerar alocações dinamicamente
@@ -1557,7 +1106,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           dataFim: dataFim,
         );
 
-        alocacoesGeradas.addAll(alocsGeradas);
+        return alocsGeradas;
+      }).toList();
+
+      // Aguardar todas as futures em paralelo
+      final resultados = await Future.wait(futures);
+
+      // Combinar todas as alocações geradas
+      final alocacoesGeradas = <Alocacao>[];
+      for (final alocs in resultados) {
+        alocacoesGeradas.addAll(alocs);
       }
 
       debugPrint(
@@ -1569,24 +1127,107 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
   }
 
-  Future<void> _atualizarMedicosDisponiveis() async {
-    // CORREÇÃO CRÍTICA: Não atualizar durante transições para evitar "piscar"
-    if (_isProcessandoAlocacao ||
-        _medicoEmTransicao != null ||
-        _listenerPausado) {
+  /// Recarrega apenas as alocações de um ou mais gabinetes específicos (reload focado)
+  Future<void> _recarregarAlocacoesGabinetes(List<String> gabineteIds) async {
+    try {
+      final dataNormalizada =
+          DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+
+      // Invalidar cache apenas para este dia
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+
+      // Recarregar alocações do dia selecionado do Firestore
+      final novasAlocacoes =
+          await logic.AlocacaoMedicosLogic.carregarAlocacoesUnidade(
+              widget.unidade,
+              dataFiltroDia: dataNormalizada);
+
+      // CORREÇÃO CRÍTICA: Preservar alocações de outros gabinetes e apenas atualizar os gabinetes especificados
+      // Criar um mapa das alocações atuais para preservar as que não são dos gabinetes especificados
+      final alocacoesPreservadas = <String, Alocacao>{};
+      for (final aloc in alocacoes) {
+        final aDate = DateTime(aloc.data.year, aloc.data.month, aloc.data.day);
+        // Preservar alocações que NÃO são dos gabinetes especificados OU que são de outros dias
+        if (aDate != dataNormalizada ||
+            !gabineteIds.contains(aloc.gabineteId)) {
+          final chave =
+              '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+          alocacoesPreservadas[chave] = aloc;
+        }
+      }
+
+      // Adicionar novas alocações dos gabinetes especificados
+      for (final gabineteId in gabineteIds) {
+        final alocacoesDoGabinete = novasAlocacoes.where((a) {
+          final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+          return a.gabineteId == gabineteId && aDate == dataNormalizada;
+        }).toList();
+
+        for (final aloc in alocacoesDoGabinete) {
+          final chave =
+              '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+          alocacoesPreservadas[chave] = aloc;
+        }
+
+        debugPrint(
+            '✅ [RELOAD FOCADO] Gabinete $gabineteId: ${alocacoesDoGabinete.length} alocações recarregadas');
+      }
+
+      // Atualizar lista de alocações preservando as de outros gabinetes
+      alocacoes.clear();
+      alocacoes.addAll(alocacoesPreservadas.values);
       debugPrint(
-          '⚠️ [ATUALIZAR-MÉDICOS] Ignorando: _isProcessandoAlocacao=$_isProcessandoAlocacao, _medicoEmTransicao=$_medicoEmTransicao, _listenerPausado=$_listenerPausado');
+          '✅ [RELOAD FOCADO] Total de alocações após reload: ${alocacoes.length} (preservadas: ${alocacoesPreservadas.length - novasAlocacoes.length})');
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao recarregar alocações dos gabinetes: $e');
+    }
+  }
+
+  /// Recarrega apenas a lista de médicos desalocados (reload focado)
+  Future<void> _recarregarDesalocados() async {
+    try {
+      await _atualizarMedicosDisponiveis();
+      if (mounted) {
+        setState(() {});
+      }
+      debugPrint('✅ [RELOAD FOCADO] Lista de desalocados atualizada');
+    } catch (e) {
+      debugPrint('❌ Erro ao recarregar desalocados: $e');
+    }
+  }
+
+  Future<void> _atualizarMedicosDisponiveis() async {
+    // CORREÇÃO: Prevenir atualizações muito frequentes
+    if (_ultimaAtualizacaoMedicos != null &&
+        DateTime.now().difference(_ultimaAtualizacaoMedicos!) <
+            const Duration(milliseconds: 500)) {
+      debugPrint(
+          '⚠️ [ATUALIZAR-MÉDICOS] Ignorando (atualização muito recente)');
 
       return;
     }
 
+    _ultimaAtualizacaoMedicos = DateTime.now();
+
     debugPrint(
         '🔍 _atualizarMedicosDisponiveis chamado para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
     debugPrint('  📊 Total de disponibilidades: ${disponibilidades.length}');
+    // DEBUG: Mostrar algumas datas das disponibilidades para entender o problema
+    if (disponibilidades.isNotEmpty) {
+      debugPrint('  🔍 Primeiras 5 disponibilidades (datas):');
+      for (var i = 0; i < disponibilidades.length && i < 5; i++) {
+        final d = disponibilidades[i];
+        debugPrint(
+            '    ${i + 1}. ${d.medicoId}: ${d.data.day}/${d.data.month}/${d.data.year}');
+      }
+    }
     debugPrint('  📊 Total de médicos: ${medicos.length}');
 
     // CORREÇÃO CRÍTICA: Incluir médico em transição como alocado
-    // Isso previne que apareça na caixa de médicos disponíveis durante movimento
     final medicosAlocados = alocacoes
         .where((a) =>
             DateFormat('yyyy-MM-dd').format(a.data) ==
@@ -1594,17 +1235,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         .map((a) => a.medicoId)
         .toSet();
 
-    // Se há transição em andamento, garantir que o médico não apareça como disponível
-    if (_medicoEmTransicao != null) {
-      medicosAlocados.add(_medicoEmTransicao!);
-      debugPrint(
-          '  🔒 Médico em transição $_medicoEmTransicao marcado como alocado');
-    }
+    // Médicos alocados já foram identificados acima
 
-    debugPrint('  📊 Médicos alocados: ${medicosAlocados.length}');
+
+    // Filtra médicos que:
+    // 1. Estão ativos
+    // 2. Não estão alocados no dia selecionado
+    // 3. Têm disponibilidade para o dia selecionado
+    // 4. NÃO têm exceção cancelada para esse dia
+    final selectedDateNormalized =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
 
     // Carregar exceções canceladas para o dia selecionado
-    // Isso garante que médicos com exceções canceladas não apareçam na caixa "para alocar"
 
     debugPrint('  🔄 Carregando exceções canceladas...');
     final datasComExcecoesCanceladas =
@@ -1613,28 +1255,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       selectedDate,
     );
 
-    debugPrint(
-        '  🚫 Exceções canceladas encontradas: ${datasComExcecoesCanceladas.length}');
-    for (final key in datasComExcecoesCanceladas) {
-      debugPrint('    - $key');
-    }
-
-    // Filtra médicos que:
-    // 1. Não estão alocados no dia selecionado
-    // 2. Têm disponibilidade para o dia selecionado
-    // 3. NÃO têm exceção cancelada para esse dia
-    final selectedDateNormalized =
-        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-
     // OTIMIZAÇÃO: Em vez de iterar sobre todos os médicos, primeiro criar um Set
     // de IDs de médicos que têm disponibilidade para o dia (iterando apenas sobre disponibilidades)
+    // CRÍTICO: Filtrar disponibilidades com exceções canceladas ANTES de criar o Set
     final medicosComDisponibilidade = <String>{};
+
     for (final d in disponibilidades) {
       final dd = DateTime(d.data.year, d.data.month, d.data.day);
       if (dd == selectedDateNormalized) {
-        medicosComDisponibilidade.add(d.medicoId);
-        // Mensagem de debug removida para reduzir ruído no terminal
-        // debugPrint('  ✅ Médico ${d.medicoId} tem disponibilidade: ${d.tipo} - ${d.id} - ${d.data.day}/${d.data.month}/${d.data.year} - horários: ${d.horarios}');
+        // Verificar se esta disponibilidade não tem exceção cancelada
+        final dataKey =
+            '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
+        if (!datasComExcecoesCanceladas.contains(dataKey)) {
+          medicosComDisponibilidade.add(d.medicoId);
+        }
       }
     }
 
@@ -1642,14 +1276,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       setState(() {
         // OTIMIZAÇÃO: Agora iterar apenas sobre médicos que têm disponibilidade
         // (muito menos iterações: de 155 para ~10)
+        final medicoTesteInfo = <String, dynamic>{};
+
         medicosDisponiveis = medicos.where((m) {
+          final isMedicoTeste = m.nome.toLowerCase().contains('teste');
+
           // FILTRAR: Não mostrar médicos inativos
           if (!m.ativo) {
+            if (isMedicoTeste) medicoTesteInfo['filtradoPor'] = 'inativo';
             return false;
           }
 
           // Verifica se não está alocado
           if (medicosAlocados.contains(m.id)) {
+            if (isMedicoTeste) medicoTesteInfo['filtradoPor'] = 'alocado';
             return false;
           }
 
@@ -1657,18 +1297,27 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           final dataKey =
               '${m.id}_${selectedDate.year}-${selectedDate.month}-${selectedDate.day}';
           if (datasComExcecoesCanceladas.contains(dataKey)) {
-            debugPrint(
-                '🚫 Filtrando médico ${m.nome} (${m.id}) - tem exceção cancelada para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
+            if (isMedicoTeste)
+              medicoTesteInfo['filtradoPor'] = 'excecaoCancelada';
             return false; // Não mostrar se tem exceção cancelada
           }
 
           // OTIMIZAÇÃO: Verificar apenas se o médico está no Set de médicos com disponibilidade
           // (muito mais rápido que iterar sobre todas as disponibilidades)
-          return medicosComDisponibilidade.contains(m.id);
-        }).toList();
+          final temDisponibilidade = medicosComDisponibilidade.contains(m.id);
 
-        debugPrint(
-            '  ✅ Médicos disponíveis após filtro: ${medicosDisponiveis.length}');
+          if (isMedicoTeste) {
+            medicoTesteInfo['temDisponibilidade'] = temDisponibilidade;
+            medicoTesteInfo['medicosComDisponibilidadeContains'] =
+                medicosComDisponibilidade.contains(m.id);
+          }
+
+          if (!temDisponibilidade && isMedicoTeste) {
+            medicoTesteInfo['filtradoPor'] = 'semDisponibilidade';
+          }
+
+          return temDisponibilidade;
+        }).toList();
       });
     }
   }
@@ -1799,74 +1448,163 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     });
   }
 
+  // Lock para prevenir múltiplas execuções simultâneas de _onDateChanged
+  bool _isUpdatingDate = false;
+  DateTime? _lastUpdateDate;
+
   void _onDateChanged(DateTime newDate) async {
-    // CORREÇÃO CRÍTICA: Cancelar listeners ANTES de qualquer operação
-    // Isso previne que listeners do dia anterior adicionem dados após limpar as listas
-    await _dispSub?.cancel();
-    await _alocSub?.cancel();
-    _dispSub = null;
-    _alocSub = null;
+    if (!mounted) return;
 
-    // CORREÇÃO: Invalidar cache do dia anterior e do novo dia para garantir dados atualizados
-    // Isso garante que quando o usuário cria uma nova série e muda de dia, os dados sejam recarregados
-    logic.AlocacaoMedicosLogic.invalidateCacheForDay(selectedDate);
-    logic.AlocacaoMedicosLogic.invalidateCacheForDay(newDate);
-
-    setState(() {
-      selectedDate = newDate;
-      isCarregando = true;
-      progressoCarregamento = 0.0;
-      mensagemProgresso = 'A iniciar...';
-      // CORREÇÃO CRÍTICA: Limpar dados do dia anterior antes de carregar novos dados
-      // Isso evita que dados de um dia sejam transportados para outro dia
-      disponibilidades.clear();
-      alocacoes.clear();
-      medicosDisponiveis.clear();
-    });
-
-    // Recarregar dados do dia (cache foi invalidado, então vai recarregar)
-    // A verificação de encerramento será feita dentro de _carregarDadosIniciais
-    // Os listeners serão reiniciados dentro de _carregarDadosIniciais com a nova data
-    _carregarDadosIniciais();
-  }
-
-  Future<void> _alocarMedico(String medicoId, String gabineteId,
-      {DateTime? dataEspecifica, List<String>? horarios}) async {
-    // CORREÇÃO: Evitar múltiplas atualizações durante operação
-    if (_isProcessandoAlocacao) {
+    // CORREÇÃO CRÍTICA: Prevenir race conditions quando o sistema está lento
+    if (_isUpdatingDate) {
       debugPrint(
-          '⚠️ Já está processando uma alocação, ignorando chamada duplicada');
+          '⚠️ [RACE-CONDITION] Ignorando chamada duplicada de _onDateChanged para ${newDate.day}/${newDate.month}/${newDate.year}');
       return;
     }
 
-    // CORREÇÃO CRÍTICA: Se há uma transição em andamento para outro médico, aguardar
-    if (_medicoEmTransicao != null && _medicoEmTransicao != medicoId) {
-      debugPrint(
-          '⚠️ Aguardando transição anterior terminar antes de alocar médico $medicoId');
-      // Aguardar um pouco e tentar novamente
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (_medicoEmTransicao != null && _medicoEmTransicao != medicoId) {
+    // Verificar se é a mesma data (evitar atualizações desnecessárias)
+    final dataNormalizada = DateTime(newDate.year, newDate.month, newDate.day);
+    if (_lastUpdateDate != null) {
+      final lastDateNormalizada = DateTime(
+          _lastUpdateDate!.year, _lastUpdateDate!.month, _lastUpdateDate!.day);
+      if (lastDateNormalizada == dataNormalizada) {
         debugPrint(
-            '❌ Transição anterior ainda em andamento, cancelando alocação');
+            '⚠️ [RACE-CONDITION] Ignorando atualização duplicada para a mesma data: ${newDate.day}/${newDate.month}/${newDate.year}');
         return;
       }
     }
 
+    _isUpdatingDate = true;
+    _lastUpdateDate = newDate;
+
+    try {
+      // Invalidar cache ANTES de limpar dados
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+      logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(newDate.year, 1, 1));
+
+      setState(() {
+        selectedDate = newDate;
+        isCarregando = true;
+        // Limpar dados do dia anterior antes de carregar novos dados
+        disponibilidades.clear();
+        alocacoes.clear();
+        medicosDisponiveis.clear();
+      });
+
+      // Usar a função reutilizável para atualizar os dados do dia
+      final resultado = await atualizarDadosDoDia(
+        unidade: widget.unidade,
+        data: newDate,
+        gabinetes: gabinetes,
+        medicos: medicos,
+        disponibilidades: disponibilidades,
+        alocacoes: alocacoes,
+        medicosDisponiveis: medicosDisponiveis,
+        recarregarMedicos:
+            false, // Não precisa recarregar médicos ao mudar de dia
+        onProgress: (progresso, mensagem) {
+          if (mounted) {
+            _atualizarProgressoGradual(progresso, mensagem);
+          }
+        },
+        onStateUpdate: () {
+          if (mounted) {
+            setState(() {});
+          }
+        },
+      );
+
+      // Atualizar estado com informações da clínica (mas manter isCarregando = true até todas as operações terminarem)
+      if (mounted) {
+        setState(() {
+          clinicaFechada = resultado['clinicaFechada'] ?? false;
+          mensagemClinicaFechada = resultado['mensagemClinicaFechada'] ?? '';
+          feriados = resultado['feriados'] ?? [];
+          diasEncerramento = resultado['diasEncerramento'] ?? [];
+          horariosClinica = resultado['horariosClinica'] ?? {};
+          encerraFeriados = resultado['encerraFeriados'] ?? false;
+          nuncaEncerra = resultado['nuncaEncerra'] ?? false;
+          encerraDias = resultado['encerraDias'] ?? {};
+          // NÃO definir isCarregando = false aqui - manter true até todas as operações terminarem
+        });
+      }
+
+      // CRÍTICO: Regenerar alocações de séries após carregar os dados
+      // Isso é necessário para que as alocações de séries apareçam nos gabinetes
+      final alocacoesSeriesRegeneradas = await _regenerarAlocacoesSeries();
+
+      // Atualizar lista de alocações com as alocações regeneradas
+      // Remover alocações antigas de séries antes de adicionar novas
+      final chavesSeriesParaRemover = <String>{};
+      for (final aloc in alocacoesSeriesRegeneradas) {
+        final chaveSemGabinete =
+            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
+        chavesSeriesParaRemover.add(chaveSemGabinete);
+      }
+
+      // Remover alocações antigas de séries do dia atual
+      alocacoes.removeWhere((a) {
+        final ad = DateTime(a.data.year, a.data.month, a.data.day);
+        final sd =
+            DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        if (ad != sd) return false;
+        final chaveSemGabinete =
+            '${a.medicoId}_${a.data.year}-${a.data.month}-${a.data.day}';
+        return a.id.startsWith('serie_') &&
+            chavesSeriesParaRemover.contains(chaveSemGabinete);
+      });
+
+      // Adicionar novas alocações de séries
+      alocacoes.addAll(alocacoesSeriesRegeneradas);
+
+      // NOTA: Os médicos disponíveis já foram calculados em atualizarDadosDoDia,
+      // mas precisamos atualizar novamente após regenerar as séries para garantir
+      // que médicos com alocações de séries não apareçam como disponíveis
+      await _atualizarMedicosDisponiveis();
+
+      // Atualizar UI após todas as operações - AGORA definir isCarregando = false
+      if (mounted) {
+        // CORREÇÃO CRÍTICA: Garantir que pisosSelecionados esteja inicializado
+        // antes de atualizar a UI, para que os gabinetes sejam exibidos corretamente
+        if (pisosSelecionados.isEmpty && gabinetes.isNotEmpty) {
+          final todosSetores = gabinetes.map((g) => g.setor).toSet().toList();
+          pisosSelecionados = List<String>.from(todosSetores);
+        }
+
+        setState(() {
+          isCarregando = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao atualizar dados do dia: $e');
+      if (mounted) {
+        setState(() {
+          isCarregando = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao carregar dados: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      // Sempre liberar o lock, mesmo em caso de erro
+      _isUpdatingDate = false;
+    }
+  }
+
+  Future<void> _alocarMedico(String medicoId, String gabineteId,
+      {DateTime? dataEspecifica, List<String>? horarios}) async {
     final dataAlvo = dataEspecifica ?? selectedDate;
     final dataAlvoNormalizada =
         DateTime(dataAlvo.year, dataAlvo.month, dataAlvo.day);
 
     try {
-      _isProcessandoAlocacao = true;
-
-      // NOVO: Atualização otimista ANTES de salvar no Firestore
-      // Isso faz o cartão aparecer no gabinete instantaneamente, evitando "piscar"
+      // Atualização otimista: cartão aparece no gabinete instantaneamente
       debugPrint(
           '🟢 [ALOCAÇÃO] Executando atualização otimista: médico=$medicoId, gabinete=$gabineteId');
-
-      // PAUSAR listener para prevenir interferência durante operação
-      _listenerPausado = true;
-      _medicoEmTransicao = medicoId;
 
       // Buscar horários da disponibilidade se não foram forçados
       String horarioInicio = '00:00';
@@ -1885,92 +1623,101 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         }
       }
 
-      // CORREÇÃO CRÍTICA: Verificar se já existe uma alocação no gabinete destino (após atualização otimista)
-      // Se já existe, não remover nem adicionar novamente para evitar duplicação
+      // CORREÇÃO: Verificar se já existe alocação no destino ANTES de atualizar UI
       final alocacoesNoDestino = alocacoes.where((a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
         return a.medicoId == medicoId &&
             a.gabineteId == gabineteId &&
             aDate == dataAlvoNormalizada;
       }).toList();
+      final alocacaoJaExisteNoDestino = alocacoesNoDestino.isNotEmpty;
 
-      if (alocacoesNoDestino.isNotEmpty) {
+      if (alocacaoJaExisteNoDestino) {
         debugPrint(
-            '⚠️ [ALOCAÇÃO] Alocação já existe no destino (após atualização otimista), apenas sincronizando com Firestore. IDs existentes: ${alocacoesNoDestino.map((a) => a.id).join(", ")}');
+            '⚠️ [ALOCAÇÃO] Alocação já existe no destino, atualizando Firestore diretamente');
 
-        // CORREÇÃO: A alocação já está no destino (atualização otimista), mas ainda precisa ser salva no Firestore
-        // Não criar nova alocação otimista, apenas salvar a existente no Firestore
-        // Salvar no Firestore sem criar nova alocação otimista
+        // Encontrar a alocação existente
+        final alocacaoExistente = alocacoes.firstWhere((a) {
+          final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+          return a.medicoId == medicoId &&
+              a.gabineteId == gabineteId &&
+              aDate == dataAlvoNormalizada;
+        });
+
+        // Atualizar o Firestore diretamente sem remover e recriar
         try {
-          await logic.AlocacaoMedicosLogic.alocarMedico(
-            selectedDate: dataAlvo,
-            medicoId: medicoId,
-            gabineteId: gabineteId,
-            alocacoes: alocacoes,
-            disponibilidades: disponibilidades,
-            onAlocacoesChanged: () {},
-            unidade: widget.unidade,
-            horariosForcados: horarios,
-          );
+          final firestore = FirebaseFirestore.instance;
+          final unidadeId = widget.unidade.id;
+          final ano = dataAlvoNormalizada.year.toString();
+          final alocacoesRef = firestore
+              .collection('unidades')
+              .doc(unidadeId)
+              .collection('alocacoes')
+              .doc(ano)
+              .collection('registos');
+
+          // Atualizar apenas o gabineteId no Firestore (se necessário)
+          await alocacoesRef.doc(alocacaoExistente.id).update({
+            'gabineteId': gabineteId,
+            'medicoId': medicoId,
+            'data': alocacaoExistente.data.toIso8601String(),
+            'horarioInicio': alocacaoExistente.horarioInicio,
+            'horarioFim': alocacaoExistente.horarioFim,
+          });
+
           debugPrint(
-              '✅ [ALOCAÇÃO] Alocação sincronizada com Firestore (sem criar duplicado)');
+              '✅ [ALOCAÇÃO] Firestore atualizado diretamente (sem remover): ${alocacaoExistente.id}');
         } catch (e) {
-          debugPrint('❌ [ALOCAÇÃO] Erro ao sincronizar: $e');
+          debugPrint('❌ [ALOCAÇÃO] Erro ao atualizar Firestore: $e');
         }
 
-        // Aguardar um pouco para garantir que o Firestore salvou
-        await Future.delayed(const Duration(milliseconds: 200));
-
-        // Reativar listener e limpar flags
-        _listenerPausado = false;
-        _medicoEmTransicao = null;
-        _isProcessandoAlocacao = false;
         return;
       }
 
-      // CORREÇÃO CRÍTICA: Remover apenas alocações que NÃO estão no gabinete destino
-      // Se a atualização otimista já moveu a alocação para o destino, não remover essa
+      // CORREÇÃO: Remover alocações antigas do mesmo médico/dia em OUTROS gabinetes
+      // Isso deve ser feito ANTES de adicionar a nova alocação otimista
+      // IMPORTANTE: Isso é a ÚNICA modificação que fazemos nas listas antes de chamar atualizarUIAlocarCartaoUnico
       alocacoes.removeWhere((a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-        // Remover apenas se:
-        // 1. É do mesmo médico e mesmo dia, E
-        // 2. NÃO está no gabinete destino (para preservar a atualização otimista)
         return a.medicoId == medicoId &&
             aDate == dataAlvoNormalizada &&
             a.gabineteId != gabineteId;
       });
 
-      // Criar nova alocação otimista (ID temporário, será substituído pelo ID real do Firestore)
-      final timestamp = DateTime.now().microsecondsSinceEpoch;
-      final dataStr =
-          '${dataAlvoNormalizada.year}${dataAlvoNormalizada.month.toString().padLeft(2, '0')}${dataAlvoNormalizada.day.toString().padLeft(2, '0')}';
-      final alocacaoOtimista = Alocacao(
-        id: 'otimista_${timestamp}_${medicoId}_${gabineteId}_$dataStr',
+      // NOVO: Usar função reutilizável para atualizar UI
+      // Esta função remove o cartão dos desalocados e adiciona ao gabinete de destino
+      final uiAtualizada = await atualizarUIAlocarCartaoUnico(
         medicoId: medicoId,
         gabineteId: gabineteId,
         data: dataAlvoNormalizada,
+        alocacoes: alocacoes,
+        medicosDisponiveis: medicosDisponiveis,
+        medicos: medicos,
+        setState: () {
+          // CORREÇÃO: Criar nova referência da lista dentro do setState
+          if (mounted) {
+            setState(() {
+              // Criar novas referências das listas para forçar detecção de mudança
+              alocacoes = List<Alocacao>.from(alocacoes);
+              medicosDisponiveis = List<Medico>.from(medicosDisponiveis);
+            });
+          }
+        },
         horarioInicio: horarioInicio,
         horarioFim: horarioFim,
       );
 
-      // Adicionar alocação otimista localmente
-      alocacoes.add(alocacaoOtimista);
+      // O setState já foi chamado dentro do callback de atualizarUIAlocarCartaoUnico
 
-      // Atualizar UI imediatamente para mostrar o cartão no gabinete
-
-      if (mounted) {
-        setState(() {
-          // Estado já foi atualizado acima (alocacoes.add)
-        });
+      if (!uiAtualizada) {
+        debugPrint(
+            '⚠️ [ALOCAÇÃO] Falha ao atualizar UI, continuando mesmo assim...');
       }
 
-      debugPrint(
-          '✅ [ALOCAÇÃO] Atualização otimista concluída - cartão deve aparecer no gabinete');
+      // Invalidar cache antes de salvar no Firestore
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataAlvoNormalizada);
 
-      // Pequeno delay para garantir que a UI foi atualizada
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      // Agora salvar no Firestore
+      // Salvar no Firestore
       await logic.AlocacaoMedicosLogic.alocarMedico(
         selectedDate: dataAlvo,
         medicoId: medicoId,
@@ -1978,66 +1725,25 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         alocacoes: alocacoes,
         disponibilidades: disponibilidades,
         onAlocacoesChanged: () {
-          // CORREÇÃO: NÃO recarregar durante processamento - será feito no final
-          // Isso evita múltiplas atualizações que causam "piscar"
+          // Não recarregar durante processamento
         },
         unidade: widget.unidade,
         horariosForcados: horarios,
       );
 
-      // CORREÇÃO: Aguardar tempo suficiente para garantir que o Firestore salvou completamente
-      // Reduzido para evitar bloqueios longos
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Invalidar cache após salvar
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataAlvoNormalizada);
 
-      // CORREÇÃO MELHORADA: Em vez de recarregar tudo, apenas aguardar que o listener do Firestore
-      // atualize a alocação otimista com o ID real do servidor
-      // Isso evita o "piscar" causado por recarregamento completo
-      // O listener vai substituir a alocação otimista pela real quando receber do Firestore
-
-      // Aguardar um pouco para que o listener do Firestore processe a atualização
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      // CORREÇÃO CRÍTICA: Atualizar cache após alocação ser salva no Firestore
-      // Isso garante que o cache seja atualizado imediatamente, mesmo antes do listener processar
-      final alocacoesDoDiaAposAlocacao = alocacoes.where((a) {
-        final ad = DateTime(a.data.year, a.data.month, a.data.day);
-        return ad == dataAlvoNormalizada;
-      }).toList();
-
-      final disponibilidadesDoDiaAposAlocacao = disponibilidades.where((d) {
-        final dd = DateTime(d.data.year, d.data.month, d.data.day);
-        return dd == dataAlvoNormalizada;
-      }).toList();
-
-      logic.AlocacaoMedicosLogic.updateCacheForDay(
-        day: dataAlvoNormalizada,
-        alocacoes: alocacoesDoDiaAposAlocacao,
-        disponibilidades: disponibilidadesDoDiaAposAlocacao,
-      );
-      debugPrint(
-          '💾 Cache atualizado após alocação para ${dataAlvoNormalizada.day}/${dataAlvoNormalizada.month}/${dataAlvoNormalizada.year}: ${disponibilidadesDoDiaAposAlocacao.length} disponibilidades, ${alocacoesDoDiaAposAlocacao.length} alocações');
-
-      // REATIVAR listener e limpar flags
-      // O listener do Firestore vai atualizar a alocação otimista com o ID real
-      debugPrint(
-          '🟢 [ALOCAÇÃO] Reativando listener e limpando flags: _listenerPausado=false, _medicoEmTransicao=null');
-      _listenerPausado = false;
-      _medicoEmTransicao = null;
-      debugPrint('✅ [ALOCAÇÃO] Flags limpas após alocação bem-sucedida');
+      debugPrint('✅ [ALOCAÇÃO] Alocação concluída com sucesso');
     } catch (e) {
       debugPrint('❌ Erro ao alocar médico: $e');
 
-      // Em caso de erro, reverter atualização otimista
-      if (_medicoEmTransicao != null) {
-        debugPrint('🔄 Revertendo atualização otimista devido a erro');
-        // Reativar listener e recarregar dados para reverter estado
-        _listenerPausado = false;
-        _medicoEmTransicao = null;
-        try {
-          await _carregarDadosIniciais();
-        } catch (e2) {
-          debugPrint('❌ Erro ao recarregar dados após erro: $e2');
-        }
+      // Em caso de erro, recarregar dados para reverter estado
+      debugPrint('🔄 Recarregando dados após erro');
+      try {
+        await _carregarDadosIniciais();
+      } catch (e2) {
+        debugPrint('❌ Erro ao recarregar dados após erro: $e2');
       }
 
       if (mounted) {
@@ -2049,81 +1755,119 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         );
       }
     } finally {
-      // CORREÇÃO CRÍTICA: SEMPRE limpar flags no finally para evitar bloqueios
-      // Isso garante que mesmo em caso de erro, o app não fica bloqueado
-      debugPrint(
-          '🔴 [ALOCAÇÃO] FINALLY: Limpando todas as flags (garantia absoluta)');
-      debugPrint(
-          '🔴 [ALOCAÇÃO] Estado antes: _isProcessandoAlocacao=$_isProcessandoAlocacao, _listenerPausado=$_listenerPausado, _medicoEmTransicao=$_medicoEmTransicao');
-      _isProcessandoAlocacao = false;
-      _listenerPausado = false;
-      _medicoEmTransicao = null;
-      debugPrint(
-          '✅ [ALOCAÇÃO] FINALLY: Todas as flags limpas: _isProcessandoAlocacao=false, _listenerPausado=false, _medicoEmTransicao=null');
+      // Finalização concluída
+      debugPrint('✅ [ALOCAÇÃO] FINALLY: Operação finalizada');
     }
   }
 
   /// Limpa as flags de transição após realocação concluída
   /// Isso garante que o listener seja reativado e a UI volte ao normal
+  // Variáveis temporárias para armazenar gabinetes afetados durante realocação
+  String? _gabineteOrigemRealocacao;
+  String? _gabineteDestinoRealocacao;
+
   void _limparFlagsTransicao() {
-    debugPrint(
-        '🔴 [LIMPAR-FLAGS] Limpando flags de transição: _medicoEmTransicao=$_medicoEmTransicao, _listenerPausado=$_listenerPausado');
+    debugPrint('🔴 [LIMPAR-FLAGS] Limpando flags de transição');
 
     // Cancelar timeout se ainda estiver ativo
     _timeoutFlagsTransicao?.cancel();
     _timeoutFlagsTransicao = null;
 
-    _medicoEmTransicao = null;
-    _listenerPausado = false;
-    debugPrint(
-        '✅ [LIMPAR-FLAGS] Flags limpas: _medicoEmTransicao=null, _listenerPausado=false');
+    // CORREÇÃO: Não recarregar após realocação
+    // A atualização otimista já moveu a alocação no estado local, e _alocarMedico já atualizou o Firestore.
+    // Não há necessidade de recarregar do Firestore, pois isso pode causar race conditions e reverter a mudança.
+    if (_gabineteOrigemRealocacao != null &&
+        _gabineteDestinoRealocacao != null) {
+      debugPrint(
+          '✅ [LIMPAR-FLAGS] Realocação completa - não recarregando (atualização otimista + Firestore já atualizados)');
+      _gabineteOrigemRealocacao = null;
+      _gabineteDestinoRealocacao = null;
+    }
+
+    debugPrint('✅ [LIMPAR-FLAGS] Flags limpas');
   }
 
   /// Atualização otimista durante realocação - atualiza estado local imediatamente
   /// para feedback visual instantâneo antes das operações no Firestore
+  void _alocacaoSerieOtimista(
+      String medicoId, String gabineteId, DateTime data) {
+    debugPrint(
+        '🟢 [ALOCAÇÃO-SÉRIE-OTIMISTA] INÍCIO: médico=$medicoId, gabinete=$gabineteId');
+
+    // Atualização otimista durante alocação de série
+
+    // CORREÇÃO: Remover médico dos disponíveis IMEDIATAMENTE
+    final medico = medicos.firstWhere(
+      (m) => m.id == medicoId,
+      orElse: () => Medico(
+        id: medicoId,
+        nome: 'Médico não identificado',
+        especialidade: '',
+        disponibilidades: [],
+        ativo: false,
+      ),
+    );
+    if (medicosDisponiveis.contains(medico)) {
+      medicosDisponiveis.remove(medico);
+      debugPrint(
+          '✅ [ALOCAÇÃO-SÉRIE-OTIMISTA] Médico removido dos desalocados: $medicoId');
+    }
+
+    // Buscar horários da disponibilidade
+    String horarioInicio = '08:00';
+    String horarioFim = '15:00';
+    final dataNormalizada = DateTime(data.year, data.month, data.day);
+    final dispDoDia = disponibilidades.where((disp) {
+      final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
+      return disp.medicoId == medicoId && dd == dataNormalizada;
+    }).toList();
+    if (dispDoDia.isNotEmpty) {
+      horarioInicio = dispDoDia.first.horarios[0];
+      horarioFim = dispDoDia.first.horarios[1];
+    }
+
+    // Criar alocação otimista temporária (será substituída pela real quando a série for alocada)
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final dataStr =
+        '${dataNormalizada.year}${dataNormalizada.month.toString().padLeft(2, '0')}${dataNormalizada.day.toString().padLeft(2, '0')}';
+    final alocacaoOtimista = Alocacao(
+      id: 'otimista_serie_${timestamp}_${medicoId}_${gabineteId}_$dataStr',
+      medicoId: medicoId,
+      gabineteId: gabineteId,
+      data: dataNormalizada,
+      horarioInicio: horarioInicio,
+      horarioFim: horarioFim,
+    );
+
+    // Adicionar alocação otimista localmente
+    alocacoes.add(alocacaoOtimista);
+
+    // Atualizar UI imediatamente
+    if (mounted) {
+      setState(() {
+        // Estado já foi atualizado acima
+      });
+    }
+
+    debugPrint(
+        '✅ [ALOCAÇÃO-SÉRIE-OTIMISTA] Cartão removido dos desalocados e adicionado ao gabinete');
+  }
+
   void _realocacaoOtimista(String medicoId, String gabineteOrigem,
       String gabineteDestino, DateTime data) {
     debugPrint(
         '🔵 [OTIMISTA] INÍCIO: médico=$medicoId, origem=$gabineteOrigem, destino=$gabineteDestino');
-    debugPrint(
-        '🔵 [OTIMISTA] Estado atual: _medicoEmTransicao=$_medicoEmTransicao, _listenerPausado=$_listenerPausado');
+    debugPrint('🔵 [OTIMISTA] Estado atual');
 
-    // CORREÇÃO CRÍTICA: Verificar se já há uma transição em andamento
-    // Isso previne bloqueios quando o usuário tenta mover o mesmo cartão múltiplas vezes
-    if (_medicoEmTransicao != null && _medicoEmTransicao != medicoId) {
-      debugPrint(
-          '⚠️ [OTIMISTA] Já há transição para médico $_medicoEmTransicao, ignorando nova transição para $medicoId');
-      return;
-    }
+    // Armazenar gabinetes afetados para reload focado posterior
+    _gabineteOrigemRealocacao = gabineteOrigem;
+    _gabineteDestinoRealocacao = gabineteDestino;
 
-    // Se é a mesma transição, permitir (pode ser chamado múltiplas vezes)
-    if (_medicoEmTransicao == medicoId && _listenerPausado) {
-      debugPrint(
-          '⚠️ [OTIMISTA] Transição já em andamento para este médico, continuando...');
-      return;
-    }
-
-    // PAUSAR listener completamente para prevenir interferência
-    debugPrint(
-        '🟢 [OTIMISTA] DEFININDO FLAGS: _listenerPausado=true, _medicoEmTransicao=$medicoId');
-    _listenerPausado = true;
-
-    // Marcar transição para prevenir atualizações do listener
-    _medicoEmTransicao = medicoId;
-
-    // CORREÇÃO CRÍTICA: Adicionar timeout para limpar flags presas automaticamente após 10 segundos
-    // Isso garante que mesmo se algo der errado, as flags serão limpas
-    _timeoutFlagsTransicao?.cancel();
-    _timeoutFlagsTransicao = Timer(const Duration(seconds: 10), () {
-      if (_medicoEmTransicao == medicoId || _listenerPausado) {
-        debugPrint(
-            '⚠️ [TIMEOUT] Limpando flags presas após 10 segundos: _medicoEmTransicao=$_medicoEmTransicao, _listenerPausado=$_listenerPausado');
-        _limparFlagsTransicao();
-      }
-    });
-
-    debugPrint(
-        '🟢 [OTIMISTA] Flags definidas - listener pausado, médico em transição marcado');
+    // CORREÇÃO CRÍTICA: Invalidar cache ANTES de fazer realocação otimista
+    final dataNormalizada =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+    debugPrint('💾 Cache invalidado antes de realocação otimista');
 
     // Encontrar todas as alocações do médico no dia do gabinete de origem
     final alocacoesParaMover = alocacoes.where((a) {
@@ -2135,32 +1879,70 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           aDate.day == data.day;
     }).toList();
 
-    // Atualizar cada alocação: remover da origem e adicionar no destino
-    debugPrint(
-        '🟢 [OTIMISTA] Movendo ${alocacoesParaMover.length} alocação(ões) de $gabineteOrigem para $gabineteDestino');
-
-    for (final aloc in alocacoesParaMover) {
+    // CORREÇÃO CRÍTICA: Se não encontrou alocação no gabinete origem (cartão está nos desalocados),
+    // criar alocação otimista diretamente no destino
+    if (alocacoesParaMover.isEmpty) {
       debugPrint(
-          '   - Movendo alocação: id=${aloc.id}, gabinete atual=${aloc.gabineteId}');
-      // Remover da lista (será substituída pela nova)
-      final removido = alocacoes.remove(aloc);
-      debugPrint('   - Removido da lista: $removido');
+          '🟢 [OTIMISTA] Nenhuma alocação encontrada no gabinete origem - cartão está nos desalocados. Criando alocação otimista no destino.');
 
-      // Criar nova alocação com o novo gabinete
-      // IMPORTANTE: Manter o mesmo ID para que o Firestore reconheça como atualização, não nova alocação
-      final novaAloc = Alocacao(
-        id: aloc.id, // Manter o mesmo ID - isso é crítico!
-        medicoId: aloc.medicoId,
-        gabineteId: gabineteDestino, // NOVO gabinete
-        data: aloc.data,
-        horarioInicio: aloc.horarioInicio,
-        horarioFim: aloc.horarioFim,
+      // Buscar horários da disponibilidade
+      String horarioInicio = '08:00';
+      String horarioFim = '15:00';
+      final dataNormalizada = DateTime(data.year, data.month, data.day);
+      final dispDoDia = disponibilidades.where((disp) {
+        final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
+        return disp.medicoId == medicoId && dd == dataNormalizada;
+      }).toList();
+      if (dispDoDia.isNotEmpty && dispDoDia.first.horarios.length >= 2) {
+        horarioInicio = dispDoDia.first.horarios[0];
+        horarioFim = dispDoDia.first.horarios[1];
+      }
+
+      // Criar alocação otimista temporária no destino
+      final timestamp = DateTime.now().microsecondsSinceEpoch;
+      final dataStr =
+          '${dataNormalizada.year}${dataNormalizada.month.toString().padLeft(2, '0')}${dataNormalizada.day.toString().padLeft(2, '0')}';
+      final alocacaoOtimista = Alocacao(
+        id: 'otimista_realoc_${timestamp}_${medicoId}_${gabineteDestino}_$dataStr',
+        medicoId: medicoId,
+        gabineteId: gabineteDestino,
+        data: dataNormalizada,
+        horarioInicio: horarioInicio,
+        horarioFim: horarioFim,
       );
 
-      // Adicionar no destino
-      alocacoes.add(novaAloc);
+      // Adicionar alocação otimista no destino
+      alocacoes.add(alocacaoOtimista);
       debugPrint(
-          '   - Adicionado no destino: id=${novaAloc.id}, novo gabinete=${novaAloc.gabineteId}');
+          '   - Alocação otimista criada no destino: id=${alocacaoOtimista.id}, gabinete=${alocacaoOtimista.gabineteId}');
+    } else {
+      // Atualizar cada alocação: remover da origem e adicionar no destino
+      debugPrint(
+          '🟢 [OTIMISTA] Movendo ${alocacoesParaMover.length} alocação(ões) de $gabineteOrigem para $gabineteDestino');
+
+      for (final aloc in alocacoesParaMover) {
+        debugPrint(
+            '   - Movendo alocação: id=${aloc.id}, gabinete atual=${aloc.gabineteId}');
+        // Remover da lista (será substituída pela nova)
+        final removido = alocacoes.remove(aloc);
+        debugPrint('   - Removido da lista: $removido');
+
+        // Criar nova alocação com o novo gabinete
+        // IMPORTANTE: Manter o mesmo ID para que o Firestore reconheça como atualização, não nova alocação
+        final novaAloc = Alocacao(
+          id: aloc.id, // Manter o mesmo ID - isso é crítico!
+          medicoId: aloc.medicoId,
+          gabineteId: gabineteDestino, // NOVO gabinete
+          data: aloc.data,
+          horarioInicio: aloc.horarioInicio,
+          horarioFim: aloc.horarioFim,
+        );
+
+        // Adicionar no destino
+        alocacoes.add(novaAloc);
+        debugPrint(
+            '   - Adicionado no destino: id=${novaAloc.id}, novo gabinete=${novaAloc.gabineteId}');
+      }
     }
 
     // Verificar se a atualização foi feita corretamente
@@ -2176,7 +1958,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         '✅ [OTIMISTA] Verificação: ${alocacoesNoDestino.length} alocação(ões) no destino após atualização');
 
     // CORREÇÃO CRÍTICA: Atualizar médicos disponíveis IMEDIATAMENTE
-    // Isso garante que o médico não apareça na caixa de disponíveis durante transição
     _atualizarMedicosDisponiveis().catchError((e) {
       debugPrint(
           '❌ Erro ao atualizar médicos disponíveis após atualização otimista: $e');
@@ -2194,8 +1975,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   }
 
   Future<void> _desalocarMedicoComPergunta(String medicoId) async {
-    final medico = medicos.firstWhere((m) => m.id == medicoId);
-
     // Encontrar todas as alocações do médico no dia selecionado
     final dataAlvo =
         DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
@@ -2207,19 +1986,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     if (alocacoesDoDia.isEmpty) {
       return; // Não há alocação para desalocar
     }
-
-    final alocacao = alocacoesDoDia.first;
-
-    // Encontrar o nome do gabinete
-    final gabinete = gabinetes.firstWhere(
-      (g) => g.id == alocacao.gabineteId,
-      orElse: () => Gabinete(
-        id: '',
-        nome: 'Gabinete Desconhecido',
-        setor: '',
-        especialidadesPermitidas: [],
-      ),
-    );
 
     // Encontrar a disponibilidade para verificar o tipo
     // Primeiro tenta encontrar no dia selecionado
@@ -2287,24 +2053,17 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         return a.medicoId == medicoId;
       }).toList();
 
-      // Se a lista local tem informações suficientes, usar ela
       // (a lista local já contém todas as alocações do dia selecionado e pode ter outras)
       if (alocacoesLocaisDoMedicoTodas.length > 1 || podeSerSerieLocal) {
         debugPrint(
             '⚡ Usando lista local para verificação (${alocacoesLocaisDoMedicoTodas.length} alocações encontradas)');
         alocacoesMedicoFirebase = alocacoesLocaisDoMedicoTodas;
       } else {
-        // Apenas buscar no Firebase se realmente necessário
+        // OTIMIZAÇÃO: Usar lista local que já contém todas as alocações carregadas
+        // Evita busca adicional no Firebase quando não necessário
         debugPrint(
-            '🔍 Buscando todas as alocações do médico $medicoId do Firebase...');
-        alocacoesMedicoFirebase =
-            await logic.AlocacaoMedicosLogic.buscarAlocacoesMedico(
-          widget.unidade,
-          medicoId,
-          anoEspecifico: selectedDate.year,
-        );
-        debugPrint(
-            '  📊 Total de alocações do médico no Firebase: ${alocacoesMedicoFirebase.length}');
+            '⚡ Usando lista local para verificação (otimização - evitando busca no Firebase)');
+        alocacoesMedicoFirebase = alocacoesLocaisDoMedicoTodas;
       }
     }
 
@@ -2484,42 +2243,50 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           '    - ${aDate.day}/${aDate.month}/${aDate.year} (gabinete: ${a.gabineteId})');
     }
 
-    // Se é tipo único E não há alocações futuras/passadas (não pode ser série), apenas confirmar
+    // Se é tipo único E não há alocações futuras/passadas (não pode ser série), desalocar diretamente
+    // O gesto do utilizador de arrastar o cartão para a área de desalocados já é suficiente para confirmar
     // Caso contrário (tipo série OU pode ser série), sempre perguntar se quer desalocar apenas o dia ou toda a série
     if (!eTipoSerie && tipoDisponibilidade == 'Única' && !podeSerSerie) {
       debugPrint(
-          '  ℹ️ Disponibilidade única sem alocações futuras/passadas - apenas confirmar');
-      // Para disponibilidade única, apenas confirmar
+          '  ℹ️ Disponibilidade única sem alocações futuras/passadas - desalocando diretamente (sem diálogo)');
+
+      // Para disponibilidade única, desalocar diretamente usando a função reutilizável
       if (!mounted) return;
-      final confirmacao = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Confirmar Desalocação'),
-          content: Text(
-            'Tem certeza que deseja desalocar ${medico.nome} do ${gabinete.nome}?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text('Desalocar'),
-            ),
-          ],
-        ),
+
+      final sucesso = await desalocarCartaoUnico(
+        medicoId: medicoId,
+        data: selectedDate,
+        alocacoes: alocacoes,
+        disponibilidades: disponibilidades,
+        medicos: medicos,
+        medicosDisponiveis: medicosDisponiveis,
+        unidade: widget.unidade,
+        setState: () {
+          if (mounted) setState(() {});
+        },
+        recarregarAlocacoesGabinetes: _recarregarAlocacoesGabinetes,
+        recarregarDesalocados: _recarregarDesalocados,
       );
 
-      if (confirmacao == true) {
-        escolha = '1dia';
+      if (sucesso) {
+        debugPrint('✅ [DESALOCAÇÃO] Cartão único desalocado com sucesso');
+      } else {
+        debugPrint('❌ [DESALOCAÇÃO] Erro ao desalocar cartão único');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Erro ao desalocar médico'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
+
+      return; // Retornar imediatamente após desalocar (não precisa processar escolha)
     } else {
       debugPrint(
           '  ❓ Mostrando diálogo para escolher entre desalocar apenas o dia ou toda a série');
+
       // Para disponibilidade em série ou quando há alocações futuras/passadas, perguntar se quer desalocar apenas um dia ou toda a série
       String mensagem;
       if (podeSerSerie && tipoDisponibilidade == 'Única') {
@@ -2566,6 +2333,32 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
   Future<void> _desalocarMedicoDiaUnico(String medicoId) async {
     try {
+      // CORREÇÃO CRÍTICA: Encontrar gabinete de origem ANTES de desalocar
+      final dataNormalizada =
+          DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+
+      final alocacaoAntesRemover = alocacoes.firstWhere(
+        (a) {
+          final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+          return a.medicoId == medicoId && aDate == dataNormalizada;
+        },
+        orElse: () => Alocacao(
+          id: '',
+          medicoId: '',
+          gabineteId: '',
+          data: DateTime(1900, 1, 1),
+          horarioInicio: '',
+          horarioFim: '',
+        ),
+      );
+
+      final gabineteOrigem = alocacaoAntesRemover.gabineteId;
+      debugPrint(
+          '🔍 [DESALOCAÇÃO] Gabinete de origem encontrado: $gabineteOrigem');
+
+      // CORREÇÃO CRÍTICA: Invalidar cache ANTES de desalocar
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+
       await logic.AlocacaoMedicosLogic.desalocarMedicoDiaUnico(
         selectedDate: selectedDate,
         medicoId: medicoId,
@@ -2574,10 +2367,43 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         medicos: medicos,
         medicosDisponiveis: medicosDisponiveis,
         onAlocacoesChanged: () {
-          _carregarDadosIniciais();
+          // CORREÇÃO: NÃO recarregar dados aqui - isso sobrescreve a atualização de médicos disponíveis
+          // A atualização será feita manualmente após a desalocação
         },
         unidade: widget.unidade,
       );
+
+      // CORREÇÃO CRÍTICA: Invalidar cache APÓS desalocar também
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+      debugPrint('💾 Cache invalidado após desalocação');
+
+      // CORREÇÃO CRÍTICA: Atualizar médicos disponíveis
+
+      // CORREÇÃO CRÍTICA: Invalidar cache APÓS desalocar também
+      logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+      debugPrint('💾 Cache invalidado após desalocação');
+
+      // CORREÇÃO CRÍTICA: Atualizar médicos disponíveis
+
+      // Aguardar um pouco para garantir que a desalocação foi processada
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // TESTE 3: Desalocar cartão - deve atualizar apenas gabinete de saída e caixa de desalocação
+      if (gabineteOrigem.isNotEmpty) {
+        // RELOAD FOCADO: Recarregar apenas o gabinete de saída (onde o cartão saiu) e desalocados (onde entrou)
+        await _recarregarAlocacoesGabinetes([gabineteOrigem]);
+        await _recarregarDesalocados();
+
+        debugPrint(
+            '✅ [DESALOCAÇÃO] Reload focado: gabinete $gabineteOrigem e desalocados atualizados');
+      } else {
+        await _recarregarDesalocados();
+      }
+
+      // Forçar atualização da UI
+      if (mounted) {
+        setState(() {});
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2589,28 +2415,62 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   }
 
   Future<void> _desalocarMedicoSerie(String medicoId, String tipo) async {
+    // Iniciar progress bar
+    if (mounted) {
+      setState(() {
+        _isDesalocandoSerie = true;
+        _progressoDesalocacao = 0.0;
+        _mensagemDesalocacao = 'A iniciar desalocação...';
+      });
+    }
+
     try {
-      await logic.AlocacaoMedicosLogic.desalocarMedicoSerie(
+      final sucesso = await desalocarCartaoSerie(
         medicoId: medicoId,
-        dataRef: selectedDate,
+        data: selectedDate,
         tipo: tipo,
-        disponibilidades: disponibilidades,
         alocacoes: alocacoes,
+        disponibilidades: disponibilidades,
         medicos: medicos,
         medicosDisponiveis: medicosDisponiveis,
-        onAlocacoesChanged: () {
-          _carregarDadosIniciais();
-        },
         unidade: widget.unidade,
+        setState: () {
+          if (mounted) setState(() {});
+        },
+        recarregarAlocacoesGabinetes: _recarregarAlocacoesGabinetes,
+        recarregarDesalocados: _recarregarDesalocados,
+        onProgresso: (progresso, mensagem) {
+          if (mounted) {
+            setState(() {
+              _progressoDesalocacao = progresso;
+              _mensagemDesalocacao = mensagem;
+            });
+          }
+        },
+        context: context,
       );
+
+      if (!sucesso) {
+        throw Exception('Falha ao desalocar série');
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao desalocar série: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao desalocar série: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      // Ocultar progress bar
+      if (mounted) {
+        setState(() {
+          _isDesalocandoSerie = false;
+          _progressoDesalocacao = 0.0;
+          _mensagemDesalocacao = 'A iniciar...';
+        });
+      }
     }
   }
 
@@ -2622,7 +2482,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .shrink(); // Widget vazio - o overlay principal mostra o progresso
     }
 
-    // Se não está carregando E não há dados, mostrar estado vazio
     if (gabinetes.isEmpty && medicos.isEmpty) {
       return Center(
         child: Column(
@@ -2657,6 +2516,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
 
     // Se há dados, mostrar o conteúdo normal
+    // CORREÇÃO CRÍTICA: Garantir que pisosSelecionados não esteja vazio
+    // Se estiver vazio e houver gabinetes, inicializar com todos os setores
+    if (pisosSelecionados.isEmpty && gabinetes.isNotEmpty) {
+      final todosSetores = gabinetes.map((g) => g.setor).toSet().toList();
+      pisosSelecionados = List<String>.from(todosSetores);
+    }
+
     final gabinetesFiltrados = logic.AlocacaoMedicosLogic.filtrarGabinetesPorUI(
       gabinetes: gabinetes,
       alocacoes: alocacoes,
@@ -2673,82 +2539,167 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
         // Seção de médicos disponíveis - apenas para administradores
         if (widget.isAdmin) ...[
-          Container(
-            constraints: const BoxConstraints(minHeight: 85),
-            width: double.infinity,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                  offset: Offset(2, 2),
-                ),
-              ],
-            ),
-            child: DragTarget<String>(
-              onWillAcceptWithDetails: (details) {
-                final medicoId = details.data;
-                // Verifica se o médico realmente está alocado antes de aceitar o cartão
-                final estaAlocado =
-                    alocacoes.any((a) => a.medicoId == medicoId);
-                if (!estaAlocado) {
-                  debugPrint(
-                      'Médico $medicoId NÃO está alocado, ignorando desalocação.');
-                  return false;
+          Builder(
+            builder: (context) {
+              // Calcular altura mínima dinamicamente baseado no número de cartões
+              // Se há cartões, calcular baseado no número de linhas necessárias
+              double minHeight;
+              if (medicosDisponiveis.isEmpty) {
+                // Apenas título: padding top (14) + título (~40) + padding bottom (8) + padding conteúdo (12)
+                minHeight = 14 + 40 + 8 + 12;
+              } else {
+                // Calcular quantas linhas serão necessárias
+                // Assumindo largura de tela e cartões de ~180px + 6px spacing
+                final larguraTela = MediaQuery.of(context).size.width;
+                final larguraCartao = 180.0;
+                final spacing = 6.0;
+                final paddingHorizontal = 40.0; // margin left + right (20 + 20)
+                final paddingInterno = 24.0; // padding interno (12 + 12)
+                final larguraDisponivel =
+                    larguraTela - paddingHorizontal - paddingInterno;
+                final cartoesPorLinha =
+                    (larguraDisponivel / (larguraCartao + spacing)).floor();
+                final numLinhas = (medicosDisponiveis.length /
+                        (cartoesPorLinha > 0 ? cartoesPorLinha : 1))
+                    .ceil();
+
+                // Altura do título: padding top (14) + título (~40) + padding bottom (8)
+                final alturaTitulo = 14 + 40 + 8;
+                // Altura dos cartões: altura do cartão (~100px) + runSpacing (6px) por linha
+                final alturaCartao = 100.0;
+                final alturaCartoes =
+                    (alturaCartao * numLinhas) + (6 * (numLinhas - 1));
+                // Padding bottom do conteúdo (12)
+                final paddingBottom = 12.0;
+
+                // Se tem 2 ou mais linhas, garantir altura mínima para 2 linhas
+                if (numLinhas >= 2) {
+                  minHeight =
+                      alturaTitulo + (alturaCartao * 2) + 6 + paddingBottom;
+                } else {
+                  minHeight = alturaTitulo + alturaCartoes + paddingBottom;
                 }
-                debugPrint(
-                    'Médico $medicoId está alocado, aceitando para desalocar.');
-                return true;
-              },
-              onAcceptWithDetails: (details) async {
-                final medicoId = details.data;
-                // Agora só será chamado para médicos alocados
-                await _desalocarMedicoComPergunta(medicoId);
-              },
-              builder: (context, candidateData, rejectedData) {
-                return MedicosDisponiveisSection(
-                  medicosDisponiveis: medicosDisponiveis,
-                  disponibilidades: disponibilidades,
-                  selectedDate: selectedDate,
-                  onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
-                );
-              },
-            ),
-          ),
-        ] else ...[
-          // Para utilizadores não-administradores, mostrar mensagem informativa
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue.shade200),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  color: Colors.blue.shade600,
-                  size: 24,
+              }
+
+              return Container(
+                constraints: BoxConstraints(
+                  minHeight: minHeight,
+                  maxHeight: 300, // Altura máxima para 2 linhas
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Modo de visualização: Apenas administradores podem fazer alterações nas alocações.',
-                    style: TextStyle(
-                      color: Colors.blue.shade700,
-                      fontSize: 14,
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                decoration: BoxDecoration(
+                  color: MyAppTheme.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: MyAppTheme.shadowCard,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Título da seção - DragTarget aqui para evitar conflitos de gestos
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                      child: DragTarget<String>(
+                        onWillAcceptWithDetails: (details) {
+                          final medicoId = details.data;
+
+                          // Verifica se o médico realmente está alocado no dia selecionado antes de aceitar o cartão
+                          final dataAlvo = DateTime(selectedDate.year,
+                              selectedDate.month, selectedDate.day);
+                          final estaAlocado = alocacoes.any((a) {
+                            final aDate =
+                                DateTime(a.data.year, a.data.month, a.data.day);
+                            return a.medicoId == medicoId && aDate == dataAlvo;
+                          });
+
+                          if (!estaAlocado) {
+                            debugPrint(
+                                '❌ Médico $medicoId NÃO está alocado no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, ignorando desalocação.');
+                            return false;
+                          }
+                          debugPrint(
+                              '✅ Médico $medicoId está alocado no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, aceitando para desalocar.');
+                          return true;
+                        },
+                        onAcceptWithDetails: (details) async {
+                          final medicoId = details.data;
+                          debugPrint(
+                              '🔄 onAcceptWithDetails chamado para desalocar médico $medicoId');
+                          // Agora só será chamado para médicos alocados no dia selecionado
+                          await _desalocarMedicoComPergunta(medicoId);
+                        },
+                        builder: (context, candidateData, rejectedData) {
+                          final isHovering = candidateData.isNotEmpty;
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isHovering
+                                  ? Colors.blue.shade50
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: isHovering
+                                  ? Border.all(color: Colors.blue, width: 2)
+                                  : null,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 4, horizontal: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        MyAppTheme.azulEscuro.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.people_outline,
+                                    size: 18,
+                                    color: MyAppTheme.azulEscuro,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Médicos por Alocar',
+                                  style: MyAppTheme.heading2.copyWith(
+                                    fontSize: 17,
+                                    color: MyAppTheme.azulEscuro,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
+                    // Conteúdo
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: MedicosDisponiveisSection(
+                        medicosDisponiveis: medicosDisponiveis,
+                        disponibilidades: disponibilidades,
+                        selectedDate: selectedDate,
+                        onDesalocarMedico: (mId) =>
+                            _desalocarMedicoDiaUnico(mId),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              );
+            },
+          ),
+          // Separador visual elegante
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.transparent,
+                  Colors.grey.shade300,
+                  Colors.transparent,
+                ],
+              ),
             ),
           ),
         ],
@@ -2773,6 +2724,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               unidade: widget.unidade,
               onRealocacaoOtimista: _realocacaoOtimista,
               onRealocacaoConcluida: _limparFlagsTransicao,
+              onAlocacaoSerieOtimista: _alocacaoSerieOtimista,
             ),
           ),
         ),
@@ -2802,7 +2754,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   }
 
   void _updateTransformation() {
-    // Não é mais necessário com Transform.scale direto
     // Mantido para compatibilidade, mas não faz nada
   }
 
@@ -2816,26 +2767,36 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         onZoomIn: _zoomIn,
         onZoomOut: _zoomOut,
         currentZoom: zoomLevel,
+        onRefresh: _refreshDados,
       ),
       drawer: CustomDrawer(
-        onRefresh: () => _carregarDadosIniciais(
-            recarregarMedicos: true), // Recarrega tudo, incluindo médicos
+        onRefresh: _refreshDados, // Função melhorada de refresh
         unidade: widget.unidade, // Passa a unidade para personalizar o drawer
         isAdmin: widget.isAdmin, // Passa informação se é administrador
       ),
-      // Corpo com cor de fundo suave e layout responsivo
+      // Corpo com gradiente elegante e layout responsivo
       body: LayoutBuilder(
         builder: (context, constraints) {
           return Stack(
             children: [
-              // Container principal sem zoom - mantém barra lateral visível
+              // Container principal com gradiente profissional
               Container(
-                color: Colors.grey.shade200,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      MyAppTheme.backgroundGradientStart,
+                      MyAppTheme.backgroundGradientEnd,
+                    ],
+                  ),
+                ),
                 child: _deveUsarLayoutResponsivo(context)
                     ? _buildLayoutResponsivo()
                     : _buildLayoutDesktop(),
               ),
-              if (isCarregando)
+              // Mostrar progress bar durante carregamento inicial OU refresh
+              if (isCarregando || _isRefreshing)
                 Positioned.fill(
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.35),
@@ -2845,7 +2806,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                         children: [
                           // Mensagem de status
                           Text(
-                            mensagemProgresso,
+                            _isRefreshing
+                                ? 'A atualizar dados...'
+                                : mensagemProgresso,
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
@@ -2891,6 +2854,63 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                     ),
                   ),
                 ),
+              // Overlay de progresso durante desalocação de série
+              if (_isDesalocandoSerie)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Mensagem de status
+                          Text(
+                            _mensagemDesalocacao,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 24),
+                          // Barra de progresso horizontal
+                          Container(
+                            width: 300,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Column(
+                              children: [
+                                // Barra de progresso
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: _progressoDesalocacao,
+                                    backgroundColor:
+                                        Colors.white.withValues(alpha: 0.3),
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                            Colors.white),
+                                    minHeight: 10,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                // Percentagem
+                                Text(
+                                  '${(_progressoDesalocacao * 100).toInt()}%',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -2905,11 +2925,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         // Botões de alternância entre colunas
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.blue.shade50,
+            color: MyAppTheme.cardBackground,
+            boxShadow: MyAppTheme.shadowCard,
             border: Border(
-              bottom: BorderSide(color: Colors.blue.shade200),
+              bottom: BorderSide(color: Colors.grey.shade200, width: 1),
             ),
           ),
           child: Row(
@@ -3054,8 +3075,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       children: [
         // Coluna Esquerda: DatePicker + Filtros (SEM zoom - sempre visível)
         Container(
-          width: 280,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          width: 300,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          decoration: BoxDecoration(
+            color: MyAppTheme.cardBackground,
+            boxShadow: [
+              BoxShadow(
+                color: MyAppTheme.shadowLight,
+                blurRadius: 8,
+                offset: const Offset(2, 0),
+              ),
+            ],
+          ),
           child: SingleChildScrollView(
             child: _buildColunaEsquerda(),
           ),
@@ -3094,24 +3125,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
   // Conteúdo da coluna esquerda (DatePicker + Filtros + Pesquisa)
   Widget _buildColunaEsquerda() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Column(
-        children: [
-          // DatePicker
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                  offset: Offset(2, 2),
-                ),
-              ],
-            ),
-            margin: const EdgeInsets.only(bottom: 12),
+    return Column(
+      children: [
+        // DatePicker
+        Container(
+          decoration: BoxDecoration(
+            color: MyAppTheme.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: MyAppTheme.shadowCard,
+          ),
+          margin: const EdgeInsets.only(bottom: 16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
             child: CalendarioDisponibilidades(
               diasSelecionados: [selectedDate],
               onAdicionarData: (date, tipo) {
@@ -3123,6 +3148,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               dataCalendario: selectedDate,
               modoApenasSelecao: true,
               onDateSelected: (date) {
+                // CORREÇÃO: Invalidar cache ao mudar de dia para garantir dados atualizados
+                final dataNormalizada =
+                    DateTime(date.year, date.month, date.day);
+                logic.AlocacaoMedicosLogic.invalidateCacheForDay(
+                    dataNormalizada);
                 // Quando uma data é selecionada, atualizar a data selecionada
                 _onDateChanged(date);
               },
@@ -3135,21 +3165,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               },
             ),
           ),
+        ),
 
-          // Filtros
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                  offset: Offset(2, 2),
-                ),
-              ],
-            ),
-            margin: const EdgeInsets.only(bottom: 12),
+        // Filtros
+        Container(
+          decoration: BoxDecoration(
+            color: MyAppTheme.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: MyAppTheme.shadowCard,
+          ),
+          margin: const EdgeInsets.only(bottom: 16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
             child: FiltrosSection(
               todosSetores: gabinetes.map((g) => g.setor).toSet().toList(),
               pisosSelecionados: pisosSelecionados,
@@ -3177,19 +3204,19 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               especialidadesGabinetes: _getEspecialidadesGabinetes(),
             ),
           ),
+        ),
 
-          // Pesquisa
-          PesquisaSection(
-            pesquisaNome: pesquisaNome,
-            pesquisaEspecialidade: pesquisaEspecialidade,
-            opcoesNome: _getOpcoesPesquisaNome(),
-            opcoesEspecialidade: _getOpcoesPesquisaEspecialidade(),
-            onPesquisaNomeChanged: _aplicarPesquisaNome,
-            onPesquisaEspecialidadeChanged: _aplicarPesquisaEspecialidade,
-            onLimparPesquisa: _limparPesquisa,
-          ),
-        ],
-      ),
+        // Pesquisa
+        PesquisaSection(
+          pesquisaNome: pesquisaNome,
+          pesquisaEspecialidade: pesquisaEspecialidade,
+          opcoesNome: _getOpcoesPesquisaNome(),
+          opcoesEspecialidade: _getOpcoesPesquisaEspecialidade(),
+          onPesquisaNomeChanged: _aplicarPesquisaNome,
+          onPesquisaEspecialidadeChanged: _aplicarPesquisaEspecialidade,
+          onLimparPesquisa: _limparPesquisa,
+        ),
+      ],
     );
   }
 
@@ -3243,9 +3270,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _debounceTimer?.cancel();
-    _debounceRegeneracaoSeries?.cancel();
-    _dispSub?.cancel();
-    _alocSub?.cancel();
+    _timerProgresso?.cancel();
+    _timeoutFlagsTransicao?.cancel();
     _transformationController.dispose();
     super.dispose();
   }

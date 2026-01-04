@@ -4,9 +4,9 @@ import '../models/serie_recorrencia.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../services/disponibilidade_criacao.dart';
 import '../services/serie_service.dart';
-import '../utils/alocacao_medicos_logic.dart';
 import '../utils/series_helper.dart';
 import '../models/unidade.dart';
+import '../utils/alocacao_medicos_logic.dart';
 
 /// Serviço para gerir adição e remoção de datas/disponibilidades
 /// Extracted from cadastro_medicos.dart to reduce code size
@@ -33,7 +33,7 @@ class DisponibilidadeDataGestaoService {
   static void invalidarCachesRelacionados(DateTime date, String medicoId) {
     AlocacaoMedicosLogic.invalidateCacheForDay(date);
     final anoSerie = date.year;
-    AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(medicoId, anoSerie);
+    // Invalidar cache do ano para garantir que séries sejam recarregadas
     AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
   }
 
@@ -250,14 +250,6 @@ class DisponibilidadeDataGestaoService {
         usarUltimoQuandoExiste5: usarUltimoQuandoExiste5,
       );
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Série $tipo criada com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
 
       return {
         'sucesso': true,
@@ -307,14 +299,6 @@ class DisponibilidadeDataGestaoService {
         limitarAoAno: true,
       );
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Série Consecutiva criada com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
 
       return {
         'sucesso': true,
@@ -364,8 +348,10 @@ class DisponibilidadeDataGestaoService {
       );
 
       final anoSerie = serie.dataInicio.year;
-      AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(medicoId, anoSerie);
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
+      // Cache removido - não precisa invalidar
+    // AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(medicoId, anoSerie);
+      // Cache removido - não precisa invalidar
+    // AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
 
       return true;
     } catch (e) {

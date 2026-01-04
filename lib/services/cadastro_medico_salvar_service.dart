@@ -7,7 +7,6 @@ import '../models/excecao_serie.dart';
 import '../services/disponibilidade_unica_service.dart';
 import '../services/serie_service.dart';
 import '../utils/cadastro_medicos_helper.dart';
-import '../utils/alocacao_medicos_logic.dart';
 import 'medico_salvar_service.dart' as medico_salvar;
 
 /// Serviço para salvar médico completo com todas as suas dependências
@@ -37,6 +36,7 @@ class CadastroMedicoSalvarService {
     List<Disponibilidade> disponibilidadesOriginais,
     Unidade? unidade, {
     bool mostrarMensagensErro = true,
+    bool ativo = true, // Campo ativo do médico
   }) async {
     // Preparar disponibilidades únicas para salvar
     final disponibilidadesUnicasParaSalvar =
@@ -59,7 +59,7 @@ class CadastroMedicoSalvarService {
       especialidade: especialidade,
       observacoes: observacoes,
       disponibilidades: disponibilidadesSemUnicas,
-      ativo: true,
+      ativo: ativo, // Usar o valor passado como parâmetro
     );
 
     try {
@@ -118,9 +118,7 @@ class CadastroMedicoSalvarService {
 
       // Invalidar cache de médicos ativos
       if (unidade != null) {
-        AlocacaoMedicosLogic.invalidateMedicosAtivosCache(
-            unidadeId: unidade.id);
-        AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(medicoId, null);
+        // Cache removido - não precisa invalidar
       }
 
       // Mostrar avisos se houver erros

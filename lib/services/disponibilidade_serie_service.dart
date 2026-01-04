@@ -6,6 +6,8 @@ import '../models/excecao_serie.dart';
 import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import 'serie_service.dart';
+import '../utils/alocacao_medicos_logic.dart';
+import 'dart:convert';
 
 /// Serviço para criar séries de recorrência em vez de cartões individuais
 class DisponibilidadeSerieService {
@@ -156,22 +158,45 @@ class DisponibilidadeSerieService {
 
     ExcecaoSerie excecao;
 
-    // Se já existe uma exceção para esta data, atualizar ela
-    final excecaoExistente = excecoesExistentes.firstWhere(
-      (e) =>
-          e.serieId == serieId &&
-          e.data.year == dataNormalizada.year &&
-          e.data.month == dataNormalizada.month &&
-          e.data.day == dataNormalizada.day,
-      orElse: () => ExcecaoSerie(
-        id: '',
-        serieId: '',
-        data: DateTime(1900, 1, 1),
-      ),
-    );
+    // CORREÇÃO CRÍTICA: Encontrar TODAS as exceções para esta data (não apenas a primeira)
+    // Isso evita duplicação quando há múltiplas exceções
+    final excecoesParaData = excecoesExistentes
+        .where(
+          (e) =>
+              e.serieId == serieId &&
+              e.data.year == dataNormalizada.year &&
+              e.data.month == dataNormalizada.month &&
+              e.data.day == dataNormalizada.day &&
+              !e.cancelada,
+        )
+        .toList();
 
-    if (excecaoExistente.id.isNotEmpty) {
-      // Atualizar exceção existente
+    if (excecoesParaData.isNotEmpty) {
+      // CORREÇÃO CRÍTICA: Se há múltiplas exceções, cancelar todas exceto a primeira
+      // Depois atualizar a primeira com o novo gabinete
+      if (excecoesParaData.length > 1) {
+        debugPrint(
+            '⚠️ [DUPLICAÇÃO] Encontradas ${excecoesParaData.length} exceções para a mesma data! Cancelando duplicatas...');
+
+        // Cancelar todas as exceções exceto a primeira
+        for (int i = 1; i < excecoesParaData.length; i++) {
+          final excecaoDuplicada = ExcecaoSerie(
+            id: excecoesParaData[i].id,
+            serieId: excecoesParaData[i].serieId,
+            data: excecoesParaData[i].data,
+            cancelada: true,
+            horarios: excecoesParaData[i].horarios,
+            gabineteId: excecoesParaData[i].gabineteId,
+          );
+          await SerieService.salvarExcecao(excecaoDuplicada, medicoId,
+              unidade: unidade);
+          debugPrint(
+              '🗑️ Exceção duplicada cancelada: ${excecoesParaData[i].id}');
+        }
+      }
+
+      // Usar a primeira exceção e atualizar com o novo gabinete
+      final excecaoExistente = excecoesParaData[0];
       excecao = ExcecaoSerie(
         id: excecaoExistente.id,
         serieId: excecaoExistente.serieId,
@@ -197,6 +222,13 @@ class DisponibilidadeSerieService {
     }
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
+
+    // CORREÇÃO CRÍTICA: Invalidar cache do dia para garantir que mudanças apareçam imediatamente
+    // Isso é especialmente importante quando um administrador faz alterações
+    AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+    AlocacaoMedicosLogic.invalidateCacheFromDate(
+        DateTime(dataNormalizada.year, 1, 1));
+
     debugPrint(
         '✅ Exceção salva: ID=${excecao.id}, série=$serieId, data=${dataNormalizada.day}/${dataNormalizada.month}/${dataNormalizada.year}, gabinete=$novoGabineteId');
     debugPrint(
@@ -230,6 +262,17 @@ class DisponibilidadeSerieService {
       );
 
       await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
+
+      // CORREÇÃO CRÍTICA: Invalidar cache quando uma série é alocada
+      // Invalidar cache para todo o ano da série para garantir que todas as alocações geradas sejam atualizadas
+      final hoje = DateTime.now();
+      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(hoje.year, 1, 1));
+      // Também invalidar próximos 2 anos caso a série seja infinita
+      AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(hoje.year + 1, 1, 1));
+      AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(hoje.year + 2, 1, 1));
+
       debugPrint('✅ Série alocada ao gabinete $gabineteId');
     } catch (e) {
       debugPrint('❌ Erro ao alocar série: $e');
@@ -263,6 +306,17 @@ class DisponibilidadeSerieService {
       );
 
       await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
+
+      // CORREÇÃO CRÍTICA: Invalidar cache quando uma série é desalocada
+      // Invalidar cache para todo o ano da série para garantir que todas as alocações geradas sejam atualizadas
+      final hoje = DateTime.now();
+      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(hoje.year, 1, 1));
+      // Também invalidar próximos 2 anos caso a série seja infinita
+      AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(hoje.year + 1, 1, 1));
+      AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(hoje.year + 2, 1, 1));
+
       debugPrint('✅ Série desalocada (gabinete removido)');
     } catch (e) {
       debugPrint('❌ Erro ao desalocar série: $e');

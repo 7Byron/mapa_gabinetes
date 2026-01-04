@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../models/unidade.dart';
+import '../utils/alocacao_medicos_logic.dart';
 
 /// Serviço para gerenciar séries de recorrência e exceções no Firestore
 class SerieService {
@@ -51,14 +52,16 @@ class SerieService {
           .doc(medicoId)
           .collection('series');
 
+
       // Se há filtro de data, tentar filtrar na query quando possível
       // Caso contrário, buscar todas e filtrar localmente
       // Buscar apenas séries ativas (filtro na query para reduzir dados transferidos)
-      // Usar cache do Firestore quando disponível
+      // Usar cache do Firestore para melhor performance
       final snapshot = await seriesRef
           .where('ativo', isEqualTo: true)
           .get(const GetOptions(source: Source.serverAndCache));
       final series = <SerieRecorrencia>[];
+
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -89,7 +92,6 @@ class SerieService {
         series.add(serie);
       }
 
-      debugPrint('✅ Séries carregadas: ${series.length}');
       return series;
     } catch (e) {
       debugPrint('❌ Erro ao carregar séries: $e');
@@ -149,6 +151,13 @@ class SerieService {
           .doc(excecao.id);
 
       await excecaoRef.set(excecao.toMap());
+      
+      // CORREÇÃO CRÍTICA: Invalidar cache quando uma exceção é salva
+      AlocacaoMedicosLogic.invalidateCacheForDay(excecao.data);
+      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(excecao.data.year, 1, 1));
+      // CORREÇÃO: O cache de exceções já é limpo em invalidateCacheForDay
+      // (_cacheExcecoes.clear() é chamado lá)
+      
       debugPrint('✅ Exceção salva: ${excecao.id}');
     } catch (e) {
       debugPrint('❌ Erro ao salvar exceção: $e');
@@ -176,11 +185,7 @@ class SerieService {
         for (int ano = dataInicio.year; ano <= dataFim.year; ano++) {
           anos.add(ano);
         }
-        // Debug: mostrar anos que serão carregados
-        if (forcarServidor) {
-          debugPrint(
-              '🔍 Carregando exceções do servidor (sem cache) para anos: $anos (período: ${dataInicio.day}/${dataInicio.month}/${dataInicio.year} até ${dataFim.day}/${dataFim.month}/${dataFim.year})');
-        }
+        // (removido para melhorar performance e reduzir ruído no terminal)
       } else {
         anos.add(DateTime.now().year);
       }
@@ -197,19 +202,10 @@ class SerieService {
             .collection('registos');
 
         // Buscar todas as exceções e filtrar localmente para evitar índices compostos
-        // Se forçarServidor for true, carregar apenas do servidor (sem cache)
-        // Isso é necessário quando uma exceção foi criada recentemente
+        // Usar cache do Firestore para melhor performance
+        // Só forçar servidor se realmente necessário (ex: após criar exceção)
         final source = forcarServidor ? Source.server : Source.serverAndCache;
-        if (forcarServidor) {
-          debugPrint(
-              '🔍 Carregando exceções do ano $ano do servidor (sem cache) para médico $medicoId');
-        }
         final snapshot = await excecoesRef.get(GetOptions(source: source));
-
-        if (forcarServidor) {
-          debugPrint(
-              '📋 Exceções carregadas do ano $ano: ${snapshot.docs.length} documentos');
-        }
 
         for (final doc in snapshot.docs) {
           final data = doc.data();
@@ -233,21 +229,6 @@ class SerieService {
         }
       }
 
-      // Debug: mostrar exceções com gabineteId para séries mensais
-      final excecoesComGabinete =
-          excecoes.where((e) => e.gabineteId != null).toList();
-      if (excecoesComGabinete.isNotEmpty) {
-        debugPrint(
-            '✅ Exceções carregadas: ${excecoes.length} total, ${excecoesComGabinete.length} com gabinete');
-        for (final ex in excecoesComGabinete) {
-          final dataKey =
-              '${ex.data.year}-${ex.data.month.toString().padLeft(2, '0')}-${ex.data.day.toString().padLeft(2, '0')}';
-          debugPrint(
-              '   📋 Exceção: série=${ex.serieId}, data=$dataKey, gabinete=${ex.gabineteId}');
-        }
-      } else {
-        debugPrint('✅ Exceções carregadas: ${excecoes.length}');
-      }
       return excecoes;
     } catch (e) {
       debugPrint('❌ Erro ao carregar exceções: $e');
@@ -277,6 +258,11 @@ class SerieService {
           .doc(excecaoId);
 
       await excecaoRef.delete();
+      
+      // CORREÇÃO CRÍTICA: Invalidar cache quando uma exceção é removida
+      AlocacaoMedicosLogic.invalidateCacheForDay(data);
+      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
+      
       debugPrint('✅ Exceção removida: $excecaoId');
     } catch (e) {
       debugPrint('❌ Erro ao remover exceção: $e');

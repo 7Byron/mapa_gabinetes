@@ -108,49 +108,41 @@ class SerieGenerator {
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
 
-        // Debug para séries quinzenais e mensais
-        if (serie.tipo == 'Mensal' || serie.tipo == 'Quinzenal') {
-          debugPrint(
-              '🔍 Buscando exceção: tipo=${serie.tipo}, série=${serie.id}, data=$dataKey, chave=$chave, encontrada=${excecao != null}');
-          if (excecao != null) {
-            debugPrint(
-                '   ✅ Exceção encontrada: gabinete=${excecao.gabineteId}, cancelada=${excecao.cancelada}');
-          } else {
-            debugPrint(
-                '   ❌ Exceção NÃO encontrada - usando gabinete da série: ${serie.gabineteId}');
-            // Debug: mostrar todas as chaves no mapa para ajudar a identificar o problema
-            debugPrint('   📋 Chaves disponíveis no mapa de exceções:');
-            excecoesMap.keys
-                .where((k) => k.startsWith('${serie.id}_'))
-                .take(5)
-                .forEach((k) => debugPrint('      - $k'));
-          }
-        }
+        // Removidos logs excessivos para melhorar performance
+        // (Logs de debug apenas quando necessário para troubleshooting)
 
         // Se cancelada, não criar alocação
         if (excecao?.cancelada ?? false) continue;
 
-        // Usar gabinete da exceção ou da série
-        final gabineteId = excecao?.gabineteId ?? serie.gabineteId!;
+        // CORREÇÃO: Se há exceção com gabineteId (alocação individual), gerar alocação da exceção
+        // e NÃO da série. Se não há exceção, gerar alocação da série.
+        final String gabineteIdFinal;
+        final List<String> horariosFinal;
+        final String idAlocacao;
 
-        // Debug para séries quinzenais e mensais
-        if ((serie.tipo == 'Mensal' || serie.tipo == 'Quinzenal') &&
-            excecao?.gabineteId != null) {
+        if (excecao?.gabineteId != null) {
+          // Há exceção individual: gerar alocação da exceção (não da série)
+          gabineteIdFinal = excecao!.gabineteId!;
+          horariosFinal = excecao.horarios ?? disp.horarios;
+          idAlocacao = 'serie_${serie.id}_${_dataKey(disp.data)}';
           debugPrint(
-              '✅ Alocação gerada com exceção: tipo=${serie.tipo}, data=$dataKey, gabinete=$gabineteId (exceção: ${excecao?.gabineteId}, série: ${serie.gabineteId})');
+              '✅ Gerando alocação da exceção: data=$dataKey, gabinete=$gabineteIdFinal (exceção individual)');
+        } else {
+          // Não há exceção: gerar alocação normal da série
+          gabineteIdFinal = serie.gabineteId!;
+          horariosFinal = disp.horarios;
+          idAlocacao = 'serie_${serie.id}_${_dataKey(disp.data)}';
         }
 
-        // Usar horários da exceção ou da série
-        final horarios = excecao?.horarios ?? disp.horarios;
-        if (horarios.isEmpty) continue;
+        if (horariosFinal.isEmpty) continue;
 
         final alocacao = Alocacao(
-          id: 'serie_${serie.id}_${_dataKey(disp.data)}',
+          id: idAlocacao,
           medicoId: serie.medicoId,
-          gabineteId: gabineteId,
+          gabineteId: gabineteIdFinal,
           data: disp.data,
-          horarioInicio: horarios[0],
-          horarioFim: horarios.length > 1 ? horarios[1] : horarios[0],
+          horarioInicio: horariosFinal[0],
+          horarioFim: horariosFinal.length > 1 ? horariosFinal[1] : horariosFinal[0],
         );
 
         alocacoes.add(alocacao);
@@ -261,9 +253,6 @@ class SerieGenerator {
 
       // Se cancelada, pular
       if (excecao?.cancelada ?? false) {
-        // Debug: verificar se a exceção está sendo aplicada
-        debugPrint(
-            '🚫 Exceção cancelada encontrada para série ${serie.id} na data ${dataAtual.day}/${dataAtual.month}/${dataAtual.year} - pulando geração');
         dataAtual = dataAtual.add(const Duration(days: 7));
         continue;
       }
@@ -310,11 +299,7 @@ class SerieGenerator {
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
 
-        // Debug para verificar se a exceção está sendo encontrada
-        if (excecao != null) {
-          debugPrint(
-              '🔍 _gerarQuinzenal: Exceção encontrada para data $dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
-        }
+        // Removido log excessivo para melhorar performance
 
         if (!(excecao?.cancelada ?? false)) {
           cartoes.add(Disponibilidade(

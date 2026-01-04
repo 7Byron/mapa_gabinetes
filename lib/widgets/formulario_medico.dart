@@ -9,6 +9,8 @@ class FormularioMedico extends StatefulWidget {
   final TextEditingController observacoesController;
   final Unidade?
       unidade; // Adiciona unidade para buscar especialidades específicas
+  final bool ativo; // Estado do campo ativo
+  final ValueChanged<bool>? onAtivoChanged; // Callback quando ativo muda
 
   const FormularioMedico({
     super.key,
@@ -16,6 +18,8 @@ class FormularioMedico extends StatefulWidget {
     required this.especialidadeController,
     required this.observacoesController,
     this.unidade,
+    this.ativo = true,
+    this.onAtivoChanged,
   });
 
   @override
@@ -247,6 +251,43 @@ class FormularioMedicoState extends State<FormularioMedico> {
                   borderSide:
                       BorderSide(color: MyAppTheme.roxo, width: 2), // Roxo
                 ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Status Ativo/Inativo
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: MyAppTheme.roxo.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.ativo ? Icons.check_circle : Icons.cancel,
+                    color: widget.ativo ? Colors.green : Colors.red,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.ativo ? 'Ativo' : 'Inativo',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.normal,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: widget.ativo,
+                    onChanged: widget.onAtivoChanged,
+                    activeThumbColor: Colors.green,
+                    inactiveThumbColor: Colors.red.shade300,
+                  ),
+                ],
               ),
             ),
           ],

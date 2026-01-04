@@ -7,10 +7,6 @@ import '../screens/lista_medicos.dart';
 import '../screens/lista_gabinetes.dart';
 import '../screens/config_clinica_screen.dart';
 import '../screens/dias_encerramento_screen.dart';
-import '../screens/relatorios_screen.dart';
-import '../screens/relatorio_especialidades_screen.dart';
-import '../screens/gestao_cartoes_screen.dart';
-import '../screens/importar_ano_anterior_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
 
 /// Drawer personalizado com menu de navegação
@@ -154,10 +150,10 @@ class CustomDrawer extends StatelessWidget {
             title: const Text('Relatórios de Ocupação'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RelatoriosScreen(),
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Em construção'),
+                  duration: Duration(seconds: 2),
                 ),
               );
             },
@@ -168,47 +164,13 @@ class CustomDrawer extends StatelessWidget {
             title: const Text('Relatório Especialidades'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RelatorioEspecialidadesScreen(),
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Em construção'),
+                  duration: Duration(seconds: 2),
                 ),
               );
             },
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.cleaning_services),
-            title: const Text('Gestão de Cartões'),
-            enabled: isAdmin, // Só administradores podem gerir
-            onTap: isAdmin
-                ? () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => GestaoCartoesScreen(unidade: unidade),
-                      ),
-                    ).then((_) => onRefresh());
-                  }
-                : null,
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.import_export),
-            title: const Text('Importar do Ano Anterior'),
-            enabled: isAdmin, // Só administradores podem importar
-            onTap: isAdmin
-                ? () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ImportarAnoAnteriorScreen(unidade: unidade),
-                      ),
-                    ).then((_) => onRefresh());
-                  }
-                : null,
           ),
 
           const Spacer(), // Empurra o botão de sair para baixo

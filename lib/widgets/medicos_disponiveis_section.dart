@@ -9,6 +9,7 @@ class MedicosDisponiveisSection extends StatelessWidget {
   final List<Disponibilidade> disponibilidades;
   final DateTime selectedDate;
   final Function(String) onDesalocarMedico;
+  final Function(Medico)? onEditarMedico; // Callback para editar médico
 
   const MedicosDisponiveisSection({
     super.key,
@@ -16,6 +17,7 @@ class MedicosDisponiveisSection extends StatelessWidget {
     required this.disponibilidades,
     required this.selectedDate,
     required this.onDesalocarMedico,
+    this.onEditarMedico,
   });
 
   bool _validarDisponibilidade(Disponibilidade disp) {
@@ -111,15 +113,23 @@ class MedicosDisponiveisSection extends StatelessWidget {
                   width: 1,
                 ),
             ),
-            child: Draggable<String>(
-              data: medico.id,
-              feedback: MedicoCard.dragFeedback(medico, horariosStr),
-              childWhenDragging: Opacity(
-                opacity: 0.5,
+            child: GestureDetector(
+              // Clique único para editar (só aciona se não houver drag)
+              onTap: () {
+                if (onEditarMedico != null) {
+                  onEditarMedico!(medico);
+                }
+              },
+              child: Draggable<String>(
+                data: medico.id,
+                feedback: MedicoCard.dragFeedback(medico, horariosStr),
+                childWhenDragging: Opacity(
+                  opacity: 0.5,
+                  child: _buildMedicoCardContent(medico, horariosStr, isValido),
+                ),
                 child: _buildMedicoCardContent(medico, horariosStr, isValido),
               ),
-              child: _buildMedicoCardContent(medico, horariosStr, isValido),
-              ),
+            ),
             ),
           );
         }).toList(),

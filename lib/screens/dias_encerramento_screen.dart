@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
+import '../utils/ui_atualizar_dia.dart';
 
 /// Tela para gerenciar dias de encerramento da clínica
 /// Permite configurar feriados, manutenções e outros dias de encerramento
@@ -264,6 +265,12 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
 
       debugPrint('Dia de encerramento salvo no ano $ano com ID: $diaId');
 
+      // Invalidar cache de dias de encerramento após salvar
+      if (widget.unidade != null) {
+        invalidateCacheEncerramento(widget.unidade!.id, int.parse(ano));
+        debugPrint('🗑️ Cache de dias de encerramento invalidado após adicionar dia');
+      }
+
       setState(() {
         diasEncerramento.add(novoDia);
         diasEncerramento.sort((a, b) {
@@ -404,6 +411,15 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
         await registosAnteriorRef.doc(diaId).delete();
       }
 
+      // Invalidar cache de dias de encerramento após editar (pode ter mudado de ano)
+      if (widget.unidade != null) {
+        invalidateCacheEncerramento(widget.unidade!.id, int.parse(anoAnterior));
+        if (anoAnterior != anoNovo) {
+          invalidateCacheEncerramento(widget.unidade!.id, int.parse(anoNovo));
+        }
+        debugPrint('🗑️ Cache de dias de encerramento invalidado após editar dia');
+      }
+
       // Atualiza a lista local
       setState(() {
         final index = diasEncerramento.indexWhere((d) => d['id'] == diaId);
@@ -448,6 +464,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
   Future<void> _removerDiaEncerramento(Map<String, dynamic> dia) async {
     try {
       final diaId = dia['id'] as String?;
+      final dataDia = DateTime.tryParse(dia['data'] as String);
 
       if (diaId != null) {
         CollectionReference encerramentosRef;
@@ -461,7 +478,6 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
               FirebaseFirestore.instance.collection('encerramentos');
         }
 
-        final dataDia = DateTime.tryParse(dia['data'] as String);
         if (dataDia != null) {
           final ano = dataDia.year.toString();
           final anoRef = encerramentosRef.doc(ano);
@@ -470,6 +486,12 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
           await registosRef.doc(diaId).delete();
           debugPrint('Dia de encerramento removido do ano $ano: $diaId');
         }
+      }
+
+      // Invalidar cache de dias de encerramento após remover
+      if (widget.unidade != null && dataDia != null) {
+        invalidateCacheEncerramento(widget.unidade!.id, dataDia.year);
+        debugPrint('🗑️ Cache de dias de encerramento invalidado após remover dia');
       }
 
       setState(() {

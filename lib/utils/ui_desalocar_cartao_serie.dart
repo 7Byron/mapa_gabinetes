@@ -4,7 +4,6 @@ import '../models/disponibilidade.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../services/desalocacao_serie_service.dart';
-import 'dart:convert';
 
 /// Função reutilizável para desalocar um cartão de série de um gabinete para a lista de desalocados
 /// 

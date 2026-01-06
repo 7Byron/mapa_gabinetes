@@ -43,6 +43,7 @@ class _CalendarioDisponibilidadesState
     extends State<CalendarioDisponibilidades> {
   late CalendarController _calendarController;
   bool _isInitialBuild = true;
+  DateTime? _lastProgrammaticDate; // Data que foi definida programaticamente
 
   Future<void> _mostrarDialogoTipoMarcacao(
       BuildContext context, DateTime date) async {
@@ -223,7 +224,11 @@ class _CalendarioDisponibilidadesState
     if (widget.dataCalendario != null &&
         (oldWidget.dataCalendario == null ||
             oldWidget.dataCalendario!.year != widget.dataCalendario!.year ||
-            oldWidget.dataCalendario!.month != widget.dataCalendario!.month)) {
+            oldWidget.dataCalendario!.month != widget.dataCalendario!.month ||
+            oldWidget.dataCalendario!.day != widget.dataCalendario!.day)) {
+      // Marcar que estamos atualizando programaticamente ANTES de atualizar o displayDate
+      _lastProgrammaticDate = widget.dataCalendario!;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _calendarController.displayDate = widget.dataCalendario!;
@@ -465,6 +470,32 @@ class _CalendarioDisponibilidadesState
                   if (details.visibleDates.isNotEmpty) {
                     final visibleDate =
                         details.visibleDates[details.visibleDates.length ~/ 2];
+
+                    // Se estamos atualizando programaticamente, verificar se a visibleDate está próxima da data programática
+                    // Se sim, ignorar este callback para evitar sobrescrever a data selecionada
+                    if (_lastProgrammaticDate != null) {
+                      final programmaticDateNormalized = DateTime(
+                          _lastProgrammaticDate!.year,
+                          _lastProgrammaticDate!.month,
+                          _lastProgrammaticDate!.day);
+                      final visibleDateNormalized = DateTime(
+                          visibleDate.year, visibleDate.month, visibleDate.day);
+                      final diff = (visibleDateNormalized
+                              .difference(programmaticDateNormalized)
+                              .inDays)
+                          .abs();
+
+                      // Se a diferença for pequena (dentro de 14 dias) e no mesmo mês/ano, provavelmente é resultado da atualização programática
+                      // Aumentado para 14 dias para cobrir casos onde o calendário mostra semanas diferentes
+                      if (diff <= 14 &&
+                          visibleDate.year == _lastProgrammaticDate!.year &&
+                          visibleDate.month == _lastProgrammaticDate!.month) {
+                        _lastProgrammaticDate = null; // Limpar flag após usar
+                        return;
+                      }
+                      _lastProgrammaticDate =
+                          null; // Limpar flag se não for programático
+                    }
 
                     // Quando o usuário navega no calendário, notificar a mudança
                     if (widget.onViewChanged != null) {

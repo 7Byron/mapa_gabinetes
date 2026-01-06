@@ -21,6 +21,8 @@ import '../widgets/pesquisa_section.dart';
 // Lógica separada
 import '../utils/alocacao_medicos_logic.dart' as logic;
 import '../utils/ui_atualizar_dia.dart';
+import '../utils/conflict_utils.dart';
+import '../services/disponibilidade_unica_service.dart';
 
 // Models
 import '../models/gabinete.dart';
@@ -33,6 +35,7 @@ import '../models/unidade.dart';
 import '../services/password_service.dart';
 import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
+import 'cadastro_medicos.dart';
 
 /// Tela principal de alocação de médicos aos gabinetes
 /// Permite arrastar médicos disponíveis para gabinetes específicos
@@ -71,6 +74,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   Timer?
       _timeoutFlagsTransicao; // Timer para limpar flags presas automaticamente
   DateTime selectedDate = DateTime.now();
+  DateTime _dataCalendarioVisualizada = DateTime.now(); // Data visualizada no calendário (pode ser diferente de selectedDate)
 
   // Controle de layout responsivo
   bool mostrarColunaEsquerda = true; // Para ecrãs pequenos
@@ -136,6 +140,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     WidgetsBinding.instance.addObserver(this);
     // CORREÇÃO: Marcar app como em foco ao inicializar
     logic.AlocacaoMedicosLogic.setAppEmFoco(true);
+    _dataCalendarioVisualizada = selectedDate; // Inicializar com a data selecionada
     _carregarDadosIniciais();
     // Carregar passwords em background (não bloqueia a UI)
     _carregarPasswordsDoFirebase();
@@ -179,8 +184,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     try {
       // Carrega as passwords do Firebase para cache local
       await PasswordService.loadPasswordsFromFirebase(widget.unidade.id);
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 
   bool _isCarregandoDadosIniciais =
@@ -317,6 +321,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // FASE 0: Carregar dados de encerramento PRIMEIRO (feriados, dias de encerramento, horários)
       // Isso permite verificar se a clínica está encerrada ANTES de carregar dados do Firestore
+      _atualizarProgressoGradual(0.0, 'A verificar configurações...');
+      
       try {
         await Future.wait([
           _carregarFeriados(),
@@ -375,7 +381,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             medicosDisponiveis.clear();
             // Desligar progress bar
             isCarregando = false;
-            _atualizarProgressoGradual(0.0, 'A iniciar...');
+            progressoCarregamento = 1.0;
+            mensagemProgresso = 'Concluído!';
           });
         }
         _isCarregandoDadosIniciais = false;
@@ -384,7 +391,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // FASE 1: Carregar exceções canceladas UMA ÚNICA VEZ (otimização de performance)
       // Isso evita carregar exceções múltiplas vezes em diferentes métodos
-      _atualizarProgressoGradual(0.1, 'A verificar exceções...');
+      _atualizarProgressoGradual(0.05, 'A verificar exceções...');
 
       final datasComExcecoesCanceladas =
           await logic.AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
@@ -399,21 +406,22 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Só chega aqui se a clínica NÃO estiver encerrada
       // NÃO chamar setState() nos callbacks individuais para evitar atualizações parciais
       // que causam o efeito de cartões aparecendo na área branca e depois sendo movidos
-      _atualizarProgressoGradual(0.2, 'A carregar dados...');
+      _atualizarProgressoGradual(0.15, 'A carregar dados...');
 
-      // Iniciar progressão automática durante carregamento de dados (0.2 -> 0.75)
-
+      // Iniciar progressão automática durante carregamento de dados (0.15 -> 0.80)
+      // O progresso será atualizado pelos callbacks de onProgress também
       timerProgressaoDados =
-          Timer.periodic(const Duration(milliseconds: 200), (timer) {
-        if (!mounted || progressoCarregamento >= 0.75) {
+          Timer.periodic(const Duration(milliseconds: 80), (timer) {
+        if (!mounted || progressoCarregamento >= 0.80) {
           timer.cancel();
           return;
         }
-        // Avançar gradualmente: 0.01 a cada 200ms (aproximadamente 5% por segundo)
+        // Avançar gradualmente: 0.015 a cada 80ms (aproximadamente 18.75% por segundo)
+        // Isso garante progresso mais rápido e visível durante o carregamento
         if (mounted) {
           setState(() {
             progressoCarregamento =
-                (progressoCarregamento + 0.01).clamp(0.0, 0.75);
+                (progressoCarregamento + 0.015).clamp(0.0, 0.80);
           });
         }
       });
@@ -568,14 +576,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       );
 
       // Cancelar timer de progressão automática após carregamento de dados
-
       timerProgressaoDados.cancel();
 
-      // Listeners removidos - não há mais listeners em tempo real
-      _atualizarProgressoGradual(0.8, 'A finalizar carregamento...');
-
-      // Atualizar médicos disponíveis (agora com todos os dados carregados)
-      _atualizarProgressoGradual(0.9, 'A processar médicos disponíveis...');
+      // Atualizar progresso para refletir que os dados foram carregados
+      // Garantir que o progresso esteja pelo menos em 0.80 antes de continuar
+      if (progressoCarregamento < 0.80) {
+        _atualizarProgressoGradual(0.80, 'A processar dados...');
+        // Aguardar um pouco para a animação chegar a 0.80
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
       // Chamar fora do setState porque é assíncrono e atualiza o estado internamente
       // IMPORTANTE: Sempre chamar, mesmo quando dados vêm do cache, para verificar exceções
       // CORREÇÃO: Forçar recarregamento de alocações após carregar dados iniciais
@@ -687,9 +696,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       if (mounted) {
         debugPrint(
             '🔄 Chamando _atualizarMedicosDisponiveis após regenerar alocações de séries...');
-        _atualizarMedicosDisponiveis().catchError((e) {
-          debugPrint('❌ Erro ao atualizar médicos disponíveis: $e');
-        });
+        _atualizarProgressoGradual(0.90, 'A processar médicos disponíveis...');
+        await _atualizarMedicosDisponiveis();
+        
+        // Atualizar para 100% apenas no final, sem mensagens intermediárias de "finalizar"
+        if (mounted) {
+          setState(() {
+            progressoCarregamento = 1.0;
+            mensagemProgresso = 'Concluído!';
+          });
+        }
       } else {
         debugPrint(
             '⚠️ Ignorando _atualizarMedicosDisponiveis durante processamento de alocação/transição');
@@ -703,17 +719,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           _inicializarFiltrosPiso();
           // Verificar novamente se a clínica está fechada (já foi verificado antes, mas garantir)
           _verificarClinicaFechada();
-          // Completar carregamento
-
           // Cancelar qualquer timer de progressão em andamento
           _timerProgresso?.cancel();
-          // Atualizar imediatamente para 100% (sem animação gradual para não adicionar tempo)
-          if (mounted) {
-            setState(() {
-              progressoCarregamento = 1.0;
-              mensagemProgresso = 'Concluído!';
-            });
-          }
           // Desligar progress bar após um pequeno delay para mostrar 100%
           Future.delayed(const Duration(milliseconds: 300), () {
             if (mounted) {
@@ -1237,7 +1244,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
     // Médicos alocados já foram identificados acima
 
-
     // Filtra médicos que:
     // 1. Estão ativos
     // 2. Não estão alocados no dia selecionado
@@ -1297,8 +1303,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           final dataKey =
               '${m.id}_${selectedDate.year}-${selectedDate.month}-${selectedDate.day}';
           if (datasComExcecoesCanceladas.contains(dataKey)) {
-            if (isMedicoTeste)
+            if (isMedicoTeste) {
               medicoTesteInfo['filtradoPor'] = 'excecaoCancelada';
+            }
             return false; // Não mostrar se tem exceção cancelada
           }
 
@@ -1464,12 +1471,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
     // Verificar se é a mesma data (evitar atualizações desnecessárias)
     final dataNormalizada = DateTime(newDate.year, newDate.month, newDate.day);
+
+
     if (_lastUpdateDate != null) {
       final lastDateNormalizada = DateTime(
           _lastUpdateDate!.year, _lastUpdateDate!.month, _lastUpdateDate!.day);
       if (lastDateNormalizada == dataNormalizada) {
         debugPrint(
             '⚠️ [RACE-CONDITION] Ignorando atualização duplicada para a mesma data: ${newDate.day}/${newDate.month}/${newDate.year}');
+        // Limpar _lastUpdateDate para permitir nova tentativa após um delay
+        _lastUpdateDate = null;
         return;
       }
     }
@@ -1484,7 +1495,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           DateTime(newDate.year, 1, 1));
 
       setState(() {
-        selectedDate = newDate;
+        selectedDate =
+            dataNormalizada; // Usar data normalizada para garantir consistência
+        _dataCalendarioVisualizada = dataNormalizada; // Atualizar também a data visualizada
+
+
         isCarregando = true;
         // Limpar dados do dia anterior antes de carregar novos dados
         disponibilidades.clear();
@@ -1495,7 +1510,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Usar a função reutilizável para atualizar os dados do dia
       final resultado = await atualizarDadosDoDia(
         unidade: widget.unidade,
-        data: newDate,
+        data: dataNormalizada, // Usar data normalizada
         gabinetes: gabinetes,
         medicos: medicos,
         disponibilidades: disponibilidades,
@@ -1532,7 +1547,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // CRÍTICO: Regenerar alocações de séries após carregar os dados
       // Isso é necessário para que as alocações de séries apareçam nos gabinetes
+      _atualizarProgressoGradual(0.75, 'A regenerar alocações de séries...');
       final alocacoesSeriesRegeneradas = await _regenerarAlocacoesSeries();
+      _atualizarProgressoGradual(0.80, 'A processar dados...');
 
       // Atualizar lista de alocações com as alocações regeneradas
       // Remover alocações antigas de séries antes de adicionar novas
@@ -1561,7 +1578,18 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // NOTA: Os médicos disponíveis já foram calculados em atualizarDadosDoDia,
       // mas precisamos atualizar novamente após regenerar as séries para garantir
       // que médicos com alocações de séries não apareçam como disponíveis
+      _atualizarProgressoGradual(0.90, 'A processar médicos disponíveis...');
       await _atualizarMedicosDisponiveis();
+      
+      // Atualizar para 100% apenas no final, sem mensagens intermediárias
+      if (mounted) {
+        setState(() {
+          progressoCarregamento = 1.0;
+          mensagemProgresso = 'Concluído!';
+        });
+        // Pequeno delay para mostrar 100%
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
 
       // Atualizar UI após todas as operações - AGORA definir isCarregando = false
       if (mounted) {
@@ -1574,8 +1602,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
         setState(() {
           isCarregando = false;
+          progressoCarregamento = 0.0;
+          mensagemProgresso = 'A iniciar...';
         });
       }
+
     } catch (e) {
       debugPrint('❌ Erro ao atualizar dados do dia: $e');
       if (mounted) {
@@ -1972,6 +2003,681 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
     debugPrint(
         '✅ Atualização otimista: médico $medicoId movido de $gabineteOrigem para $gabineteDestino (listener pausado)');
+  }
+
+  /// Mostra lista de médicos não alocados no ano
+  Future<void> _mostrarMedicosNaoAlocadosAno() async {
+    double progressoAtual = 0.0;
+    StateSetter? setStateDialog;
+
+    try {
+      // Mostrar loading com progressbar linear
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              setStateDialog = setState;
+              return Center(
+                child: Card(
+                  child: Container(
+                    width: 300,
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Barra de progresso
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progressoAtual,
+                            backgroundColor: Colors.grey.shade300,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                MyAppTheme.azulEscuro),
+                            minHeight: 10,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Percentagem
+                        Text(
+                          '${(progressoAtual * 100).toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('A carregar dados...'),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+
+      // Aguardar um frame para garantir que o dialog foi construído
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Usar o ano visualizado no calendário (pode ser diferente de selectedDate se o usuário navegou sem clicar)
+      final ano = _dataCalendarioVisualizada.year;
+
+      // Atualizar progresso para 10%
+      setStateDialog?.call(() {
+        progressoAtual = 0.10;
+      });
+
+      // Carregar todas as disponibilidades do ano (séries)
+      final todasDisponibilidadesSeries =
+          await logic.AlocacaoMedicosLogic.carregarDisponibilidadesDeSeries(
+        unidade: widget.unidade,
+        anoEspecifico: ano.toString(),
+      );
+
+      // Atualizar progresso para 30%
+      setStateDialog?.call(() {
+        progressoAtual = 0.30;
+      });
+
+      // Carregar disponibilidades únicas de todos os médicos para o ano EM PARALELO
+      final medicosAtivos = medicos.where((m) => m.ativo).toList();
+      final futuresUnicas = medicosAtivos.map((medico) {
+        return DisponibilidadeUnicaService.carregarDisponibilidadesUnicas(
+          medico.id,
+          ano,
+          widget.unidade,
+        ).catchError((e) {
+          // Retornar lista vazia em caso de erro
+          return <Disponibilidade>[];
+        });
+      }).toList();
+
+      // Aguardar todas as cargas em paralelo
+      final resultadosUnicas = await Future.wait(futuresUnicas);
+      final todasDisponibilidadesUnicas = <Disponibilidade>[];
+      for (final resultado in resultadosUnicas) {
+        todasDisponibilidadesUnicas.addAll(resultado);
+      }
+
+      // Combinar séries e únicas
+      final todasDisponibilidades = <Disponibilidade>[];
+      todasDisponibilidades.addAll(todasDisponibilidadesSeries);
+      todasDisponibilidades.addAll(todasDisponibilidadesUnicas);
+
+      // Atualizar progresso para 50%
+      setStateDialog?.call(() {
+        progressoAtual = 0.50;
+      });
+
+      // Carregar todas as alocações (carregarAlocacoesUnidade carrega o ano atual quando dataFiltroDia é null)
+      // Se o ano selecionado for diferente do atual, vamos usar as alocações carregadas e filtrar
+      final todasAlocacoesTemp =
+          await logic.AlocacaoMedicosLogic.carregarAlocacoesUnidade(
+              widget.unidade);
+
+      // Filtrar apenas alocações do ano selecionado
+      final todasAlocacoes =
+          todasAlocacoesTemp.where((a) => a.data.year == ano).toList();
+
+      // Atualizar progresso para 70%
+      setStateDialog?.call(() {
+        progressoAtual = 0.70;
+      });
+
+      // Identificar médicos com disponibilidade mas não alocados
+      final medicosComDisponibilidade = todasDisponibilidades
+          .where((d) => d.data.year == ano)
+          .map((d) => d.medicoId)
+          .toSet();
+
+      final medicosAlocados = todasAlocacoes
+          .where((a) => a.data.year == ano)
+          .map((a) => a.medicoId)
+          .toSet();
+
+      final medicosNaoAlocadosIds = medicosComDisponibilidade
+          .where((id) => !medicosAlocados.contains(id))
+          .toList();
+
+      // Buscar informações dos médicos
+      final medicosNaoAlocados = medicosNaoAlocadosIds
+          .map((id) => medicos.firstWhere(
+                (m) => m.id == id,
+                orElse: () => Medico(
+                  id: id,
+                  nome: 'Desconhecido',
+                  especialidade: '',
+                  disponibilidades: [],
+                  ativo: false,
+                ),
+              ))
+          .where((m) => m.ativo && m.nome != 'Desconhecido')
+          .toList();
+
+      // Ordenar por nome
+      medicosNaoAlocados.sort((a, b) => a.nome.compareTo(b.nome));
+
+      // Contar dias com disponibilidade mas sem alocação por médico e guardar as datas
+      final medicosComDias = <String, int>{};
+      final medicosComDatas = <String, List<DateTime>>{};
+      
+      int totalMedicos = medicosNaoAlocadosIds.length;
+      int processedMedicos = 0;
+      
+      for (final medicoId in medicosNaoAlocadosIds) {
+        final diasComDisponibilidade = todasDisponibilidades
+            .where((d) =>
+                d.medicoId == medicoId &&
+                d.data.year == ano &&
+                !todasAlocacoes.any((a) =>
+                    a.medicoId == medicoId &&
+                    a.data.year == d.data.year &&
+                    a.data.month == d.data.month &&
+                    a.data.day == d.data.day))
+            .map((d) => DateTime(d.data.year, d.data.month, d.data.day))
+            .toSet()
+            .toList();
+        diasComDisponibilidade.sort();
+        medicosComDias[medicoId] = diasComDisponibilidade.length;
+        medicosComDatas[medicoId] = diasComDisponibilidade;
+        
+        // Atualizar progresso durante processamento (70% -> 95%)
+        processedMedicos++;
+        if (totalMedicos > 0) {
+          final progressoProcessamento = 0.70 + (processedMedicos / totalMedicos) * 0.25;
+          setStateDialog?.call(() {
+            progressoAtual = progressoProcessamento.clamp(0.0, 0.95);
+          });
+        }
+      }
+      
+      // Finalizar progresso: 95% -> 100%
+      setStateDialog?.call(() {
+        progressoAtual = 1.0;
+      });
+      
+      // Aguardar um pouco para mostrar 100% antes de fechar
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Fechar loading
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Mostrar diálogo com a lista
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            title: Stack(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.list_alt, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Médicos Não Alocados ($ano)'),
+                    ),
+                  ],
+                ),
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    iconSize: 20,
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 600,
+                child: medicosNaoAlocados.isEmpty
+                    ? const Text('Não há médicos não alocados no ano.')
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: medicosNaoAlocados.length,
+                        itemBuilder: (context, index) {
+                          final medico = medicosNaoAlocados[index];
+                          final numDias = medicosComDias[medico.id] ?? 0;
+                          final datas = medicosComDatas[medico.id] ?? [];
+
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Coluna esquerda: Avatar e informações (clicável para editar)
+                                  Expanded(
+                                    flex: 3,
+                                    child: InkWell(
+                                      onTap: () {
+                                        Navigator.of(context).pop(); // Fechar diálogo atual
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => CadastroMedico(
+                                              medico: medico,
+                                              unidade: widget.unidade,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              CircleAvatar(
+                                                backgroundColor:
+                                                    Colors.blue.shade100,
+                                                radius: 20,
+                                                child: Text(
+                                                  medico.nome[0].toUpperCase(),
+                                                  style: TextStyle(
+                                                    color: Colors.blue.shade700,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      medico.nome,
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 14,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      medico.especialidade
+                                                              .isNotEmpty
+                                                          ? medico.especialidade
+                                                          : "Sem especialidade",
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color:
+                                                            Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      '$numDias ${numDias == 1 ? "dia" : "dias"} não alocados',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color:
+                                                            Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  // Coluna direita: Dias clicáveis
+                                  Expanded(
+                                    flex: 2,
+                                    child: SingleChildScrollView(
+                                      child: Wrap(
+                                        spacing: 4,
+                                        runSpacing: 4,
+                                        alignment: WrapAlignment.end,
+                                        children: datas.take(10).map((data) {
+                                          return InkWell(
+                                            onTap: () {
+                                              Navigator.of(context).pop();
+                                              // Garantir que a data está normalizada corretamente (sem horas/minutos/segundos)
+                                              final dataNormalizada = DateTime(
+                                                  data.year,
+                                                  data.month,
+                                                  data.day);
+                                              _onDateChanged(dataNormalizada);
+                                            },
+                                            child: Chip(
+                                              label: Text(
+                                                '${data.day}/${data.month}',
+                                                style: const TextStyle(
+                                                    fontSize: 10),
+                                              ),
+                                              backgroundColor:
+                                                  Colors.blue.shade50,
+                                              side: BorderSide(
+                                                  color: Colors.blue.shade200),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 4),
+                                              materialTapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // Fechar loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao carregar dados: $e')),
+        );
+      }
+    }
+  }
+
+  /// Mostra lista de conflitos de gabinete no ano
+  Future<void> _mostrarConflitosAno() async {
+    double progressoAtual = 0.0;
+    StateSetter? setStateDialog;
+
+    try {
+      // Mostrar loading com progressbar linear
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              setStateDialog = setState;
+              return Center(
+                child: Card(
+                  child: Container(
+                    width: 300,
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Barra de progresso
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progressoAtual,
+                            backgroundColor: Colors.grey.shade300,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                MyAppTheme.azulEscuro),
+                            minHeight: 10,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Percentagem
+                        Text(
+                          '${(progressoAtual * 100).toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('A carregar conflitos...'),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+
+      // Aguardar um frame para garantir que o dialog foi construído
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Usar o ano visualizado no calendário (pode ser diferente de selectedDate se o usuário navegou sem clicar)
+      final ano = _dataCalendarioVisualizada.year;
+
+      // Atualizar progresso para 10%
+      setStateDialog?.call(() {
+        progressoAtual = 0.10;
+      });
+
+      // Carregar todas as alocações (carregarAlocacoesUnidade carrega o ano atual quando dataFiltroDia é null)
+      // Se o ano selecionado for diferente do atual, vamos usar as alocações carregadas e filtrar
+      final todasAlocacoesTemp =
+          await logic.AlocacaoMedicosLogic.carregarAlocacoesUnidade(
+              widget.unidade);
+
+      // Filtrar apenas alocações do ano selecionado
+      final todasAlocacoes =
+          todasAlocacoesTemp.where((a) => a.data.year == ano).toList();
+
+      // Atualizar progresso para 40%
+      setStateDialog?.call(() {
+        progressoAtual = 0.40;
+      });
+
+      // Agrupar alocações por gabinete e data
+      final alocacoesPorGabineteEData = <String, List<Alocacao>>{};
+      for (final aloc in todasAlocacoes) {
+        if (aloc.data.year == ano) {
+          final chave =
+              '${aloc.gabineteId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
+          alocacoesPorGabineteEData.putIfAbsent(chave, () => []).add(aloc);
+        }
+      }
+
+      // Atualizar progresso para 50%
+      setStateDialog?.call(() {
+        progressoAtual = 0.50;
+      });
+
+      // Identificar conflitos
+      final conflitos = <Map<String, dynamic>>[];
+      int totalEntries = alocacoesPorGabineteEData.length;
+      int processedEntries = 0;
+
+      for (final entry in alocacoesPorGabineteEData.entries) {
+        final alocs = entry.value;
+        if (alocs.length >= 2 && ConflictUtils.temConflitoGabinete(alocs)) {
+          // Encontrar pares em conflito
+          for (int i = 0; i < alocs.length; i++) {
+            for (int j = i + 1; j < alocs.length; j++) {
+              if (ConflictUtils.temConflitoEntre(alocs[i], alocs[j])) {
+                final medico1 = medicos.firstWhere(
+                  (m) => m.id == alocs[i].medicoId,
+                  orElse: () => Medico(
+                    id: alocs[i].medicoId,
+                    nome: 'Desconhecido',
+                    especialidade: '',
+                    disponibilidades: [],
+                    ativo: false,
+                  ),
+                );
+                final medico2 = medicos.firstWhere(
+                  (m) => m.id == alocs[j].medicoId,
+                  orElse: () => Medico(
+                    id: alocs[j].medicoId,
+                    nome: 'Desconhecido',
+                    especialidade: '',
+                    disponibilidades: [],
+                    ativo: false,
+                  ),
+                );
+                final gabinete = gabinetes.firstWhere(
+                  (g) => g.id == alocs[i].gabineteId,
+                  orElse: () => Gabinete(
+                    id: alocs[i].gabineteId,
+                    setor: '',
+                    nome: alocs[i].gabineteId,
+                    especialidadesPermitidas: [],
+                  ),
+                );
+                conflitos.add({
+                  'gabinete': gabinete,
+                  'data': alocs[i].data,
+                  'medico1': medico1,
+                  'horario1':
+                      '${alocs[i].horarioInicio} - ${alocs[i].horarioFim}',
+                  'medico2': medico2,
+                  'horario2':
+                      '${alocs[j].horarioInicio} - ${alocs[j].horarioFim}',
+                });
+              }
+            }
+          }
+        }
+
+        // Atualizar progresso durante processamento (50% -> 95%)
+        processedEntries++;
+        if (totalEntries > 0) {
+          final progressoProcessamento =
+              0.50 + (processedEntries / totalEntries) * 0.45;
+          setStateDialog?.call(() {
+            progressoAtual = progressoProcessamento.clamp(0.0, 0.95);
+          });
+        }
+      }
+
+      // Finalizar progresso: 95% -> 100%
+      setStateDialog?.call(() {
+        progressoAtual = 1.0;
+      });
+
+      // Aguardar um pouco para mostrar 100%
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Fechar loading
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Ordenar por data e depois por gabinete
+      conflitos.sort((a, b) {
+        final dataA = a['data'] as DateTime;
+        final dataB = b['data'] as DateTime;
+        final cmpData = dataA.compareTo(dataB);
+        if (cmpData != 0) return cmpData;
+        final gabA = a['gabinete'] as Gabinete;
+        final gabB = b['gabinete'] as Gabinete;
+        return gabA.nome.compareTo(gabB.nome);
+      });
+
+      // Mostrar diálogo com a lista
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            title: Stack(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Conflitos de Gabinete ($ano)'),
+                    ),
+                  ],
+                ),
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    iconSize: 20,
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 600,
+              child: conflitos.isEmpty
+                  ? const Text('Não há conflitos no ano.')
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: conflitos.length,
+                      itemBuilder: (context, index) {
+                        final conflito = conflitos[index];
+                        final gabinete = conflito['gabinete'] as Gabinete;
+                        final data = conflito['data'] as DateTime;
+                        final medico1 = conflito['medico1'] as Medico;
+                        final horario1 = conflito['horario1'] as String;
+                        final medico2 = conflito['medico2'] as Medico;
+                        final horario2 = conflito['horario2'] as String;
+                        return InkWell(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            // Garantir que a data está normalizada corretamente (sem horas/minutos/segundos)
+                            final dataNormalizada =
+                                DateTime(data.year, data.month, data.day);
+
+                            debugPrint(
+                                '🔍 [DEBUG] Clicou em conflito - navegando para data: ${dataNormalizada.day}/${dataNormalizada.month}/${dataNormalizada.year} (selectedDate antes: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year})');
+
+                            _onDateChanged(dataNormalizada);
+                          },
+                          child: Card(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            color: Colors.red.shade50,
+                            child: ListTile(
+                              leading:
+                                  const Icon(Icons.error, color: Colors.red),
+                              title: Text(
+                                '${gabinete.nome} - ${data.day}/${data.month}/${data.year}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${medico1.nome}: $horario1'),
+                                  Text('${medico2.nome}: $horario2'),
+                                ],
+                              ),
+                              isThreeLine: true,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // Fechar loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao carregar dados: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _desalocarMedicoComPergunta(String medicoId) async {
@@ -2666,6 +3372,50 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                                     color: MyAppTheme.azulEscuro,
                                   ),
                                 ),
+                                const Spacer(),
+                                // Ícone 1: Médicos não alocados no ano
+                                Tooltip(
+                                  message: 'Médicos não alocados no ano',
+                                  child: InkWell(
+                                    onTap: () =>
+                                        _mostrarMedicosNaoAlocadosAno(),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: MyAppTheme.azulEscuro
+                                            .withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.list_alt,
+                                        size: 18,
+                                        color: MyAppTheme.azulEscuro,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Ícone 2: Conflitos no ano
+                                Tooltip(
+                                  message: 'Conflitos de gabinete no ano',
+                                  child: InkWell(
+                                    onTap: () => _mostrarConflitosAno(),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.warning_amber_rounded,
+                                        size: 18,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           );
@@ -2681,6 +3431,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                         selectedDate: selectedDate,
                         onDesalocarMedico: (mId) =>
                             _desalocarMedicoDiaUnico(mId),
+                        // Só permitir edição se for administrador
+                        onEditarMedico: widget.isAdmin
+                            ? (medico) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => CadastroMedico(
+                                      medico: medico,
+                                      unidade: widget.unidade,
+                                    ),
+                                  ),
+                                );
+                              }
+                            : null,
                       ),
                     ),
                   ],
@@ -2725,6 +3489,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               onRealocacaoOtimista: _realocacaoOtimista,
               onRealocacaoConcluida: _limparFlagsTransicao,
               onAlocacaoSerieOtimista: _alocacaoSerieOtimista,
+              // Só permitir edição se for administrador
+              onEditarMedico: widget.isAdmin
+                  ? (medico) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CadastroMedico(
+                            medico: medico,
+                            unidade: widget.unidade,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
             ),
           ),
         ),
@@ -3157,11 +3935,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                 _onDateChanged(date);
               },
               onViewChanged: (visibleDate) {
-                // Quando o usuário navega no calendário, atualizar a data selecionada
+                // Atualizar a data visualizada no calendário (para uso no diálogo de médicos não alocados)
                 setState(() {
-                  selectedDate = visibleDate;
+                  _dataCalendarioVisualizada = visibleDate;
                 });
-                _onDateChanged(visibleDate);
               },
             ),
           ),

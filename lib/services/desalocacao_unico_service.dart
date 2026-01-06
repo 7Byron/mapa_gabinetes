@@ -60,7 +60,7 @@ class DesalocacaoUnicoService {
       AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
 
       return true;
-    } catch (e, stackTrace) {
+    } catch (e) {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

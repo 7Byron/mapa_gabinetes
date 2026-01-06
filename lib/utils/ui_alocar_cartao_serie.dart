@@ -124,7 +124,7 @@ Future<bool> alocarCartaoSerie({
     }
 
     return true;
-  } catch (e, stackTrace) {
+  } catch (e) {
 
     if (!context.mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(

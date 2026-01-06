@@ -370,7 +370,7 @@ class AlocacaoMedicosLogic {
         }).toList();
         if (dispsAntes != disps.length) {
           debugPrint(
-              '✅ [FILTRO EXCEÇÃO] Disponibilidades filtradas: ${dispsAntes} -> ${disps.length} (removidas ${dispsAntes - disps.length})');
+              '✅ [FILTRO EXCEÇÃO] Disponibilidades filtradas: $dispsAntes -> ${disps.length} (removidas ${dispsAntes - disps.length})');
         }
 
         // Filtrar alocações - remover todas as alocações de médicos com exceções canceladas
@@ -387,7 +387,7 @@ class AlocacaoMedicosLogic {
         }).toList();
         if (alocsAntes != alocs.length) {
           debugPrint(
-              '✅ [FILTRO EXCEÇÃO] Alocações filtradas: ${alocsAntes} -> ${alocs.length} (removidas ${alocsAntes - alocs.length})');
+              '✅ [FILTRO EXCEÇÃO] Alocações filtradas: $alocsAntes -> ${alocs.length} (removidas ${alocsAntes - alocs.length})');
         }
       }
 

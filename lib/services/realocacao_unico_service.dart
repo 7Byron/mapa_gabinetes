@@ -219,7 +219,7 @@ class RealocacaoUnicoService {
       await Future.delayed(const Duration(milliseconds: 300));
 
       return true;
-    } catch (e, stackTrace) {
+    } catch (e) {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

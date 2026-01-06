@@ -7,7 +7,6 @@ import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import 'serie_service.dart';
 import '../utils/alocacao_medicos_logic.dart';
-import 'dart:convert';
 
 /// Serviço para criar séries de recorrência em vez de cartões individuais
 class DisponibilidadeSerieService {

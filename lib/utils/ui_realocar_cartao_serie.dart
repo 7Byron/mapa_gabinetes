@@ -4,7 +4,6 @@ import '../models/unidade.dart';
 import '../models/serie_recorrencia.dart';
 import '../services/realocacao_serie_service.dart';
 import '../services/realocacao_unico_service.dart';
-import 'dart:convert';
 
 /// Função reutilizável para realocar um cartão de série de um gabinete para outro
 ///

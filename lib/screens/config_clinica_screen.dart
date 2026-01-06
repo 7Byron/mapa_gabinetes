@@ -3,6 +3,7 @@ import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:mapa_gabinetes/widgets/time_picker_dialog.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
+import '../utils/ui_atualizar_dia.dart';
 
 /// Tela para configurar horários de funcionamento da clínica
 /// Permite definir horários de abertura e fechamento para cada dia da semana
@@ -188,6 +189,12 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
       await horariosRef.doc('config').set(configData);
       debugPrint('Configurações de encerramento salvas');
+
+      // Invalidar cache de horários e configurações após salvar
+      if (widget.unidade != null) {
+        invalidateCacheEncerramento(widget.unidade!.id);
+        debugPrint('🗑️ Cache de horários invalidado após salvar alterações');
+      }
 
       if (!mounted) return;
     } catch (e) {

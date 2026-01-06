@@ -15,7 +15,6 @@ import '../services/alocacao_unica_service.dart';
 import '../services/realocacao_unico_service.dart';
 import '../services/realocacao_serie_service.dart';
 import '../utils/ui_alocar_cartao_serie.dart';
-import 'dart:convert';
 
 class GabinetesSection extends StatefulWidget {
   final List<Gabinete> gabinetes;
@@ -29,6 +28,7 @@ class GabinetesSection extends StatefulWidget {
   final Set<String>
       medicosDestacados; // IDs dos médicos destacados pela pesquisa
   final Unidade? unidade; // Unidade para buscar disponibilidades do Firebase
+  final Function(Medico)? onEditarMedico; // Callback para editar médico
 
   /// Função que aloca UM médico em UM gabinete em UM dia específico
   final Future<void> Function(
@@ -68,6 +68,7 @@ class GabinetesSection extends StatefulWidget {
     this.onRealocacaoOtimista, // Callback opcional para atualização otimista
     this.onRealocacaoConcluida, // Callback opcional para limpar flags após realocação
     this.onAlocacaoSerieOtimista, // Callback opcional para atualização otimista de alocação de série
+    this.onEditarMedico, // Callback opcional para editar médico
   });
 
   @override
@@ -1379,7 +1380,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                               ? Colors.orange.shade200
                                               : null;
 
-                                          return widget.isAdmin
+                                          final medicoCard = widget.isAdmin
                                               ? Draggable<String>(
                                                   data: medico.id,
                                                   feedback:
@@ -1418,6 +1419,18 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                                   true,
                                                   corDestaque: corDestaque,
                                                 );
+
+                                          // Adicionar GestureDetector para detectar tap (editar)
+                                          // Só permitir edição se for administrador
+                                          return widget.isAdmin && widget.onEditarMedico != null
+                                              ? GestureDetector(
+                                                  // Clique único para editar (só aciona se não houver drag)
+                                                  onTap: () {
+                                                    widget.onEditarMedico!(medico);
+                                                  },
+                                                  child: medicoCard,
+                                                )
+                                              : medicoCard;
                                         }),
                                     ],
                                   ),

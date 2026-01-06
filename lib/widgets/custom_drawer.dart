@@ -8,6 +8,7 @@ import '../screens/lista_gabinetes.dart';
 import '../screens/config_clinica_screen.dart';
 import '../screens/dias_encerramento_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
+import '../screens/lista_alocacoes_screen.dart';
 
 /// Drawer personalizado com menu de navegação
 /// Inclui opções separadas para configurar horários e dias de encerramento
@@ -140,6 +141,24 @@ class CustomDrawer extends StatelessWidget {
                       MaterialPageRoute(
                           builder: (context) =>
                               DiasEncerramentoScreen(unidade: unidade)),
+                    ).then((_) => onRefresh());
+                  }
+                : null,
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.list_alt),
+            title: const Text('Gestão de Cartões de disponibilidade'),
+            enabled: isAdmin,
+            onTap: isAdmin
+                ? () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            ListaAlocacoesScreen(unidade: unidade),
+                      ),
                     ).then((_) => onRefresh());
                   }
                 : null,

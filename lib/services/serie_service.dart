@@ -11,6 +11,45 @@ import '../utils/alocacao_medicos_logic.dart';
 class SerieService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Cache de séries por unidade e médico (chave: unidadeId_medicoId)
+  // Esses dados mudam raramente, então podemos cacheá-los até serem invalidados
+  static final Map<String, List<SerieRecorrencia>> _cacheSeries = {};
+  static final Set<String> _cacheSeriesInvalidado = {};
+
+  /// Obtém séries do cache ou retorna null se não estiver em cache
+  static List<SerieRecorrencia>? getSeriesFromCache(String unidadeId, String medicoId) {
+    final key = '${unidadeId}_$medicoId';
+    if (_cacheSeriesInvalidado.contains(key)) return null;
+    return _cacheSeries[key];
+  }
+
+  /// Armazena séries no cache
+  static void setSeriesInCache(String unidadeId, String medicoId, List<SerieRecorrencia> series) {
+    final key = '${unidadeId}_$medicoId';
+    _cacheSeries[key] = List.from(series);
+    _cacheSeriesInvalidado.remove(key);
+    debugPrint('💾 [CACHE] Cache de séries atualizado para $key: ${series.length} séries');
+  }
+
+  /// Invalida o cache de séries para um médico específico (ou todos se medicoId for null)
+  static void invalidateCacheSeries(String unidadeId, [String? medicoId]) {
+    if (medicoId == null) {
+      // Invalidar todas as séries da unidade
+      final keysToInvalidate = _cacheSeries.keys.where((key) => key.startsWith('${unidadeId}_')).toList();
+      for (final key in keysToInvalidate) {
+        _cacheSeriesInvalidado.add(key);
+        _cacheSeries.remove(key);
+      }
+      debugPrint('🗑️ [CACHE] Cache de séries invalidado para unidade $unidadeId (todos os médicos)');
+    } else {
+      // Invalidar apenas para o médico específico
+      final key = '${unidadeId}_$medicoId';
+      _cacheSeriesInvalidado.add(key);
+      _cacheSeries.remove(key);
+      debugPrint('🗑️ [CACHE] Cache de séries invalidado para $key');
+    }
+  }
+
   /// Salva uma série de recorrência
   static Future<void> salvarSerie(
     SerieRecorrencia serie, {
@@ -28,6 +67,9 @@ class SerieService {
           .doc(serie.id);
 
       await serieRef.set(serie.toMap());
+      
+      // Invalidar cache de séries após salvar
+      invalidateCacheSeries(unidadeId, serie.medicoId);
       debugPrint('✅ Série salva: ${serie.id}');
     } catch (e) {
       debugPrint('❌ Erro ao salvar série: $e');
@@ -36,6 +78,7 @@ class SerieService {
   }
 
   /// Carrega todas as séries de um médico
+  /// OTIMIZAÇÃO: Usa cache persistente para evitar buscar do Firestore a cada mudança de dia
   static Future<List<SerieRecorrencia>> carregarSeries(
     String medicoId, {
     Unidade? unidade,
@@ -45,13 +88,33 @@ class SerieService {
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
 
+      // Verificar cache primeiro
+      final cached = getSeriesFromCache(unidadeId, medicoId);
+      if (cached != null) {
+        debugPrint('💾 [CACHE] Usando cache de séries para $unidadeId médico $medicoId');
+        // Filtrar por período se fornecido (mesmo com cache, precisamos filtrar)
+        final seriesFiltradas = <SerieRecorrencia>[];
+        for (final serie in cached) {
+          // Filtrar por período se fornecido
+          if (dataFim != null && serie.dataInicio.isAfter(dataFim)) {
+            continue;
+          }
+          if (dataInicio != null) {
+            if (serie.dataFim != null && serie.dataFim!.isBefore(dataInicio)) {
+              continue;
+            }
+          }
+          seriesFiltradas.add(serie);
+        }
+        return seriesFiltradas;
+      }
+
       final seriesRef = _firestore
           .collection('unidades')
           .doc(unidadeId)
           .collection('ocupantes')
           .doc(medicoId)
           .collection('series');
-
 
       // Se há filtro de data, tentar filtrar na query quando possível
       // Caso contrário, buscar todas e filtrar localmente
@@ -61,7 +124,6 @@ class SerieService {
           .where('ativo', isEqualTo: true)
           .get(const GetOptions(source: Source.serverAndCache));
       final series = <SerieRecorrencia>[];
-
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -91,6 +153,10 @@ class SerieService {
 
         series.add(serie);
       }
+
+      // Armazenar no cache (armazenar todas as séries, não apenas as filtradas)
+      // O filtro por período será feito quando necessário
+      setSeriesInCache(unidadeId, medicoId, series);
 
       return series;
     } catch (e) {
@@ -124,6 +190,9 @@ class SerieService {
         await serieRef.update({'ativo': false});
         debugPrint('✅ Série desativada: $serieId');
       }
+      
+      // Invalidar cache de séries após remover
+      invalidateCacheSeries(unidadeId, medicoId);
     } catch (e) {
       debugPrint('❌ Erro ao remover série: $e');
       rethrow;
@@ -157,6 +226,7 @@ class SerieService {
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(excecao.data.year, 1, 1));
       // CORREÇÃO: O cache de exceções já é limpo em invalidateCacheForDay
       // (_cacheExcecoes.clear() é chamado lá)
+      // NOTA: Não invalidar cache de séries aqui - exceções não mudam as séries em si
       
       debugPrint('✅ Exceção salva: ${excecao.id}');
     } catch (e) {

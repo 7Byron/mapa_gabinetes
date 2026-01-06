@@ -48,7 +48,7 @@ firebase deploy --only hosting
 git status
 git add .
 git status
-git commit -m "feat: descrição do commit
+git commit 
 git push origin master
 
 

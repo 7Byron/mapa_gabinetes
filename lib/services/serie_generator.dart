@@ -194,9 +194,9 @@ class SerieGenerator {
           final dataKey = _dataKey(serie.dataInicio);
           final chave = '${serie.id}_$dataKey';
           final excecao = excecoesMap[chave];
-          if (excecao?.cancelada ?? false) {
-            // Cancelada, não adicionar
-          } else {
+          // Se cancelada e série não está alocada (não tem gabineteId), não adicionar
+          // Se série está alocada (tem gabineteId), gerar disponibilidade mesmo se cancelada (para aparecer como não alocado)
+          if (!(excecao?.cancelada ?? false) || serie.gabineteId != null) {
             cartoes.add(Disponibilidade(
               id: 'serie_${serie.id}_$dataKey',
               medicoId: serie.medicoId,
@@ -251,10 +251,14 @@ class SerieGenerator {
       final chave = '${serie.id}_$dataKey';
       final excecao = excecoesMap[chave];
 
-      // Se cancelada, pular
+      // Se cancelada e série não está alocada (não tem gabineteId), pular
+      // Se série está alocada (tem gabineteId), gerar disponibilidade mesmo se cancelada (para aparecer como não alocado)
       if (excecao?.cancelada ?? false) {
-        dataAtual = dataAtual.add(const Duration(days: 7));
-        continue;
+        if (serie.gabineteId == null) {
+          dataAtual = dataAtual.add(const Duration(days: 7));
+          continue;
+        }
+        // Se tem gabineteId, continuar para gerar disponibilidade
       }
 
       cartoes.add(Disponibilidade(
@@ -301,7 +305,9 @@ class SerieGenerator {
 
         // Removido log excessivo para melhorar performance
 
-        if (!(excecao?.cancelada ?? false)) {
+        // Se cancelada e série não está alocada (não tem gabineteId), pular
+        // Se série está alocada (tem gabineteId), gerar disponibilidade mesmo se cancelada (para aparecer como não alocado)
+        if (!(excecao?.cancelada ?? false) || serie.gabineteId != null) {
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
             medicoId: serie.medicoId,
@@ -360,7 +366,9 @@ class SerieGenerator {
               '🔍 _gerarMensal: Exceção encontrada para data $dataKey, chave=$chave, gabinete=${excecao.gabineteId}');
         }
 
-        if (!(excecao?.cancelada ?? false)) {
+        // Se cancelada e série não está alocada (não tem gabineteId), pular
+        // Se série está alocada (tem gabineteId), gerar disponibilidade mesmo se cancelada (para aparecer como não alocado)
+        if (!(excecao?.cancelada ?? false) || serie.gabineteId != null) {
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
             medicoId: serie.medicoId,
@@ -399,7 +407,9 @@ class SerieGenerator {
         final chave = '${serie.id}_$dataKey';
         final excecao = excecoesMap[chave];
 
-        if (!(excecao?.cancelada ?? false)) {
+        // Se cancelada e série não está alocada (não tem gabineteId), pular
+        // Se série está alocada (tem gabineteId), gerar disponibilidade mesmo se cancelada (para aparecer como não alocado)
+        if (!(excecao?.cancelada ?? false) || serie.gabineteId != null) {
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
             medicoId: serie.medicoId,

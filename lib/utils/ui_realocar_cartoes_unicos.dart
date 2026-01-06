@@ -3,7 +3,6 @@ import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart' as logic;
-import 'dart:convert';
 
 /// Função reutilizável para realocar um cartão único de um gabinete para outro
 /// 

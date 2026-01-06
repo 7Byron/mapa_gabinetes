@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/alocacao.dart';
 import '../models/medico.dart';
-import 'dart:convert';
 
 /// Função reutilizável para atualizar a UI ao alocar um cartão único
 /// 

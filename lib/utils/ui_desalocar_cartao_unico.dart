@@ -4,7 +4,6 @@ import '../models/disponibilidade.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart' as logic;
-import 'dart:convert';
 
 /// Função reutilizável para desalocar um cartão único de um gabinete para a lista de desalocados
 /// 

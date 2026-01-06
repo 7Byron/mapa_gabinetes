@@ -84,7 +84,7 @@ class AlocacaoUnicaService {
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
 
       return true;
-    } catch (e, stackTrace) {
+    } catch (e) {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

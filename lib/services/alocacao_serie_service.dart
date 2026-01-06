@@ -236,7 +236,7 @@ class AlocacaoSerieService {
       onAtualizarEstado();
 
       return true;
-    } catch (e, stackTrace) {
+    } catch (e) {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

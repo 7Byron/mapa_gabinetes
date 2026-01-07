@@ -84,7 +84,7 @@ class _CacheEncerramento {
       _cacheDiasEncerramento.remove(keyEncerramentos);
       _cacheInvalidado.add(keyFeriados);
       _cacheInvalidado.add(keyEncerramentos);
-      debugPrint('🗑️ [CACHE] Cache de encerramento invalidado para ${unidadeId} ano $ano');
+      debugPrint('🗑️ [CACHE] Cache de encerramento invalidado para $unidadeId ano $ano');
     } else {
       // Invalidar todas as chaves relacionadas a esta unidade
       final keysToInvalidate = <String>[];

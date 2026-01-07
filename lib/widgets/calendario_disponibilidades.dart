@@ -261,11 +261,9 @@ class _CalendarioDisponibilidadesState
         DateFormat('MMMM', 'pt_PT').format(displayDate));
     final ano = displayDate.year.toString();
 
-    return Card(
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
           children: [
             // Header customizado com mês em português e ano destacado
             Padding(
@@ -297,11 +295,22 @@ class _CalendarioDisponibilidadesState
                     }).toList(),
                     onChanged: (int? novoAno) {
                       if (novoAno != null) {
-                        final novaData =
-                            DateTime(novoAno, displayDate.month, 1);
+                        // CORREÇÃO: Manter o mesmo mês e dia ao mudar apenas o ano
+                        final diaAtual = displayDate.day;
+                        final mesAtual = displayDate.month;
+                        // Garantir que o dia existe no novo mês/ano (ex: 29/02 em ano não bissexto)
+                        final ultimoDiaDoMes = DateTime(novoAno, mesAtual + 1, 0).day;
+                        final diaFinal = diaAtual <= ultimoDiaDoMes ? diaAtual : ultimoDiaDoMes;
+                        final novaData = DateTime(novoAno, mesAtual, diaFinal);
+                        
+                        // Marcar como atualização programática para evitar conflitos
+                        _lastProgrammaticDate = novaData;
+                        
                         setState(() {});
                         _calendarController.displayDate = novaData;
-                        _calendarController.forward!();
+                        // CORREÇÃO: Não chamar forward!() pois isso avança o mês
+                        // Apenas atualizar o displayDate é suficiente
+                        
                         // Notificar mudança
                         if (widget.onViewChanged != null) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -584,7 +593,6 @@ class _CalendarioDisponibilidadesState
             ),
           ],
         ),
-      ),
     );
   }
 }

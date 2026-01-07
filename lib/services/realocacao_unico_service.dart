@@ -11,7 +11,6 @@ import '../models/excecao_serie.dart';
 import '../utils/alocacao_medicos_logic.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../services/serie_service.dart';
-import 'dart:convert';
 
 class RealocacaoUnicoService {
   /// Realoca um médico de um gabinete para outro em uma data específica

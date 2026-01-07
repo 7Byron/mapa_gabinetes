@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../utils/series_helper.dart';
@@ -69,13 +70,23 @@ class ExcecaoSerieCriacaoService {
               e.data.day == dataAtual.day);
 
           if (!jaExiste) {
+            // CORREÇÃO CRÍTICA: Normalizar a data antes de criar a exceção
+            // Isso garante correspondência exata na busca
+            final dataNormalizada = DateTime(
+              dataAtual.year,
+              dataAtual.month,
+              dataAtual.day,
+            );
+            
             final excecao = ExcecaoSerie(
               id: excecaoId,
               serieId: serie.id,
-              data: dataAtual,
+              data: dataNormalizada,
               cancelada: true,
             );
 
+            debugPrint('➕ [CRIAR EXCEÇÃO] Série=${serie.id}, Data=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, Chave esperada=${serie.id}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
+            
             onExcecaoCriada(excecao);
             totalExcecoesCriadas++;
           }
@@ -115,13 +126,23 @@ class ExcecaoSerieCriacaoService {
             e.data.day == dataAtual.day);
 
         if (!jaExiste) {
+          // CORREÇÃO CRÍTICA: Normalizar a data antes de criar a exceção
+          // Isso garante correspondência exata na busca
+          final dataNormalizada = DateTime(
+            dataAtual.year,
+            dataAtual.month,
+            dataAtual.day,
+          );
+          
           final excecao = ExcecaoSerie(
             id: excecaoId,
             serieId: serie.id,
-            data: dataAtual,
+            data: dataNormalizada,
             cancelada: true,
           );
 
+          debugPrint('➕ [CRIAR EXCEÇÃO SÉRIE] Série=${serie.id}, Data=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, Chave esperada=${serie.id}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
+          
           onExcecaoCriada(excecao);
           excecoesCriadas++;
         }

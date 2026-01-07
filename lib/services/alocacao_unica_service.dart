@@ -10,7 +10,6 @@ import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart';
 import '../utils/series_helper.dart';
 import '../services/disponibilidade_serie_service.dart';
-import 'dart:convert';
 
 class AlocacaoUnicaService {
   /// Aloca um médico dos desalocados para um gabinete em uma data específica

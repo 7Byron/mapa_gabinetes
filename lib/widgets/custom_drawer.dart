@@ -148,7 +148,7 @@ class CustomDrawer extends StatelessWidget {
 
           ListTile(
             leading: const Icon(Icons.list_alt),
-            title: const Text('Gestão de Cartões de disponibilidade'),
+            title: const Text('Cartões de disponibilidade'),
             enabled: isAdmin,
             onTap: isAdmin
                 ? () {

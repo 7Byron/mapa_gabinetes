@@ -1,5 +1,7 @@
 // import '../database/database_helper.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import '../utils/debug_log_file.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/gabinete.dart';
@@ -283,6 +285,23 @@ class AlocacaoMedicosLogic {
   }) async {
     debugPrint(
         '🚀 [DEBUG] carregarDadosIniciais INICIADO com dataFiltroDia: ${dataFiltroDia != null ? "${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year}" : "null"}');
+    // #region agent log
+    try {
+      final logEntry = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'location': 'alocacao_medicos_logic.dart:284',
+        'message': 'carregarDadosIniciais INICIADO',
+        'data': {
+          'dataFiltroDia': dataFiltroDia?.toString(),
+          'reloadStatic': reloadStatic,
+          'hypothesisId': 'D'
+        },
+        'sessionId': 'debug-session',
+        'runId': 'run1',
+      };
+      writeLogToFile(jsonEncode(logEntry));
+    } catch (e) {}
+    // #endregion
     // Guardar estado inicial para preservar em caso de erro
     final gabinetesIniciais = List<Gabinete>.from(gabinetes);
     final medicosIniciais = List<Medico>.from(medicos);
@@ -324,11 +343,44 @@ class AlocacaoMedicosLogic {
           }
           debugPrint(
               '🔄 [CACHE] Buscando do Firestore para dia $key (temCacheDisp: $temCacheDisp, temCacheAloc: $temCacheAloc, estaInvalidado: $estaInvalidado, appEmFoco: $_appEmFoco)');
+          // #region agent log
+          try {
+            final logEntry = {
+              'timestamp': DateTime.now().millisecondsSinceEpoch,
+              'location': 'alocacao_medicos_logic.dart:327',
+              'message': 'Iniciando Future.wait para carregar disponibilidades e alocações',
+              'data': {
+                'key': key,
+                'hypothesisId': 'D'
+              },
+              'sessionId': 'debug-session',
+              'runId': 'run1',
+            };
+            writeLogToFile(jsonEncode(logEntry));
+          } catch (e) {}
+          // #endregion
           final results = await Future.wait([
             _carregarDisponibilidadesUnidade(unidade,
                 dataFiltroDia: dataFiltroDia),
             _carregarAlocacoesUnidade(unidade, dataFiltroDia: dataFiltroDia),
           ]);
+          // #region agent log
+          try {
+            final logEntry = {
+              'timestamp': DateTime.now().millisecondsSinceEpoch,
+              'location': 'alocacao_medicos_logic.dart:327',
+              'message': 'Future.wait concluído para disponibilidades e alocações',
+              'data': {
+                'numDisponibilidades': (results[0] as List).length,
+                'numAlocacoes': (results[1] as List).length,
+                'hypothesisId': 'D'
+              },
+              'sessionId': 'debug-session',
+              'runId': 'run1',
+            };
+            writeLogToFile(jsonEncode(logEntry));
+          } catch (e) {}
+          // #endregion
           disps = results[0] as List<Disponibilidade>;
           alocs = results[1] as List<Alocacao>;
           // CORREÇÃO CRÍTICA: Atualizar cache com dados buscados do servidor
@@ -1225,6 +1277,22 @@ class AlocacaoMedicosLogic {
         dataFim = DateTime(ano + 1, 1, 1);
       }
 
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'alocacao_medicos_logic.dart:1228',
+          'message': 'Carregando médicos ativos do Firestore',
+          'data': {
+            'unidadeId': unidade.id,
+            'hypothesisId': 'A'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
       // Carregar TODOS os médicos ativos do Firestore (usando cache)
       final medicosRef = firestore
           .collection('unidades')
@@ -1234,6 +1302,22 @@ class AlocacaoMedicosLogic {
           .where('ativo', isEqualTo: true)
           .get(const GetOptions(source: Source.serverAndCache));
       final medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'alocacao_medicos_logic.dart:1228',
+          'message': 'Médicos ativos carregados',
+          'data': {
+            'numMedicos': medicoIds.length,
+            'hypothesisId': 'A'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
 
       if (medicoIds.isEmpty) {
         return disponibilidadesMap.values.toList();
@@ -1276,6 +1360,22 @@ class AlocacaoMedicosLogic {
               dataFimParaCarregarSeries = DateTime(ano + 1, 1, 1);
             }
 
+            // #region agent log
+            try {
+              final logEntry = {
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'location': 'alocacao_medicos_logic.dart:1280',
+                'message': 'Chamando SerieService.carregarSeries',
+                'data': {
+                  'medicoId': medicoId,
+                  'hypothesisId': 'C'
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+              };
+              writeLogToFile(jsonEncode(logEntry));
+            } catch (e) {}
+            // #endregion
             // SEMPRE buscar do servidor (cache removido)
             final series = await SerieService.carregarSeries(
               medicoId,
@@ -1283,6 +1383,23 @@ class AlocacaoMedicosLogic {
               dataInicio: dataInicioParaCarregarSeries,
               dataFim: dataFimParaCarregarSeries,
             );
+            // #region agent log
+            try {
+              final logEntry = {
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'location': 'alocacao_medicos_logic.dart:1280',
+                'message': 'SerieService.carregarSeries concluído',
+                'data': {
+                  'medicoId': medicoId,
+                  'numSeries': series.length,
+                  'hypothesisId': 'C'
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+              };
+              writeLogToFile(jsonEncode(logEntry));
+            } catch (e) {}
+            // #endregion
 
             if (series.isEmpty) {
               return <Disponibilidade>[];
@@ -1342,6 +1459,22 @@ class AlocacaoMedicosLogic {
               // Usar exceções do cache (evita chamadas duplicadas ao Firestore)
               excecoes = _cacheExcecoes[cacheKey]!;
             } else {
+              // #region agent log
+              try {
+                final logEntry = {
+                  'timestamp': DateTime.now().millisecondsSinceEpoch,
+                  'location': 'alocacao_medicos_logic.dart:1346',
+                  'message': 'Chamando SerieService.carregarExcecoes',
+                  'data': {
+                    'medicoId': medicoId,
+                    'hypothesisId': 'C'
+                  },
+                  'sessionId': 'debug-session',
+                  'runId': 'run1',
+                };
+                writeLogToFile(jsonEncode(logEntry));
+              } catch (e) {}
+              // #endregion
               // Carregar do Firestore e armazenar no cache
               excecoes = await SerieService.carregarExcecoes(
                 medicoId,
@@ -1351,6 +1484,23 @@ class AlocacaoMedicosLogic {
                 forcarServidor:
                     false, // Usar cache do Firestore para melhor performance
               );
+              // #region agent log
+              try {
+                final logEntry = {
+                  'timestamp': DateTime.now().millisecondsSinceEpoch,
+                  'location': 'alocacao_medicos_logic.dart:1346',
+                  'message': 'SerieService.carregarExcecoes concluído',
+                  'data': {
+                    'medicoId': medicoId,
+                    'numExcecoes': excecoes.length,
+                    'hypothesisId': 'C'
+                  },
+                  'sessionId': 'debug-session',
+                  'runId': 'run1',
+                };
+                writeLogToFile(jsonEncode(logEntry));
+              } catch (e) {}
+              // #endregion
               _cacheExcecoes[cacheKey] = excecoes;
             }
 
@@ -1388,6 +1538,26 @@ class AlocacaoMedicosLogic {
               dataInicioGeracao = DateTime(ano, 1, 1);
               dataFimGeracao = DateTime(ano + 1, 1, 1);
             }
+            // #region agent log
+            try {
+              final logEntry = {
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'location': 'alocacao_medicos_logic.dart:1392',
+                'message': 'Chamando SerieGenerator.gerarDisponibilidades',
+                'data': {
+                  'medicoId': medicoId,
+                  'numSeries': seriesRelevantes.length,
+                  'numExcecoes': excecoesFiltradas.length,
+                  'dataInicio': dataInicioGeracao.toString(),
+                  'dataFim': dataFimGeracao.toString(),
+                  'hypothesisId': 'B'
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+              };
+              writeLogToFile(jsonEncode(logEntry));
+            } catch (e) {}
+            // #endregion
             // Usar apenas séries relevantes (já filtradas acima)
             final dispsGeradas = SerieGenerator.gerarDisponibilidades(
               series: seriesRelevantes,
@@ -1395,6 +1565,23 @@ class AlocacaoMedicosLogic {
               dataInicio: dataInicioGeracao,
               dataFim: dataFimGeracao,
             );
+            // #region agent log
+            try {
+              final logEntry = {
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'location': 'alocacao_medicos_logic.dart:1392',
+                'message': 'SerieGenerator.gerarDisponibilidades concluído',
+                'data': {
+                  'medicoId': medicoId,
+                  'numDisponibilidades': dispsGeradas.length,
+                  'hypothesisId': 'B'
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+              };
+              writeLogToFile(jsonEncode(logEntry));
+            } catch (e) {}
+            // #endregion
 
             medicosComSeries.add(medicoId);
 
@@ -1413,9 +1600,58 @@ class AlocacaoMedicosLogic {
 
       // Aguardar todas as cargas em paralelo e coletar resultados
       // Future.wait é otimizado para lidar com muitas futures eficientemente
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'alocacao_medicos_logic.dart:1416',
+          'message': 'Iniciando Future.wait para carregar disponibilidades',
+          'data': {
+            'numFutures': futures.length,
+            'numMedicos': medicoIds.length,
+            'hypothesisId': 'A'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
       final resultados = await Future.wait(futures);
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'alocacao_medicos_logic.dart:1416',
+          'message': 'Future.wait concluído',
+          'data': {
+            'numResultados': resultados.length,
+            'hypothesisId': 'A'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
 
 
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'alocacao_medicos_logic.dart:1419',
+          'message': 'Mesclando resultados',
+          'data': {
+            'numResultados': resultados.length,
+            'hypothesisId': 'A'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
       // Mesclar todos os resultados no Map para evitar duplicatas
       for (final resultado in resultados) {
         for (final disp in resultado) {
@@ -1425,6 +1661,22 @@ class AlocacaoMedicosLogic {
               disp; // Sobrescreve se já existir (evita duplicatas)
         }
       }
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'alocacao_medicos_logic.dart:1419',
+          'message': 'Mesclagem concluída',
+          'data': {
+            'numDisponibilidades': disponibilidadesMap.length,
+            'hypothesisId': 'A'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
 
     } catch (e) {
       debugPrint('❌ Erro ao carregar disponibilidades: $e');

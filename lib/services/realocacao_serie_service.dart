@@ -11,7 +11,6 @@ import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../services/serie_service.dart';
-import 'dart:convert';
 
 class RealocacaoSerieService {
   /// Realoca um médico de um gabinete para outro em toda a série

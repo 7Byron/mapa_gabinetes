@@ -48,7 +48,7 @@ firebase deploy --only hosting
 git status
 git add .
 git status
-git commit 
+git commit -m "Atualizou data"
 git push origin master
 
 

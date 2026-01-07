@@ -3,7 +3,6 @@ import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import '../services/alocacao_unica_service.dart';
 import '../services/alocacao_serie_service.dart';
-import 'dart:convert';
 
 /// Função reutilizável para alocar um cartão de série
 /// 

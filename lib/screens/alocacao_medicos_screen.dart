@@ -2113,35 +2113,126 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         progressoAtual = 0.50;
       });
 
-      // Carregar todas as alocações (carregarAlocacoesUnidade carrega o ano atual quando dataFiltroDia é null)
-      // Se o ano selecionado for diferente do atual, vamos usar as alocações carregadas e filtrar
-      final todasAlocacoesTemp =
-          await logic.AlocacaoMedicosLogic.carregarAlocacoesUnidade(
-              widget.unidade);
-
-      // Filtrar apenas alocações do ano selecionado
-      final todasAlocacoes =
-          todasAlocacoesTemp.where((a) => a.data.year == ano).toList();
+      // CORREÇÃO: Carregar TODAS as alocações do ano diretamente do servidor (sem cache)
+      // Usar uma query direta ao Firestore para garantir que carregamos todos os dados do ano
+      final firestore = FirebaseFirestore.instance;
+      final todasAlocacoes = <Alocacao>[];
+      
+      final alocacoesRef = firestore
+          .collection('unidades')
+          .doc(widget.unidade.id)
+            .collection('alocacoes')
+            .doc(ano.toString())
+            .collection('registos');
+      
+      // Carregar TODAS as alocações do ano do servidor (sem cache)
+      final registosSnapshot = await alocacoesRef
+          .get(const GetOptions(source: Source.server));
+      
+        debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Carregadas ${registosSnapshot.docs.length} alocações do ano $ano do servidor');
+        
+        for (final doc in registosSnapshot.docs) {
+          final data = doc.data();
+          final alocacao = Alocacao.fromMap(data);
+          todasAlocacoes.add(alocacao);
+        }
+        
+        // CORREÇÃO CRÍTICA: Gerar alocações de séries para TODO o ano
+        // Não usar carregarAlocacoesUnidade com dataFiltroDia porque isso limita apenas para aquele dia
+        try {
+          final alocacoesGeradasAno = <Alocacao>[];
+          
+          // Carregar todos os médicos ativos
+          final medicosRef = firestore
+              .collection('unidades')
+              .doc(widget.unidade.id)
+              .collection('ocupantes')
+              .where('ativo', isEqualTo: true);
+          final medicosSnapshot = await medicosRef
+              .get(const GetOptions(source: Source.server));
+          final medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+          
+          // Período para gerar alocações (todo o ano)
+          final dataInicioAno = DateTime(ano, 1, 1);
+          final dataFimAno = DateTime(ano + 1, 1, 1);
+          
+          // Processar médicos em paralelo
+          final futures = <Future<List<Alocacao>>>[];
+          for (final medicoId in medicoIds) {
+            futures.add((() async {
+              // Carregar séries do médico que podem gerar alocações no ano
+              final series = await SerieService.carregarSeries(
+                medicoId,
+                unidade: widget.unidade,
+                dataInicio: dataInicioAno,
+                dataFim: dataFimAno,
+              );
+              
+              // Filtrar apenas séries com gabineteId (que geram alocações)
+              final seriesComGabinete = series
+                  .where((s) => s.gabineteId != null)
+                  .toList();
+              
+              if (seriesComGabinete.isEmpty) return <Alocacao>[];
+              
+              // Carregar exceções do médico para o ano
+              final excecoes = await SerieService.carregarExcecoes(
+                medicoId,
+                unidade: widget.unidade,
+                dataInicio: dataInicioAno,
+                dataFim: dataFimAno,
+                forcarServidor: false,
+              );
+              
+              // Gerar alocações de séries para todo o ano
+              return SerieGenerator.gerarAlocacoes(
+                series: seriesComGabinete,
+                dataInicio: dataInicioAno,
+                dataFim: dataFimAno,
+                excecoes: excecoes,
+              );
+            })());
+          }
+          
+          final resultados = await Future.wait(futures);
+          for (final resultado in resultados) {
+            alocacoesGeradasAno.addAll(resultado);
+          }
+          
+          debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Geradas ${alocacoesGeradasAno.length} alocações de séries para o ano $ano');
+        
+        // Mesclar evitando duplicados
+        final alocacoesMap = <String, Alocacao>{};
+        for (final aloc in todasAlocacoes) {
+          final chave = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+          alocacoesMap[chave] = aloc;
+        }
+        for (final aloc in alocacoesGeradasAno) {
+          final chave = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+          alocacoesMap[chave] = aloc;
+        }
+        todasAlocacoes.clear();
+        todasAlocacoes.addAll(alocacoesMap.values);
+        
+        debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Total após mesclar com séries: ${todasAlocacoes.length} alocações');
+      } catch (e) {
+        debugPrint('⚠️ [MÉDICOS NÃO ALOCADOS] Erro ao carregar alocações de séries: $e');
+      }
 
       // Atualizar progresso para 70%
       setStateDialog?.call(() {
         progressoAtual = 0.70;
       });
 
-      // Identificar médicos com disponibilidade mas não alocados
+      // CORREÇÃO: Identificar médicos com disponibilidade e verificar dia a dia
+      // Não excluir médicos que têm pelo menos uma alocação - eles podem ter outros dias não alocados
       final medicosComDisponibilidade = todasDisponibilidades
           .where((d) => d.data.year == ano)
           .map((d) => d.medicoId)
           .toSet();
 
-      final medicosAlocados = todasAlocacoes
-          .where((a) => a.data.year == ano)
-          .map((a) => a.medicoId)
-          .toSet();
-
-      final medicosNaoAlocadosIds = medicosComDisponibilidade
-          .where((id) => !medicosAlocados.contains(id))
-          .toList();
+      // Incluir TODOS os médicos com disponibilidade (não filtrar por terem alocações)
+      final medicosNaoAlocadosIds = medicosComDisponibilidade.toList();
 
       // Buscar informações dos médicos
       final medicosNaoAlocados = medicosNaoAlocadosIds
@@ -2195,6 +2286,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         }
       }
       
+      // CORREÇÃO: Filtrar apenas médicos que realmente têm dias não alocados
+      final medicosComDiasNaoAlocados = medicosNaoAlocados
+          .where((m) => (medicosComDias[m.id] ?? 0) > 0)
+          .toList();
+      
       // Finalizar progresso: 95% -> 100%
       setStateDialog?.call(() {
         progressoAtual = 1.0;
@@ -2241,13 +2337,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             ),
             content: SizedBox(
               width: 600,
-                child: medicosNaoAlocados.isEmpty
+                child: medicosComDiasNaoAlocados.isEmpty
                     ? const Text('Não há médicos não alocados no ano.')
                     : ListView.builder(
                         shrinkWrap: true,
-                        itemCount: medicosNaoAlocados.length,
+                        itemCount: medicosComDiasNaoAlocados.length,
                         itemBuilder: (context, index) {
-                          final medico = medicosNaoAlocados[index];
+                          final medico = medicosComDiasNaoAlocados[index];
                           final numDias = medicosComDias[medico.id] ?? 0;
                           final datas = medicosComDatas[medico.id] ?? [];
 
@@ -2463,15 +2559,111 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         progressoAtual = 0.10;
       });
 
-      // Carregar todas as alocações (carregarAlocacoesUnidade carrega o ano atual quando dataFiltroDia é null)
-      // Se o ano selecionado for diferente do atual, vamos usar as alocações carregadas e filtrar
-      final todasAlocacoesTemp =
-          await logic.AlocacaoMedicosLogic.carregarAlocacoesUnidade(
-              widget.unidade);
-
-      // Filtrar apenas alocações do ano selecionado
-      final todasAlocacoes =
-          todasAlocacoesTemp.where((a) => a.data.year == ano).toList();
+      // CORREÇÃO: Carregar TODAS as alocações do ano diretamente do servidor (sem cache)
+      // Usar uma query direta ao Firestore para garantir que carregamos todos os dados do ano
+      final firestore = FirebaseFirestore.instance;
+      final todasAlocacoes = <Alocacao>[];
+      
+      final alocacoesRef = firestore
+          .collection('unidades')
+          .doc(widget.unidade.id)
+          .collection('alocacoes')
+          .doc(ano.toString())
+          .collection('registos');
+      
+      // Carregar TODAS as alocações do ano do servidor (sem cache)
+      final registosSnapshot = await alocacoesRef
+          .get(const GetOptions(source: Source.server));
+      
+        debugPrint('🔍 [CONFLITOS] Carregadas ${registosSnapshot.docs.length} alocações do ano $ano do servidor');
+        
+        for (final doc in registosSnapshot.docs) {
+          final data = doc.data();
+          final alocacao = Alocacao.fromMap(data);
+          todasAlocacoes.add(alocacao);
+        }
+        
+        // CORREÇÃO CRÍTICA: Gerar alocações de séries para TODO o ano
+        // Não usar carregarAlocacoesUnidade com dataFiltroDia porque isso limita apenas para aquele dia
+        try {
+          final alocacoesGeradasAno = <Alocacao>[];
+          
+          // Carregar todos os médicos ativos
+          final medicosRef = firestore
+              .collection('unidades')
+              .doc(widget.unidade.id)
+              .collection('ocupantes')
+              .where('ativo', isEqualTo: true);
+          final medicosSnapshot = await medicosRef
+              .get(const GetOptions(source: Source.server));
+          final medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+          
+          // Período para gerar alocações (todo o ano)
+          final dataInicioAno = DateTime(ano, 1, 1);
+          final dataFimAno = DateTime(ano + 1, 1, 1);
+          
+          // Processar médicos em paralelo
+          final futures = <Future<List<Alocacao>>>[];
+          for (final medicoId in medicoIds) {
+            futures.add((() async {
+              // Carregar séries do médico que podem gerar alocações no ano
+              final series = await SerieService.carregarSeries(
+                medicoId,
+                unidade: widget.unidade,
+                dataInicio: dataInicioAno,
+                dataFim: dataFimAno,
+              );
+              
+              // Filtrar apenas séries com gabineteId (que geram alocações)
+              final seriesComGabinete = series
+                  .where((s) => s.gabineteId != null)
+                  .toList();
+              
+              if (seriesComGabinete.isEmpty) return <Alocacao>[];
+              
+              // Carregar exceções do médico para o ano
+              final excecoes = await SerieService.carregarExcecoes(
+                medicoId,
+                unidade: widget.unidade,
+                dataInicio: dataInicioAno,
+                dataFim: dataFimAno,
+                forcarServidor: false,
+              );
+              
+              // Gerar alocações de séries para todo o ano
+              return SerieGenerator.gerarAlocacoes(
+                series: seriesComGabinete,
+                dataInicio: dataInicioAno,
+                dataFim: dataFimAno,
+                excecoes: excecoes,
+              );
+            })());
+          }
+          
+          final resultados = await Future.wait(futures);
+          for (final resultado in resultados) {
+            alocacoesGeradasAno.addAll(resultado);
+          }
+          
+          debugPrint('🔍 [CONFLITOS] Geradas ${alocacoesGeradasAno.length} alocações de séries para o ano $ano');
+        
+        // Mesclar evitando duplicados
+        final alocacoesMap = <String, Alocacao>{};
+        for (final aloc in todasAlocacoes) {
+          final chave = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+          alocacoesMap[chave] = aloc;
+        }
+        for (final aloc in alocacoesGeradasAno) {
+          final chave = '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+          alocacoesMap[chave] = aloc;
+        }
+        todasAlocacoes.clear();
+        todasAlocacoes.addAll(alocacoesMap.values);
+        
+        debugPrint('🔍 [CONFLITOS] Total após mesclar com séries: ${todasAlocacoes.length} alocações');
+      } catch (e) {
+        debugPrint('⚠️ [CONFLITOS] Erro ao carregar alocações de séries: $e');
+      }
 
       // Atualizar progresso para 40%
       setStateDialog?.call(() {
@@ -2500,15 +2692,88 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       for (final entry in alocacoesPorGabineteEData.entries) {
         final alocs = entry.value;
-        if (alocs.length >= 2 && ConflictUtils.temConflitoGabinete(alocs)) {
+        
+        // CORREÇÃO: Remover alocações otimistas quando há alocações reais correspondentes
+        // Isso previne conflitos falsos causados por alocações otimistas duplicadas
+        // Também remover duplicados exatos (mesma alocação com IDs diferentes)
+        final alocacoesFiltradas = <Alocacao>[];
+        final chavesAdicionadas = <String>{};
+        
+        for (final aloc in alocs) {
+          // Criar chave única baseada em médico, gabinete, data e horários
+          final chave = '${aloc.medicoId}_${aloc.gabineteId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.horarioInicio}_${aloc.horarioFim}';
+          
+          // Se já existe uma alocação com esta chave, verificar qual manter
+          if (chavesAdicionadas.contains(chave)) {
+            // Já existe uma alocação idêntica - verificar se devemos substituir
+            final indiceExistente = alocacoesFiltradas.indexWhere((a) {
+              return a.medicoId == aloc.medicoId &&
+                  a.gabineteId == aloc.gabineteId &&
+                  a.data.year == aloc.data.year &&
+                  a.data.month == aloc.data.month &&
+                  a.data.day == aloc.data.day &&
+                  a.horarioInicio == aloc.horarioInicio &&
+                  a.horarioFim == aloc.horarioFim;
+            });
+            
+            if (indiceExistente >= 0) {
+              final existente = alocacoesFiltradas[indiceExistente];
+              // Priorizar alocações reais sobre otimistas
+              if (aloc.id.startsWith('otimista_serie_') &&
+                  !existente.id.startsWith('otimista_')) {
+                // Nova é otimista e existente é real - manter a existente (real)
+                continue; // Não adicionar a otimista
+              } else if (!aloc.id.startsWith('otimista_') &&
+                  existente.id.startsWith('otimista_serie_')) {
+                // Nova é real e existente é otimista - substituir pela real
+                alocacoesFiltradas[indiceExistente] = aloc;
+                continue;
+              } else {
+                // Ambas são do mesmo tipo - manter a primeira (evitar duplicação)
+                continue;
+              }
+            }
+          }
+          
+          // Se é otimista, verificar se há alocação real correspondente
+          if (aloc.id.startsWith('otimista_serie_')) {
+            final temAlocacaoReal = alocs.any((a) {
+              return a != aloc && // Não comparar com ela mesma
+                  !a.id.startsWith('otimista_') &&
+                  a.medicoId == aloc.medicoId &&
+                  a.gabineteId == aloc.gabineteId &&
+                  a.data.year == aloc.data.year &&
+                  a.data.month == aloc.data.month &&
+                  a.data.day == aloc.data.day &&
+                  a.horarioInicio == aloc.horarioInicio &&
+                  a.horarioFim == aloc.horarioFim;
+            });
+            // Se há alocação real, ignorar a otimista (não adicionar à lista)
+            if (temAlocacaoReal) {
+              continue;
+            }
+          }
+          
+          // Adicionar à lista filtrada
+          alocacoesFiltradas.add(aloc);
+          chavesAdicionadas.add(chave);
+        }
+        
+        // Usar lista filtrada para verificar conflitos
+        if (alocacoesFiltradas.length >= 2 && ConflictUtils.temConflitoGabinete(alocacoesFiltradas)) {
           // Encontrar pares em conflito
-          for (int i = 0; i < alocs.length; i++) {
-            for (int j = i + 1; j < alocs.length; j++) {
-              if (ConflictUtils.temConflitoEntre(alocs[i], alocs[j])) {
+          for (int i = 0; i < alocacoesFiltradas.length; i++) {
+            for (int j = i + 1; j < alocacoesFiltradas.length; j++) {
+              // CORREÇÃO: Não reportar conflito se for o mesmo médico (evita "conflito consigo mesmo")
+              if (alocacoesFiltradas[i].medicoId == alocacoesFiltradas[j].medicoId) {
+                continue;
+              }
+              
+              if (ConflictUtils.temConflitoEntre(alocacoesFiltradas[i], alocacoesFiltradas[j])) {
                 final medico1 = medicos.firstWhere(
-                  (m) => m.id == alocs[i].medicoId,
+                  (m) => m.id == alocacoesFiltradas[i].medicoId,
                   orElse: () => Medico(
-                    id: alocs[i].medicoId,
+                    id: alocacoesFiltradas[i].medicoId,
                     nome: 'Desconhecido',
                     especialidade: '',
                     disponibilidades: [],
@@ -2516,9 +2781,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                   ),
                 );
                 final medico2 = medicos.firstWhere(
-                  (m) => m.id == alocs[j].medicoId,
+                  (m) => m.id == alocacoesFiltradas[j].medicoId,
                   orElse: () => Medico(
-                    id: alocs[j].medicoId,
+                    id: alocacoesFiltradas[j].medicoId,
                     nome: 'Desconhecido',
                     especialidade: '',
                     disponibilidades: [],
@@ -2526,23 +2791,23 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                   ),
                 );
                 final gabinete = gabinetes.firstWhere(
-                  (g) => g.id == alocs[i].gabineteId,
+                  (g) => g.id == alocacoesFiltradas[i].gabineteId,
                   orElse: () => Gabinete(
-                    id: alocs[i].gabineteId,
+                    id: alocacoesFiltradas[i].gabineteId,
                     setor: '',
-                    nome: alocs[i].gabineteId,
+                    nome: alocacoesFiltradas[i].gabineteId,
                     especialidadesPermitidas: [],
                   ),
                 );
                 conflitos.add({
                   'gabinete': gabinete,
-                  'data': alocs[i].data,
+                  'data': alocacoesFiltradas[i].data,
                   'medico1': medico1,
                   'horario1':
-                      '${alocs[i].horarioInicio} - ${alocs[i].horarioFim}',
+                      '${alocacoesFiltradas[i].horarioInicio} - ${alocacoesFiltradas[i].horarioFim}',
                   'medico2': medico2,
                   'horario2':
-                      '${alocs[j].horarioInicio} - ${alocs[j].horarioFim}',
+                      '${alocacoesFiltradas[j].horarioInicio} - ${alocacoesFiltradas[j].horarioFim}',
                 });
               }
             }
@@ -3243,6 +3508,155 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       children: [
         const SizedBox(height: 12),
 
+        // Widget de Estatísticas
+        Builder(
+          builder: (context) {
+            // Calcular estatísticas
+            final dataAlvo = DateTime(
+              selectedDate.year,
+              selectedDate.month,
+              selectedDate.day,
+            );
+            
+            // Médicos alocados no dia (médicos únicos)
+            final medicosAlocadosIds = alocacoes
+                .where((a) {
+                  final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                  return aDate == dataAlvo;
+                })
+                .map((a) => a.medicoId)
+                .toSet();
+            final numMedicosAlocados = medicosAlocadosIds.length;
+            
+            // Médicos por alocar
+            final numMedicosPorAlocar = medicosDisponiveis.length;
+            
+            // Gabinetes ocupados (gabinetes com pelo menos uma alocação no dia)
+            final gabinetesOcupadosIds = alocacoes
+                .where((a) {
+                  final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                  return aDate == dataAlvo;
+                })
+                .map((a) => a.gabineteId)
+                .toSet();
+            final numGabinetesOcupados = gabinetesOcupadosIds.length;
+            
+            // Gabinetes livres (total de gabinetes menos ocupados)
+            final numGabinetesLivres = gabinetes.length - numGabinetesOcupados;
+            
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 600;
+                
+                if (isNarrow) {
+                  // Layout em duas linhas para telas pequenas
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: MyAppTheme.cardBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: MyAppTheme.shadowCard,
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Expanded(
+                              child: _buildEstatisticaItem(
+                                numMedicosAlocados.toString(),
+                                'médicos alocados',
+                                MyAppTheme.azulEscuro,
+                              ),
+                            ),
+                            _buildDivisor(),
+                            Expanded(
+                              child: _buildEstatisticaItem(
+                                numMedicosPorAlocar.toString(),
+                                'médicos por alocar',
+                                MyAppTheme.laranja,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Expanded(
+                              child: _buildEstatisticaItem(
+                                numGabinetesOcupados.toString(),
+                                'gabinetes ocupados',
+                                MyAppTheme.verde,
+                              ),
+                            ),
+                            _buildDivisor(),
+                            Expanded(
+                              child: _buildEstatisticaItem(
+                                numGabinetesLivres.toString(),
+                                'gabinetes livres',
+                                MyAppTheme.cinzento,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                } else {
+                  // Layout em uma linha para telas maiores
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: MyAppTheme.cardBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: MyAppTheme.shadowCard,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Expanded(
+                          child: _buildEstatisticaItem(
+                            numMedicosAlocados.toString(),
+                            'médicos alocados',
+                            MyAppTheme.azulEscuro,
+                          ),
+                        ),
+                        _buildDivisor(),
+                        Expanded(
+                          child: _buildEstatisticaItem(
+                            numMedicosPorAlocar.toString(),
+                            'médicos por alocar',
+                            MyAppTheme.laranja,
+                          ),
+                        ),
+                        _buildDivisor(),
+                        Expanded(
+                          child: _buildEstatisticaItem(
+                            numGabinetesOcupados.toString(),
+                            'gabinetes ocupados',
+                            MyAppTheme.verde,
+                          ),
+                        ),
+                        _buildDivisor(),
+                        Expanded(
+                          child: _buildEstatisticaItem(
+                            numGabinetesLivres.toString(),
+                            'gabinetes livres',
+                            MyAppTheme.cinzento,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
+            );
+          },
+        ),
+
         // Seção de médicos disponíveis - apenas para administradores
         if (widget.isAdmin) ...[
           Builder(
@@ -3452,23 +3866,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               );
             },
           ),
-          // Separador visual elegante
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.transparent,
-                  Colors.grey.shade300,
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
         ],
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
         // Lista / Grade de Gabinetes
         Expanded(
@@ -3507,6 +3907,41 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           ),
         ),
       ],
+    );
+  }
+
+  // Métodos auxiliares para o widget de estatísticas
+  Widget _buildEstatisticaItem(String numero, String label, Color cor) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          numero,
+          style: MyAppTheme.heading2.copyWith(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: cor,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: MyAppTheme.bodySmall.copyWith(
+            fontSize: 11,
+            color: MyAppTheme.cinzento,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDivisor() {
+    return Container(
+      width: 1,
+      height: 40,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: Colors.grey.shade300,
     );
   }
 
@@ -3910,12 +4345,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           decoration: BoxDecoration(
             color: MyAppTheme.cardBackground,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: MyAppTheme.shadowCard,
+            border: Border.all(
+              color: Colors.grey.shade300,
+              width: 2,
+            ),
+            boxShadow: MyAppTheme.shadowCard3D,
           ),
           margin: const EdgeInsets.only(bottom: 16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: CalendarioDisponibilidades(
+          clipBehavior: Clip.none,
+          child: CalendarioDisponibilidades(
               diasSelecionados: [selectedDate],
               onAdicionarData: (date, tipo) {
                 // Não usado no modo apenas seleção
@@ -3942,19 +4380,21 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               },
             ),
           ),
-        ),
 
         // Filtros
         Container(
           decoration: BoxDecoration(
             color: MyAppTheme.cardBackground,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: MyAppTheme.shadowCard,
+            border: Border.all(
+              color: Colors.grey.shade300,
+              width: 2,
+            ),
+            boxShadow: MyAppTheme.shadowCard3D,
           ),
           margin: const EdgeInsets.only(bottom: 16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: FiltrosSection(
+          clipBehavior: Clip.none,
+          child: FiltrosSection(
               todosSetores: gabinetes.map((g) => g.setor).toSet().toList(),
               pisosSelecionados: pisosSelecionados,
               onTogglePiso: (setor, isSelected) {
@@ -3981,7 +4421,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
               especialidadesGabinetes: _getEspecialidadesGabinetes(),
             ),
           ),
-        ),
 
         // Pesquisa
         PesquisaSection(

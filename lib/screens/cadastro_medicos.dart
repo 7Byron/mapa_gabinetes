@@ -908,23 +908,50 @@ class CadastroMedicoState extends State<CadastroMedico> {
           }
 
           // Carregar exceções do médico no período
-          excecoesCarregadas = await SerieService.carregarExcecoes(
+          final excecoesDoFirestore = await SerieService.carregarExcecoes(
             medicoId,
             unidade: widget.unidade,
             dataInicio: dataInicio,
             dataFim: dataFim,
           );
 
-          // Atualizar lista de exceções no estado
+          // CORREÇÃO CRÍTICA: Mesclar exceções do Firestore com exceções locais (recém-criadas)
+          // para não perder exceções que foram adicionadas localmente mas ainda não foram salvas
+          final excecoesMap = <String, ExcecaoSerie>{};
+          
+          // Primeiro, adicionar exceções locais do ano (têm prioridade)
+          for (final excecaoLocal in excecoes) {
+            if (excecaoLocal.data.year == anoParaCarregar) {
+              final chave = '${excecaoLocal.serieId}_${excecaoLocal.data.year}-${excecaoLocal.data.month}-${excecaoLocal.data.day}';
+              excecoesMap[chave] = excecaoLocal;
+            }
+          }
+          
+          // Depois, adicionar exceções do Firestore do ano (só se não existir local)
+          for (final excecaoFirestore in excecoesDoFirestore) {
+            if (excecaoFirestore.data.year == anoParaCarregar) {
+              final chave = '${excecaoFirestore.serieId}_${excecaoFirestore.data.year}-${excecaoFirestore.data.month}-${excecaoFirestore.data.day}';
+              if (!excecoesMap.containsKey(chave)) {
+                excecoesMap[chave] = excecaoFirestore;
+              }
+            }
+          }
+          
+          excecoesCarregadas = excecoesMap.values.toList();
+
+          // Atualizar lista de exceções no estado (mesclando, não substituindo)
           if (mounted) {
             setState(() {
-              excecoes = excecoesCarregadas;
+              // Mesclar exceções: manter exceções de outros anos e adicionar/atualizar do ano atual
+              final excecoesOutrosAnos = excecoes.where((e) => e.data.year != anoParaCarregar).toList();
+              excecoes = [...excecoesOutrosAnos, ...excecoesCarregadas];
               progressoCarregamentoDisponibilidades =
                   seriesJaCarregadas ? 0.5 : 0.6;
             });
           }
         } else {
-          // Usar exceções já carregadas
+          // CORREÇÃO: Usar TODAS as exceções locais (incluindo recém-criadas) do ano
+          // Não apenas filtrar, mas garantir que temos todas as exceções atualizadas
           excecoesCarregadas =
               excecoes.where((e) => e.data.year == anoParaCarregar).toList();
 

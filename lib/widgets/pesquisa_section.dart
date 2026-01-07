@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_theme.dart';
 
 class PesquisaSection extends StatefulWidget {
   final String? pesquisaNome;
@@ -28,17 +29,17 @@ class _PesquisaSectionState extends State<PesquisaSection> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 4,
-            offset: Offset(2, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade300,
+          width: 2,
+        ),
+        boxShadow: MyAppTheme.shadowCard3D,
       ),
+      clipBehavior: Clip.none,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,11 +70,22 @@ class _PesquisaSectionState extends State<PesquisaSection> {
           // Pesquisa por Nome do Médico
           DropdownButtonFormField<String>(
             initialValue: widget.pesquisaNome,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Pesquisar por Nome',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              suffixIcon: Icon(Icons.person_search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.blue.shade700, width: 1),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              suffixIcon: const Icon(Icons.person_search),
             ),
             isExpanded: true,
             items: [
@@ -96,11 +108,22 @@ class _PesquisaSectionState extends State<PesquisaSection> {
           // Pesquisa por Especialidade
           DropdownButtonFormField<String>(
             initialValue: widget.pesquisaEspecialidade,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Pesquisar por Especialidade',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              suffixIcon: Icon(Icons.medical_services),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.blue.shade700, width: 1),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              suffixIcon: const Icon(Icons.medical_services),
             ),
             isExpanded: true,
             items: [

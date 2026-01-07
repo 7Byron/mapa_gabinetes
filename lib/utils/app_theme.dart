@@ -88,16 +88,39 @@ class MyAppTheme {
       ];
 
   static List<BoxShadow> get shadowCard3D => [
+        // Sombra principal uniforme - visível em todos os lados
         BoxShadow(
-          color: const Color(0x33000000),
+          color: const Color(0x20000000),
           blurRadius: 12,
-          offset: const Offset(0, 4),
+          offset: const Offset(0, 2),
+          spreadRadius: 1,
+        ),
+        // Sombra lateral esquerda
+        BoxShadow(
+          color: const Color(0x10000000),
+          blurRadius: 8,
+          offset: const Offset(-2, 0),
           spreadRadius: 0,
         ),
+        // Sombra lateral direita
         BoxShadow(
-          color: const Color(0x1A000000),
+          color: const Color(0x10000000),
+          blurRadius: 8,
+          offset: const Offset(2, 0),
+          spreadRadius: 0,
+        ),
+        // Sombra superior suave
+        BoxShadow(
+          color: const Color(0x08000000),
           blurRadius: 6,
-          offset: const Offset(0, 2),
+          offset: const Offset(0, -1),
+          spreadRadius: 0,
+        ),
+        // Sombra inferior mais pronunciada
+        BoxShadow(
+          color: const Color(0x15000000),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
           spreadRadius: 0,
         ),
       ];

@@ -31,7 +31,7 @@ class FiltrosSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(12), // Espaçamento interno
+      padding: const EdgeInsets.all(10), // Espaçamento interno reduzido
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -39,7 +39,7 @@ class FiltrosSection extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
                   color: MyAppTheme.azulEscuro.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -47,28 +47,29 @@ class FiltrosSection extends StatelessWidget {
                 child: Icon(
                 Icons.filter_list,
                   color: MyAppTheme.azulEscuro,
-                size: 20,
+                size: 18,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Text(
                 'Filtros',
                 style: MyAppTheme.heading2.copyWith(
-                  fontSize: 18,
+                  fontSize: 16,
                   color: MyAppTheme.azulEscuro,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           Text(
             'Pisos',
             style: MyAppTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
+              fontSize: 14,
               color: Colors.grey[800],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -80,7 +81,7 @@ class FiltrosSection extends StatelessWidget {
                   style: TextStyle(
                     color: isSelected ? Colors.white : Colors.grey[800],
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                    fontSize: 13,
+                    fontSize: 12,
                   ),
                 ),
                 selected: isSelected,
@@ -92,35 +93,39 @@ class FiltrosSection extends StatelessWidget {
                   color: isSelected 
                       ? MyAppTheme.azulEscuro 
                       : Colors.grey.shade300,
-                  width: 1,
+                  width: 0.5,
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               );
             }).toList(),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           Text(
             'Ocupação',
             style: MyAppTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
+              fontSize: 14,
               color: Colors.grey[800],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300, width: 0.5),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            constraints: const BoxConstraints(minHeight: 36),
             child: DropdownButton<String>(
             value: filtroOcupacao,
               isExpanded: true,
               underline: const SizedBox(),
+              style: const TextStyle(fontSize: 13),
+              isDense: true,
             items: const [
               DropdownMenuItem(value: 'Todos', child: Text('Todos')),
               DropdownMenuItem(value: 'Livres', child: Text('Livres')),
@@ -131,53 +136,59 @@ class FiltrosSection extends StatelessWidget {
             },
           ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           Text(
             'Especialidade do Gabinete',
             style: MyAppTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
+              fontSize: 14,
               color: Colors.grey[800],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300, width: 0.5),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            constraints: const BoxConstraints(minHeight: 36),
             child: DropdownButton<String>(
             value: filtroEspecialidadeGabinete,
               isExpanded: true,
               underline: const SizedBox(),
-            hint: const Text('Todas especialidades'),
+              style: const TextStyle(fontSize: 13),
+              isDense: true,
+            hint: const Text('Todas especialidades', style: TextStyle(fontSize: 13)),
             items: [
               const DropdownMenuItem<String>(
                 value: null,
-                child: Text('Todas especialidades'),
+                child: Text('Todas especialidades', style: TextStyle(fontSize: 13)),
               ),
               ...especialidadesGabinetes
                   .map((especialidade) => DropdownMenuItem(
                         value: especialidade,
-                        child: Text(especialidade),
+                        child: Text(especialidade, style: const TextStyle(fontSize: 13)),
                       )),
             ],
             onChanged: onFiltroEspecialidadeGabineteChanged,
           ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           Container(
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300, width: 0.5),
             ),
+            constraints: const BoxConstraints(minHeight: 40),
             child: CheckboxListTile(
               title: Text(
                 'Mostrar Conflitos',
                 style: MyAppTheme.bodyMedium.copyWith(
                   fontWeight: FontWeight.w500,
+                  fontSize: 13,
                 ),
               ),
             controlAffinity: ListTileControlAffinity.leading,
@@ -186,7 +197,8 @@ class FiltrosSection extends StatelessWidget {
             onChanged: (val) {
               if (val != null) onMostrarConflitosChanged(val);
             },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              dense: true,
             ),
           ),
         ],

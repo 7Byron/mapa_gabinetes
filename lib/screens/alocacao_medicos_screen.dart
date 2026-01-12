@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
+import 'dart:convert';
 import '../utils/ui_alocar_cartoes_unicos.dart';
 import '../utils/ui_desalocar_cartao_unico.dart';
 import '../utils/ui_desalocar_cartao_serie.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/debug_log_file.dart';
 
 // Se criou o custom_drawer.dart
 import '../widgets/custom_drawer.dart';
@@ -37,6 +39,25 @@ import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
 import 'cadastro_medicos.dart';
 
+// #region agent log helper
+void _writeDebugLog(String location, String message, Map<String, dynamic> data, {String hypothesisId = 'A'}) {
+  try {
+    final logEntry = {
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'location': location,
+      'message': message,
+      'data': data,
+      'sessionId': 'debug-session',
+      'runId': 'run1',
+      'hypothesisId': hypothesisId,
+    };
+    writeLogToFile(jsonEncode(logEntry));
+  } catch (e) {
+    // Ignorar erros de escrita de log
+  }
+}
+// #endregion
+
 /// Tela principal de alocação de médicos aos gabinetes
 /// Permite arrastar médicos disponíveis para gabinetes específicos
 /// Inclui verificação de dias de encerramento e exibe mensagem quando clínica está fechada
@@ -45,11 +66,13 @@ import 'cadastro_medicos.dart';
 class AlocacaoMedicos extends StatefulWidget {
   final Unidade unidade;
   final bool isAdmin; // Novo parâmetro para indicar se é administrador
+  final DateTime? dataInicial; // Data inicial para exibir no mapa
 
   const AlocacaoMedicos({
     super.key,
     required this.unidade,
     this.isAdmin = false, // Por defeito é utilizador normal
+    this.dataInicial, // Se fornecido, será usado como data inicial
   });
 
   @override
@@ -73,8 +96,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       _ultimaAtualizacaoMedicos; // Última vez que médicos disponíveis foram atualizados
   Timer?
       _timeoutFlagsTransicao; // Timer para limpar flags presas automaticamente
-  DateTime selectedDate = DateTime.now();
-  DateTime _dataCalendarioVisualizada = DateTime.now(); // Data visualizada no calendário (pode ser diferente de selectedDate)
+  late DateTime selectedDate;
+  late DateTime _dataCalendarioVisualizada; // Data visualizada no calendário (pode ser diferente de selectedDate)
 
   // Controle de layout responsivo
   bool mostrarColunaEsquerda = true; // Para ecrãs pequenos
@@ -137,10 +160,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   @override
   void initState() {
     super.initState();
+    // Inicializar datas: usar dataInicial se fornecida, senão usar data atual
+    selectedDate = widget.dataInicial ?? DateTime.now();
+    _dataCalendarioVisualizada = selectedDate;
+    
     WidgetsBinding.instance.addObserver(this);
     // CORREÇÃO: Marcar app como em foco ao inicializar
     logic.AlocacaoMedicosLogic.setAppEmFoco(true);
-    _dataCalendarioVisualizada = selectedDate; // Inicializar com a data selecionada
     _carregarDadosIniciais();
     // Carregar passwords em background (não bloqueia a UI)
     _carregarPasswordsDoFirebase();
@@ -312,8 +338,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       alocacoes.clear();
       medicosDisponiveis.clear();
     }
-    Timer?
-        timerProgressaoDados; // Timer para progressão automática durante carregamento
+    Timer? timerProgressaoDados; // Timer para progressão automática durante carregamento
+    bool dadosCarregando = false; // Flag para controlar quando dados estão sendo carregados
 
     try {
       // Inicializar progresso
@@ -321,8 +347,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // FASE 0: Carregar dados de encerramento PRIMEIRO (feriados, dias de encerramento, horários)
       // Isso permite verificar se a clínica está encerrada ANTES de carregar dados do Firestore
-      _atualizarProgressoGradual(0.0, 'A verificar configurações...');
-      
       try {
         await Future.wait([
           _carregarFeriados(),
@@ -330,8 +354,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           _carregarHorariosEConfiguracoes(),
         ]);
       } catch (e) {
-        debugPrint(
-            '⚠️ Erro ao carregar dados de encerramento: $e - assumindo clínica aberta');
+        // CORREÇÃO: Reduzir logs desnecessários - apenas em caso de erro real
         // Se houver erro, assumir que a clínica está aberta para não bloquear o carregamento
         if (mounted) {
           setState(() {
@@ -343,15 +366,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // Verificar se a clínica está encerrada ANTES de carregar dados do Firestore
       // CORREÇÃO: Só verificar se os dados foram carregados corretamente
-      // Se nuncaEncerra não foi definido, significa que os dados não foram carregados
       if (horariosClinica.isNotEmpty ||
           encerraDias.isNotEmpty ||
           feriados.isNotEmpty ||
           diasEncerramento.isNotEmpty) {
         _verificarClinicaFechada();
       } else {
-        debugPrint(
-            '⚠️ Dados de encerramento vazios - assumindo clínica aberta');
         if (mounted) {
           setState(() {
             clinicaFechada = false;
@@ -360,19 +380,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         }
       }
 
-      debugPrint(
-          '🔍 Verificação de encerramento: clinicaFechada=$clinicaFechada, mensagem="$mensagemClinicaFechada"');
-      debugPrint('  - Feriados carregados: ${feriados.length}');
-      debugPrint(
-          '  - Dias de encerramento carregados: ${diasEncerramento.length}');
-      debugPrint('  - encerraFeriados: $encerraFeriados');
-      debugPrint(
-          '  - Data selecionada: ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
+      // CORREÇÃO: Reduzir logs excessivos - apenas mostrar se clínica estiver fechada
+      if (clinicaFechada) {
+        debugPrint('🚫 Clínica encerrada: $mensagemClinicaFechada');
+      }
 
       if (clinicaFechada) {
         // Clínica está encerrada - não carregar dados do Firestore
-        debugPrint(
-            '🚫 Clínica encerrada - pulando carregamento de dados do Firestore');
         if (mounted) {
           setState(() {
             // Limpar dados existentes
@@ -390,7 +404,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       }
 
       // FASE 1: Carregar exceções canceladas UMA ÚNICA VEZ (otimização de performance)
-      // Isso evita carregar exceções múltiplas vezes em diferentes métodos
       _atualizarProgressoGradual(0.05, 'A verificar exceções...');
 
       final datasComExcecoesCanceladas =
@@ -399,26 +412,24 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         selectedDate,
       );
 
-      debugPrint(
-          '⚡ Exceções canceladas carregadas: ${datasComExcecoesCanceladas.length}');
-
       // FASE 2: Carregar dados essenciais (gabinetes, médicos, disponibilidades e alocações)
       // Só chega aqui se a clínica NÃO estiver encerrada
-      // NÃO chamar setState() nos callbacks individuais para evitar atualizações parciais
-      // que causam o efeito de cartões aparecendo na área branca e depois sendo movidos
       _atualizarProgressoGradual(0.15, 'A carregar dados...');
 
       // Iniciar progressão automática durante carregamento de dados (0.15 -> 0.80)
-      // O progresso será atualizado pelos callbacks de onProgress também
+      dadosCarregando = true;
+      
       timerProgressaoDados =
           Timer.periodic(const Duration(milliseconds: 80), (timer) {
-        if (!mounted || progressoCarregamento >= 0.80) {
+        // CORREÇÃO: Cancelar timer imediatamente se carregamento completo ou progresso atingido
+        if (!mounted || !dadosCarregando || progressoCarregamento >= 0.80) {
           timer.cancel();
+          timerProgressaoDados = null;
+          dadosCarregando = false;
           return;
         }
         // Avançar gradualmente: 0.015 a cada 80ms (aproximadamente 18.75% por segundo)
-        // Isso garante progresso mais rápido e visível durante o carregamento
-        if (mounted) {
+        if (mounted && dadosCarregando) {
           setState(() {
             progressoCarregamento =
                 (progressoCarregamento + 0.015).clamp(0.0, 0.80);
@@ -448,8 +459,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           // preservar dados existentes (não limpar dados estáticos durante mudança de data)
           if (!recarregarMedicos && g.isEmpty && gabinetes.isNotEmpty) {
             // Preservar dados existentes - não atualizar com lista vazia
-            debugPrint(
-                '⚠️ Preservando ${gabinetes.length} gabinetes existentes (lista vazia recebida durante mudança de data)');
+            // CORREÇÃO: Reduzir logs desnecessários
             return;
           }
           // Atualizar normalmente se:
@@ -464,8 +474,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           // preservar dados existentes (não limpar dados estáticos durante mudança de data)
           if (!recarregarMedicos && m.isEmpty && medicos.isNotEmpty) {
             // Preservar dados existentes - não atualizar com lista vazia
-            debugPrint(
-                '⚠️ Preservando ${medicos.length} médicos existentes (lista vazia recebida durante mudança de data)');
+            // CORREÇÃO: Reduzir logs desnecessários
             return;
           }
           // Atualizar normalmente se:
@@ -473,25 +482,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           // 2. Recebemos dados não vazios, OU
           // 3. Não havia dados antes (medicos.isEmpty)
           medicos = m;
-          debugPrint(
-              '👥 Médicos carregados: ${m.length} total, ${m.where((med) => med.ativo).length} ativos');
+          // CORREÇÃO: Reduzir logs desnecessários - apenas em modo debug detalhado
           // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
         },
         onDisponibilidades: (d) {
-          debugPrint(
-              '📋 onDisponibilidades chamado com ${d.length} disponibilidades');
-          if (d.isNotEmpty) {
-            debugPrint(
-                '  🔍 Primeiras 3 datas das disponibilidades recebidas:');
-            for (var i = 0; i < d.length && i < 3; i++) {
-              final disp = d[i];
-              debugPrint(
-                  '    ${i + 1}. ${disp.medicoId}: ${disp.data.day}/${disp.data.month}/${disp.data.year}');
-            }
-          }
+          // CORREÇÃO: Remover logs excessivos que continuam executando após carregamento
           disponibilidades = d;
-          debugPrint(
-              '📋 Disponibilidades atualizadas na tela: ${disponibilidades.length} total');
           // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
         },
         onAlocacoes: (a) {
@@ -560,11 +556,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           }
 
           alocacoes = alocacoesMap.values.toList();
-          final alocacoesOtimistasPreservadas =
-              alocacoes.where((a) => a.id.startsWith('otimista_')).length;
-          debugPrint(
-              '✅ Alocações mescladas: ${alocacoes.length} total ($alocacoesOtimistasPreservadas otimistas preservadas)');
-
+          // CORREÇÃO: Reduzir logs excessivos - apenas mostrar em casos importantes
           // Não chamar setState() aqui - será chamado depois que todos os dados estiverem prontos
         },
         unidade: widget.unidade,
@@ -575,8 +567,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             datasComExcecoesCanceladas, // Passar exceções já carregadas
       );
 
-      // Cancelar timer de progressão automática após carregamento de dados
-      timerProgressaoDados.cancel();
+      // CORREÇÃO CRÍTICA: Marcar dados como completos e cancelar timer IMEDIATAMENTE
+      dadosCarregando = false;
+      timerProgressaoDados?.cancel();
+      timerProgressaoDados = null;
 
       // Atualizar progresso para refletir que os dados foram carregados
       // Garantir que o progresso esteja pelo menos em 0.80 antes de continuar
@@ -590,9 +584,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // CORREÇÃO: Forçar recarregamento de alocações após carregar dados iniciais
 
       // CORREÇÃO CRÍTICA: Regenerar alocações de séries ANTES de atualizar médicos disponíveis
-      debugPrint(
-          '🔄 Regenerando alocações de séries antes de atualizar médicos disponíveis...');
-
       final alocacoesSeriesRegeneradas = await _regenerarAlocacoesSeries();
 
       // Atualizar lista de alocações com as alocações regeneradas
@@ -641,12 +632,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           if (!temAlocacaoReal) {
             // Não há alocação real - preservar otimista temporariamente
             alocacoesAtualizadas.add(aloc);
-            debugPrint(
-                '✅ Preservando alocação otimista durante regeneração em _carregarDadosIniciais (sem real): ${aloc.id}');
+            // CORREÇÃO: Reduzir logs excessivos
           } else {
             // Há alocação real - não preservar otimista
-            debugPrint(
-                '⚠️ Não preservando alocação otimista - já existe real correspondente: ${aloc.id}');
+            // CORREÇÃO: Reduzir logs excessivos
           }
           continue;
         }
@@ -667,35 +656,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       alocacoes.clear();
       alocacoes.addAll(alocacoesAtualizadas);
 
-      // CORREÇÃO CRÍTICA: Atualizar cache do dia após carregar todos os dados
-      // e que outros funcionários possam usar o cache quando abrirem o app no mesmo dia
-      final disponibilidadesDoDia = disponibilidades.where((d) {
-        final dDate = DateTime(d.data.year, d.data.month, d.data.day);
-        final selectedDateNormalized = DateTime(
-          selectedDate.year,
-          selectedDate.month,
-          selectedDate.day,
-        );
-        return dDate == selectedDateNormalized;
-      }).toList();
-
-      final alocacoesDoDia = alocacoes.where((a) {
-        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-        final selectedDateNormalized = DateTime(
-          selectedDate.year,
-          selectedDate.month,
-          selectedDate.day,
-        );
-        return aDate == selectedDateNormalized;
-      }).toList();
-
-      debugPrint(
-          '💾 Cache atualizado para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}: ${disponibilidadesDoDia.length} disponibilidades, ${alocacoesDoDia.length} alocações');
+      // CORREÇÃO: Cache é atualizado automaticamente em carregarDadosIniciais
+      // Não precisamos atualizar manualmente aqui
 
       // CORREÇÃO: Atualizar médicos disponíveis após regenerar alocações de séries
       if (mounted) {
-        debugPrint(
-            '🔄 Chamando _atualizarMedicosDisponiveis após regenerar alocações de séries...');
+        // CORREÇÃO: Reduzir logs desnecessários
         _atualizarProgressoGradual(0.90, 'A processar médicos disponíveis...');
         await _atualizarMedicosDisponiveis();
         
@@ -706,9 +672,6 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             mensagemProgresso = 'Concluído!';
           });
         }
-      } else {
-        debugPrint(
-            '⚠️ Ignorando _atualizarMedicosDisponiveis durante processamento de alocação/transição');
       }
 
       // CORREÇÃO: Atualizar UI apenas se não estiver processando alocação
@@ -743,11 +706,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         _atualizarProgressoGradual(0.0, 'A iniciar...');
       }
     } finally {
-      // Cancelar timer de progressão automática se ainda estiver ativo
-      // NÃO cancelar _timerProgresso aqui - ele precisa continuar para completar a animação até 100%
-
+      // CORREÇÃO CRÍTICA: Garantir que todos os timers sejam cancelados, mesmo em caso de erro
+      dadosCarregando = false;
       timerProgressaoDados?.cancel();
-      // NÃO cancelar _timerProgresso - ele precisa completar a animação até 100%
+      timerProgressaoDados = null;
+      // NÃO cancelar _timerProgresso aqui - ele precisa continuar para completar a animação até 100%
       _isCarregandoDadosIniciais = false; // Liberar lock
     }
   }
@@ -935,12 +898,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     final dataFormatada = DateFormat('yyyy-MM-dd').format(selectedDate);
 
     // PRIMEIRO: Verificar se há um dia específico de encerramento configurado
-    // Verificar tanto em diasEncerramento quanto em feriados (se configurado como feriado)
-    for (final d in diasEncerramento) {
-      final dataDia = d['data'] as String? ?? '';
-      debugPrint(
-          '    - Dia de encerramento: $dataDia (motivo: ${d['motivo']})');
-    }
+    // CORREÇÃO: Remover logs desnecessários dentro de loop
 
     final diaEncerramento = diasEncerramento.firstWhere(
       (d) {
@@ -966,8 +924,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Usar apenas a descrição (ex: "Feriado Nacional") sem o prefixo "Clínica encerrada -"
       mensagemClinicaFechada =
           descricao.isNotEmpty ? descricao : 'Encerramento';
-      debugPrint(
-          '🚫 Clínica encerrada: Dia específico de encerramento encontrado - $dataFormatada');
+      // CORREÇÃO: Reduzir logs - apenas mostrar mensagem importante
+      debugPrint('🚫 Clínica encerrada: $mensagemClinicaFechada');
       return;
     }
 
@@ -985,8 +943,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         'Domingo'
       ];
       mensagemClinicaFechada = '${diasSemana[diaSemana]}s';
-      debugPrint(
-          '🚫 Clínica encerrada: Dia da semana configurado - ${diasSemana[diaSemana]}');
+      debugPrint('🚫 Clínica encerrada: $mensagemClinicaFechada');
       return;
     }
 
@@ -1013,8 +970,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         clinicaFechada = true;
         // Usar apenas a descrição do feriado (ex: "Feriado Nacional") sem o prefixo
         mensagemClinicaFechada = feriado['descricao'] ?? 'Feriado';
-        debugPrint(
-            '🚫 Clínica encerrada: Feriado configurado - ${feriado['descricao']} (data: ${feriado['data']})');
+        debugPrint('🚫 Clínica encerrada: $mensagemClinicaFechada');
         return;
       }
     }
@@ -1024,8 +980,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     if (horariosDoDia.isEmpty) {
       clinicaFechada = true;
       mensagemClinicaFechada = 'Sem horários';
-      debugPrint(
-          '🚫 Clínica encerrada: Sem horários configurados para o dia da semana');
+      debugPrint('🚫 Clínica encerrada: $mensagemClinicaFechada');
       return;
     }
 
@@ -1079,13 +1034,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           return <Alocacao>[];
         }
 
-        // Carregar exceções (usar cache quando apropriado)
+        // CORREÇÃO CRÍTICA: Forçar servidor se o cache estiver invalidado para este dia
+        // Isso garante que exceções recém-criadas (ex: exceção cancelada ao desalocar "apenas este dia")
+        // sejam carregadas imediatamente
+        final cacheInvalidado = logic.AlocacaoMedicosLogic.isCacheInvalidado(dataInicio);
         final excecoesCarregadas = await SerieService.carregarExcecoes(
           medicoId,
           unidade: widget.unidade,
           dataInicio: dataInicio,
           dataFim: dataFim,
-          forcarServidor: false, // Usar cache quando apropriado
+          forcarServidor: cacheInvalidado, // Forçar servidor se cache invalidado
         );
 
         // Filtrar exceções apenas para o dia atual
@@ -1125,8 +1083,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         alocacoesGeradas.addAll(alocs);
       }
 
-      debugPrint(
-          '🔄 Alocações de séries regeneradas: ${alocacoesGeradas.length} para ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}');
+      // CORREÇÃO: Reduzir logs excessivos - apenas mostrar se houver muitas alocações
+      if (alocacoesGeradas.length > 10) {
+        debugPrint('🔄 ${alocacoesGeradas.length} alocações de séries regeneradas');
+      }
       return alocacoesGeradas;
     } catch (e) {
       debugPrint('❌ Erro ao regenerar alocações de séries: $e');
@@ -1272,11 +1232,50 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         // Verificar se esta disponibilidade não tem exceção cancelada
         final dataKey =
             '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
-        if (!datasComExcecoesCanceladas.contains(dataKey)) {
+        final temExcecaoCancelada = datasComExcecoesCanceladas.contains(dataKey);
+        
+        // #region agent log
+        final medico = medicos.firstWhere((m) => m.id == d.medicoId, orElse: () => Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false));
+        if (medico.nome.toLowerCase().contains('francisco') && medico.nome.toLowerCase().contains('gama')) {
+          _writeDebugLog('alocacao_medicos_screen.dart:1270', 'Disponibilidade de Francisco Gama encontrada', {
+            'medicoId': d.medicoId,
+            'medicoNome': medico.nome,
+            'data': '${dd.day}/${dd.month}/${dd.year}',
+            'selectedDate': '${selectedDateNormalized.day}/${selectedDateNormalized.month}/${selectedDateNormalized.year}',
+            'dataKey': dataKey,
+            'temExcecaoCancelada': temExcecaoCancelada,
+            'seraAdicionado': !temExcecaoCancelada,
+          }, hypothesisId: 'V');
+        }
+        // #endregion
+        
+        if (!temExcecaoCancelada) {
           medicosComDisponibilidade.add(d.medicoId);
         }
       }
     }
+    
+    // #region agent log
+    final franciscoGama = medicos.firstWhere(
+      (m) => m.nome.toLowerCase().contains('francisco') && m.nome.toLowerCase().contains('gama'),
+      orElse: () => Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false),
+    );
+    if (franciscoGama.id.isNotEmpty) {
+      _writeDebugLog('alocacao_medicos_screen.dart:1285', 'Francisco Gama - verificação final', {
+        'medicoId': franciscoGama.id,
+        'medicoNome': franciscoGama.nome,
+        'ativo': franciscoGama.ativo,
+        'estaAlocado': medicosAlocados.contains(franciscoGama.id),
+        'temDisponibilidade': medicosComDisponibilidade.contains(franciscoGama.id),
+        'medicosComDisponibilidade': medicosComDisponibilidade.toList(),
+        'totalDisponibilidades': disponibilidades.length,
+        'disponibilidadesDoDia': disponibilidades.where((d) {
+          final dd = DateTime(d.data.year, d.data.month, d.data.day);
+          return dd == selectedDateNormalized;
+        }).length,
+      }, hypothesisId: 'V');
+    }
+    // #endregion
 
     if (mounted) {
       setState(() {
@@ -2066,6 +2065,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Usar o ano visualizado no calendário (pode ser diferente de selectedDate se o usuário navegou sem clicar)
       final ano = _dataCalendarioVisualizada.year;
 
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2066', 'Início _mostrarMedicosNaoAlocadosAno', {
+        'ano': ano,
+        'totalMedicos': medicos.length,
+        'medicosAtivos': medicos.where((m) => m.ativo).length,
+        'medicosIds': medicos.map((m) => m.id).toList(),
+      }, hypothesisId: 'A');
+      // #endregion
+
       // Atualizar progresso para 10%
       setStateDialog?.call(() {
         progressoAtual = 0.10;
@@ -2078,6 +2086,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         anoEspecifico: ano.toString(),
       );
 
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2078', 'Disponibilidades de séries carregadas', {
+        'totalDisponibilidadesSeries': todasDisponibilidadesSeries.length,
+        'medicosComDisponibilidadeSeries': todasDisponibilidadesSeries.map((d) => d.medicoId).toSet().length,
+        'datasUnicas': todasDisponibilidadesSeries.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().length,
+      }, hypothesisId: 'B');
+      // #endregion
+
       // Atualizar progresso para 30%
       setStateDialog?.call(() {
         progressoAtual = 0.30;
@@ -2085,12 +2101,28 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
       // Carregar disponibilidades únicas de todos os médicos para o ano EM PARALELO
       final medicosAtivos = medicos.where((m) => m.ativo).toList();
+
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2086', 'Médicos ativos identificados', {
+        'totalMedicosAtivos': medicosAtivos.length,
+        'medicosAtivosIds': medicosAtivos.map((m) => m.id).toList(),
+        'medicosAtivosNomes': medicosAtivos.map((m) => m.nome).toList(),
+      }, hypothesisId: 'C');
+      // #endregion
+
       final futuresUnicas = medicosAtivos.map((medico) {
         return DisponibilidadeUnicaService.carregarDisponibilidadesUnicas(
           medico.id,
           ano,
           widget.unidade,
         ).catchError((e) {
+          // #region agent log
+          _writeDebugLog('alocacao_medicos_screen.dart:2093', 'Erro ao carregar disponibilidades únicas', {
+            'medicoId': medico.id,
+            'medicoNome': medico.nome,
+            'erro': e.toString(),
+          }, hypothesisId: 'D');
+          // #endregion
           // Retornar lista vazia em caso de erro
           return <Disponibilidade>[];
         });
@@ -2103,10 +2135,25 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         todasDisponibilidadesUnicas.addAll(resultado);
       }
 
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2103', 'Disponibilidades únicas carregadas', {
+        'totalDisponibilidadesUnicas': todasDisponibilidadesUnicas.length,
+        'medicosComDisponibilidadeUnicas': todasDisponibilidadesUnicas.map((d) => d.medicoId).toSet().length,
+      }, hypothesisId: 'E');
+      // #endregion
+
       // Combinar séries e únicas
       final todasDisponibilidades = <Disponibilidade>[];
       todasDisponibilidades.addAll(todasDisponibilidadesSeries);
       todasDisponibilidades.addAll(todasDisponibilidadesUnicas);
+
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2108', 'Todas disponibilidades combinadas', {
+        'totalDisponibilidades': todasDisponibilidades.length,
+        'medicosComDisponibilidade': todasDisponibilidades.map((d) => d.medicoId).toSet().length,
+        'datasUnicas': todasDisponibilidades.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().length,
+      }, hypothesisId: 'F');
+      // #endregion
 
       // Atualizar progresso para 50%
       setStateDialog?.call(() {
@@ -2130,6 +2177,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .get(const GetOptions(source: Source.server));
       
         debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Carregadas ${registosSnapshot.docs.length} alocações do ano $ano do servidor');
+        
+        // #region agent log
+        _writeDebugLog('alocacao_medicos_screen.dart:2128', 'Alocações do servidor carregadas', {
+          'totalAlocacoesServidor': registosSnapshot.docs.length,
+        }, hypothesisId: 'G');
+        // #endregion
         
         for (final doc in registosSnapshot.docs) {
           final data = doc.data();
@@ -2161,11 +2214,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           for (final medicoId in medicoIds) {
             futures.add((() async {
               // Carregar séries do médico que podem gerar alocações no ano
+              // CORREÇÃO CRÍTICA: Carregar TODAS as séries ativas, não apenas as que começam no ano
+              // Séries que começaram antes (ex: fevereiro) ainda geram alocações durante o ano
               final series = await SerieService.carregarSeries(
                 medicoId,
                 unidade: widget.unidade,
-                dataInicio: dataInicioAno,
-                dataFim: dataFimAno,
+                dataInicio: null, // Carregar TODAS as séries ativas
+                dataFim: dataFimAno, // Filtrar apenas séries que começam depois do fim do ano
+                forcarServidor: true, // Sempre forçar servidor para garantir dados atualizados
               );
               
               // Filtrar apenas séries com gabineteId (que geram alocações)
@@ -2201,6 +2257,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           
           debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Geradas ${alocacoesGeradasAno.length} alocações de séries para o ano $ano');
         
+        // #region agent log
+        _writeDebugLog('alocacao_medicos_screen.dart:2202', 'Alocações de séries geradas', {
+          'totalAlocacoesGeradas': alocacoesGeradasAno.length,
+          'medicosComAlocacoesGeradas': alocacoesGeradasAno.map((a) => a.medicoId).toSet().length,
+          'datasUnicas': alocacoesGeradasAno.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().length,
+        }, hypothesisId: 'H');
+        // #endregion
+        
         // Mesclar evitando duplicados
         final alocacoesMap = <String, Alocacao>{};
         for (final aloc in todasAlocacoes) {
@@ -2215,6 +2279,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         todasAlocacoes.addAll(alocacoesMap.values);
         
         debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Total após mesclar com séries: ${todasAlocacoes.length} alocações');
+
+        // #region agent log
+        _writeDebugLog('alocacao_medicos_screen.dart:2218', 'Alocações mescladas', {
+          'totalAlocacoesMescladas': todasAlocacoes.length,
+          'medicosComAlocacoes': todasAlocacoes.map((a) => a.medicoId).toSet().length,
+          'datasUnicas': todasAlocacoes.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().length,
+        }, hypothesisId: 'I');
+        // #endregion
       } catch (e) {
         debugPrint('⚠️ [MÉDICOS NÃO ALOCADOS] Erro ao carregar alocações de séries: $e');
       }
@@ -2230,6 +2302,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .where((d) => d.data.year == ano)
           .map((d) => d.medicoId)
           .toSet();
+
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2234', 'Médicos com disponibilidade identificados', {
+        'totalMedicosComDisponibilidade': medicosComDisponibilidade.length,
+        'medicosComDisponibilidadeIds': medicosComDisponibilidade.toList(),
+      }, hypothesisId: 'J');
+      // #endregion
 
       // Incluir TODOS os médicos com disponibilidade (não filtrar por terem alocações)
       final medicosNaoAlocadosIds = medicosComDisponibilidade.toList();
@@ -2249,6 +2328,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .where((m) => m.ativo && m.nome != 'Desconhecido')
           .toList();
 
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2252', 'Médicos não alocados após filtro', {
+        'totalMedicosNaoAlocados': medicosNaoAlocados.length,
+        'medicosNaoAlocadosIds': medicosNaoAlocados.map((m) => m.id).toList(),
+        'medicosNaoAlocadosNomes': medicosNaoAlocados.map((m) => m.nome).toList(),
+      }, hypothesisId: 'K');
+      // #endregion
+
       // Ordenar por nome
       medicosNaoAlocados.sort((a, b) => a.nome.compareTo(b.nome));
 
@@ -2260,6 +2347,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       int processedMedicos = 0;
       
       for (final medicoId in medicosNaoAlocadosIds) {
+        // #region agent log
+        final todasDisponibilidadesMedico = todasDisponibilidades
+            .where((d) => d.medicoId == medicoId && d.data.year == ano)
+            .toList();
+        final todasAlocacoesMedico = todasAlocacoes
+            .where((a) => a.medicoId == medicoId && a.data.year == ano)
+            .toList();
+        // #endregion
+
         final diasComDisponibilidade = todasDisponibilidades
             .where((d) =>
                 d.medicoId == medicoId &&
@@ -2275,6 +2371,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         diasComDisponibilidade.sort();
         medicosComDias[medicoId] = diasComDisponibilidade.length;
         medicosComDatas[medicoId] = diasComDisponibilidade;
+
+        // #region agent log
+        final medicoNome = medicos.firstWhere((m) => m.id == medicoId, orElse: () => Medico(id: medicoId, nome: 'Desconhecido', especialidade: '', disponibilidades: [], ativo: false)).nome;
+        _writeDebugLog('alocacao_medicos_screen.dart:2265', 'Processando médico', {
+          'medicoId': medicoId,
+          'medicoNome': medicoNome,
+          'totalDisponibilidadesMedico': todasDisponibilidadesMedico.length,
+          'totalAlocacoesMedico': todasAlocacoesMedico.length,
+          'diasComDisponibilidadeNaoAlocados': diasComDisponibilidade.length,
+          'datasDisponibilidades': todasDisponibilidadesMedico.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().toList(),
+          'datasAlocacoes': todasAlocacoesMedico.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().toList(),
+          'datasNaoAlocadas': diasComDisponibilidade.map((d) => '${d.year}-${d.month}-${d.day}').toList(),
+        }, hypothesisId: 'L');
+        // #endregion
         
         // Atualizar progresso durante processamento (70% -> 95%)
         processedMedicos++;
@@ -2290,6 +2400,21 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       final medicosComDiasNaoAlocados = medicosNaoAlocados
           .where((m) => (medicosComDias[m.id] ?? 0) > 0)
           .toList();
+
+      // #region agent log
+      _writeDebugLog('alocacao_medicos_screen.dart:2294', 'Resultado final', {
+        'totalMedicosComDiasNaoAlocados': medicosComDiasNaoAlocados.length,
+        'medicosComDiasNaoAlocados': medicosComDiasNaoAlocados.map((m) => {
+          'id': m.id,
+          'nome': m.nome,
+          'diasNaoAlocados': medicosComDias[m.id] ?? 0,
+        }).toList(),
+        'resumoDias': medicosComDias.entries.map((e) => {
+          'medicoId': e.key,
+          'dias': e.value,
+        }).toList(),
+      }, hypothesisId: 'M');
+      // #endregion
       
       // Finalizar progresso: 95% -> 100%
       setStateDialog?.call(() {
@@ -2607,11 +2732,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           for (final medicoId in medicoIds) {
             futures.add((() async {
               // Carregar séries do médico que podem gerar alocações no ano
+              // CORREÇÃO CRÍTICA: Carregar TODAS as séries ativas, não apenas as que começam no ano
+              // Séries que começaram antes (ex: fevereiro) ainda geram alocações durante o ano
               final series = await SerieService.carregarSeries(
                 medicoId,
                 unidade: widget.unidade,
-                dataInicio: dataInicioAno,
-                dataFim: dataFimAno,
+                dataInicio: null, // Carregar TODAS as séries ativas
+                dataFim: dataFimAno, // Filtrar apenas séries que começam depois do fim do ano
+                forcarServidor: true, // Sempre forçar servidor para garantir dados atualizados
               );
               
               // Filtrar apenas séries com gabineteId (que geram alocações)
@@ -3551,7 +3679,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                 if (isNarrow) {
                   // Layout em duas linhas para telas pequenas
                   return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       color: MyAppTheme.cardBackground,
@@ -3607,7 +3735,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                 } else {
                   // Layout em uma linha para telas maiores
                   return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       color: MyAppTheme.cardBackground,
@@ -3707,7 +3835,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                   maxHeight: 300, // Altura máxima para 2 linhas
                 ),
                 width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                 decoration: BoxDecoration(
                   color: MyAppTheme.cardBackground,
                   borderRadius: BorderRadius.circular(16),
@@ -4289,17 +4417,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         // Coluna Esquerda: DatePicker + Filtros (SEM zoom - sempre visível)
         Container(
           width: 300,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          decoration: BoxDecoration(
-            color: MyAppTheme.cardBackground,
-            boxShadow: [
-              BoxShadow(
-                color: MyAppTheme.shadowLight,
-                blurRadius: 8,
-                offset: const Offset(2, 0),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: SingleChildScrollView(
             child: _buildColunaEsquerda(),
           ),
@@ -4336,24 +4454,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     );
   }
 
-  // Conteúdo da coluna esquerda (DatePicker + Filtros + Pesquisa)
+  // Conteúdo da coluna esquerda (DatePicker + Pesquisa + Filtros)
   Widget _buildColunaEsquerda() {
-    return Column(
-      children: [
-        // DatePicker
-        Container(
-          decoration: BoxDecoration(
-            color: MyAppTheme.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.grey.shade300,
-              width: 2,
-            ),
-            boxShadow: MyAppTheme.shadowCard3D,
-          ),
-          margin: const EdgeInsets.only(bottom: 16),
-          clipBehavior: Clip.none,
-          child: CalendarioDisponibilidades(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+      child: Column(
+        children: [
+          // 1. Seletor de Data
+          CalendarioDisponibilidades(
               diasSelecionados: [selectedDate],
               onAdicionarData: (date, tipo) {
                 // Não usado no modo apenas seleção
@@ -4379,60 +4487,60 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                 });
               },
             ),
+
+          // 2. Pesquisa
+          PesquisaSection(
+            pesquisaNome: pesquisaNome,
+            pesquisaEspecialidade: pesquisaEspecialidade,
+            opcoesNome: _getOpcoesPesquisaNome(),
+            opcoesEspecialidade: _getOpcoesPesquisaEspecialidade(),
+            onPesquisaNomeChanged: _aplicarPesquisaNome,
+            onPesquisaEspecialidadeChanged: _aplicarPesquisaEspecialidade,
+            onLimparPesquisa: _limparPesquisa,
           ),
 
-        // Filtros
-        Container(
-          decoration: BoxDecoration(
-            color: MyAppTheme.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.grey.shade300,
-              width: 2,
+          // 3. Filtros
+          Container(
+            decoration: BoxDecoration(
+              color: MyAppTheme.cardBackground,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.grey.shade300,
+                width: 2,
+              ),
+              boxShadow: MyAppTheme.shadowCard3D,
             ),
-            boxShadow: MyAppTheme.shadowCard3D,
-          ),
-          margin: const EdgeInsets.only(bottom: 16),
-          clipBehavior: Clip.none,
-          child: FiltrosSection(
-              todosSetores: gabinetes.map((g) => g.setor).toSet().toList(),
-              pisosSelecionados: pisosSelecionados,
-              onTogglePiso: (setor, isSelected) {
-                setState(() {
-                  if (isSelected) {
-                    pisosSelecionados.add(setor);
-                  } else {
-                    pisosSelecionados.remove(setor);
-                  }
-                });
-              },
-              filtroOcupacao: filtroOcupacao,
-              onFiltroOcupacaoChanged: (novo) {
-                setState(() => filtroOcupacao = novo);
-              },
-              mostrarConflitos: mostrarConflitos,
-              onMostrarConflitosChanged: (val) {
-                setState(() => mostrarConflitos = val);
-              },
-              filtroEspecialidadeGabinete: filtroEspecialidadeGabinete,
-              onFiltroEspecialidadeGabineteChanged: (especialidade) {
-                setState(() => filtroEspecialidadeGabinete = especialidade);
-              },
-              especialidadesGabinetes: _getEspecialidadesGabinetes(),
+            margin: const EdgeInsets.only(bottom: 16),
+            clipBehavior: Clip.none,
+            child: FiltrosSection(
+                todosSetores: gabinetes.map((g) => g.setor).toSet().toList(),
+                pisosSelecionados: pisosSelecionados,
+                onTogglePiso: (setor, isSelected) {
+                  setState(() {
+                    if (isSelected) {
+                      pisosSelecionados.add(setor);
+                    } else {
+                      pisosSelecionados.remove(setor);
+                    }
+                  });
+                },
+                filtroOcupacao: filtroOcupacao,
+                onFiltroOcupacaoChanged: (novo) {
+                  setState(() => filtroOcupacao = novo);
+                },
+                mostrarConflitos: mostrarConflitos,
+                onMostrarConflitosChanged: (val) {
+                  setState(() => mostrarConflitos = val);
+                },
+                filtroEspecialidadeGabinete: filtroEspecialidadeGabinete,
+                onFiltroEspecialidadeGabineteChanged: (especialidade) {
+                  setState(() => filtroEspecialidadeGabinete = especialidade);
+                },
+                especialidadesGabinetes: _getEspecialidadesGabinetes(),
+              ),
             ),
-          ),
-
-        // Pesquisa
-        PesquisaSection(
-          pesquisaNome: pesquisaNome,
-          pesquisaEspecialidade: pesquisaEspecialidade,
-          opcoesNome: _getOpcoesPesquisaNome(),
-          opcoesEspecialidade: _getOpcoesPesquisaEspecialidade(),
-          onPesquisaNomeChanged: _aplicarPesquisaNome,
-          onPesquisaEspecialidadeChanged: _aplicarPesquisaEspecialidade,
-          onLimparPesquisa: _limparPesquisa,
-        ),
-      ],
+        ],
+      ),
     );
   }
 

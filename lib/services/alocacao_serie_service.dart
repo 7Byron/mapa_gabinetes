@@ -217,12 +217,37 @@ class AlocacaoSerieService {
 
       onProgresso(0.8, 'A invalidar cache...');
 
-      // CORREÇÃO CRÍTICA: Aguardar um pouco para garantir que o Firestore salvou a série
-      await Future.delayed(const Duration(milliseconds: 800));
+      // CORREÇÃO CRÍTICA: Aguardar mais tempo para garantir que o Firestore salvou completamente a série
+      // e que a escrita foi replicada no servidor antes de invalidar o cache
+      await Future.delayed(const Duration(milliseconds: 1500));
 
-      // CORREÇÃO CRÍTICA: Invalidar cache do dia atual e cache de séries
-      AlocacaoMedicosLogic.invalidateCacheForDay(dataRefNormalizada);
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(dataRefNormalizada.year, 1, 1));
+      // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
+      // Buscar a série atualizada do servidor para garantir que temos os dados mais recentes
+      // CORREÇÃO: Capturar o ID da série antes de usar no closure para evitar problemas de null safety
+      final serieIdParaBuscar = serieEncontrada.id;
+      SerieRecorrencia serieAtualizada = serieEncontrada;
+      
+      try {
+        final seriesAtualizadas = await SerieService.carregarSeries(
+          medicoId,
+          unidade: unidade,
+          forcarServidor: true, // Forçar servidor para garantir dados atualizados
+        );
+        
+        final seriesFiltradas = seriesAtualizadas.where(
+          (s) => s.id == serieIdParaBuscar,
+        ).toList();
+        
+        if (seriesFiltradas.isNotEmpty) {
+          serieAtualizada = seriesFiltradas.first;
+        }
+      } catch (e) {
+        debugPrint('⚠️ Erro ao buscar série atualizada do servidor: $e');
+        // Continuar com a série original se houver erro
+      }
+      
+      // Invalidar cache para todos os dias que a série afeta
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada, unidade: unidade);
 
       await Future.delayed(const Duration(milliseconds: 800));
 

@@ -146,6 +146,7 @@ class CadastroMedicosHelper {
 
   /// Salva todas as séries de recorrência fornecidas
   /// Retorna o número de séries salvas
+  /// CORREÇÃO CRÍTICA: Invalida cache para todas as séries após salvar
   static Future<int> salvarSeries(
     List<SerieRecorrencia> series,
     Unidade? unidade,
@@ -164,6 +165,12 @@ class CadastroMedicosHelper {
         ativo: serie.ativo,
       );
       await SerieService.salvarSerie(serieComHorarios, unidade: unidade);
+      
+      // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que esta série afeta
+      // Isso garante que quando o utilizador navega para qualquer dia da série,
+      // os dados serão recarregados do servidor e estarão atualizados
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieComHorarios, unidade: unidade);
+      
       salvas++;
     }
     return salvas;

@@ -48,7 +48,7 @@ Future<bool> realocarCartaoSerie({
   required BuildContext context,
   required VoidCallback setState,
   void Function(String medicoId, String gabineteOrigem, String gabineteDestino, DateTime data)? onRealocacaoOtimista,
-  required VoidCallback onAtualizarEstado,
+  required Future<void> Function() onAtualizarEstado,
   required void Function(double progresso, String mensagem) onProgresso,
   required bool Function(DateTime data, SerieRecorrencia serie) verificarSeDataCorrespondeSerie,
 }) async {

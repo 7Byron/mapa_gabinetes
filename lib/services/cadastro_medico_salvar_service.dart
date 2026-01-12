@@ -7,6 +7,7 @@ import '../models/excecao_serie.dart';
 import '../services/disponibilidade_unica_service.dart';
 import '../services/serie_service.dart';
 import '../utils/cadastro_medicos_helper.dart';
+import '../utils/alocacao_medicos_logic.dart';
 import 'medico_salvar_service.dart' as medico_salvar;
 
 /// Serviço para salvar médico completo com todas as suas dependências
@@ -73,9 +74,13 @@ class CadastroMedicoSalvarService {
       );
 
       // Salvar séries de recorrência
+      // CORREÇÃO CRÍTICA: As séries invalidam o cache automaticamente quando são salvas
+      // através do CadastroMedicosHelper.salvarSeries que chama invalidateCacheParaSerie
       await CadastroMedicosHelper.salvarSeries(series, unidade);
 
       // Salvar disponibilidades únicas
+      // CORREÇÃO CRÍTICA: Cada disponibilidade única invalida o cache do seu dia específico
+      // através do DisponibilidadeUnicaService.salvarDisponibilidadesUnicas
       int unicasSalvas = 0;
       int unicasErros = 0;
 
@@ -86,6 +91,9 @@ class CadastroMedicoSalvarService {
             medicoId,
             unidade,
           );
+          // CORREÇÃO CRÍTICA: Cache já é invalidado dentro de DisponibilidadeUnicaService
+          // mas garantimos também aqui para máxima segurança
+          AlocacaoMedicosLogic.invalidateCacheForDay(disp.data);
           unicasSalvas++;
         } catch (e, stackTrace) {
           unicasErros++;
@@ -109,12 +117,21 @@ class CadastroMedicoSalvarService {
       await Future.delayed(const Duration(milliseconds: 1000));
 
       // Salvar exceções
+      // CORREÇÃO CRÍTICA: Exceções invalidam o cache automaticamente quando são salvas
+      // através do SerieService.salvarExcecao
       for (final excecao in excecoes) {
         await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
       }
 
-      // Invalidar cache
+      // CORREÇÃO CRÍTICA: Invalidar cache para todas as disponibilidades
+      // Isso garante que mesmo disponibilidades que não foram salvas diretamente sejam atualizadas
       CadastroMedicosHelper.invalidarCacheDisponibilidades(disponibilidades);
+      
+      // CORREÇÃO CRÍTICA: Invalidar cache também para todas as séries
+      // Para garantir que todas as séries sejam recarregadas
+      for (final serie in series) {
+        AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
+      }
 
       // Invalidar cache de médicos ativos
       if (unidade != null) {

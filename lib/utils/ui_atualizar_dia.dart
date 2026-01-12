@@ -293,14 +293,6 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       };
     }
 
-    debugPrint(
-        '🔍 Verificação de encerramento: clinicaFechada=$clinicaFechada, mensagem="$mensagemClinicaFechada"');
-    debugPrint('  - Feriados carregados: ${feriados.length}');
-    debugPrint(
-        '  - Dias de encerramento carregados: ${diasEncerramento.length}');
-    debugPrint('  - encerraFeriados: $encerraFeriados');
-    debugPrint(
-        '  - Data selecionada: ${DateFormat('yyyy-MM-dd').format(data)}');
 
     // NOTA: A verificação de clínica fechada já foi feita acima e retornou imediatamente se estiver fechada
     // Se chegou aqui, a clínica está aberta e podemos continuar com o carregamento
@@ -319,9 +311,10 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     final inicioExcecoes = DateTime.now();
     final datasComExcecoesCanceladas = await excecoesFuture;
     final tempoExcecoes = DateTime.now().difference(inicioExcecoes).inMilliseconds;
-    debugPrint('⏱️ [PERF] Tempo para carregar exceções: ${tempoExcecoes}ms');
-    debugPrint(
-        '⚡ Exceções canceladas carregadas: ${datasComExcecoesCanceladas.length}');
+    // CORREÇÃO: Reduzir logs - apenas mostrar se demorar muito (> 500ms)
+    if (tempoExcecoes > 500) {
+      debugPrint('⏱️ [PERF] Exceções: ${tempoExcecoes}ms');
+    }
 
     // FASE 2: Carregar dados essenciais (gabinetes, médicos, disponibilidades e alocações)
     onProgress?.call(0.15, 'A carregar dados...');
@@ -330,25 +323,28 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     // Timer para atualizar progresso continuamente durante carregamento (15% -> 70%)
     Timer? timerProgressoContinuo;
     double progressoAtual = 0.15;
+    bool carregamentoCompleto = false; // Flag para controlar quando o carregamento termina
+    
     timerProgressoContinuo = Timer.periodic(const Duration(milliseconds: 80), (timer) {
-      if (progressoAtual >= 0.70) {
+      // CORREÇÃO: Cancelar timer imediatamente se carregamento completo ou progresso atingido
+      if (carregamentoCompleto || progressoAtual >= 0.70) {
         timer.cancel();
+        timerProgressoContinuo = null;
         return;
       }
       progressoAtual = (progressoAtual + 0.008).clamp(0.15, 0.70);
       onProgress?.call(progressoAtual, 'A carregar dados...');
     });
 
-    // Carregar dados usando a lógica existente
-    await logic.AlocacaoMedicosLogic.carregarDadosIniciais(
+    try {
+      // Carregar dados usando a lógica existente
+      await logic.AlocacaoMedicosLogic.carregarDadosIniciais(
       gabinetes: gabinetes,
       medicos: medicos,
       disponibilidades: disponibilidades,
       alocacoes: alocacoes,
       onGabinetes: (g) {
         if (!recarregarMedicos && g.isEmpty && gabinetes.isNotEmpty) {
-          debugPrint(
-              '⚠️ Preservando ${gabinetes.length} gabinetes existentes (lista vazia recebida durante mudança de data)');
           return;
         }
         gabinetes.clear();
@@ -356,22 +352,14 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       },
       onMedicos: (m) {
         if (!recarregarMedicos && m.isEmpty && medicos.isNotEmpty) {
-          debugPrint(
-              '⚠️ Preservando ${medicos.length} médicos existentes (lista vazia recebida durante mudança de data)');
           return;
         }
         medicos.clear();
         medicos.addAll(m);
-        debugPrint(
-            '👥 Médicos carregados: ${m.length} total, ${m.where((med) => med.ativo).length} ativos');
       },
       onDisponibilidades: (d) {
-        debugPrint(
-            '📋 onDisponibilidades chamado com ${d.length} disponibilidades');
         disponibilidades.clear();
         disponibilidades.addAll(d);
-        debugPrint(
-            '📋 Disponibilidades atualizadas: ${disponibilidades.length} total');
       },
       onAlocacoes: (a) {
         // Preservar alocações otimistas durante recarregamento
@@ -404,8 +392,6 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
 
             if (!alocacoesMap.containsKey(chave)) {
               alocacoesMap[chave] = aloc;
-              debugPrint(
-                  '✅ Preservando alocação otimista durante recarregamento: ${aloc.id}');
             }
           } else if (aloc.id.startsWith('serie_')) {
             final chave =
@@ -418,10 +404,6 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
 
         alocacoes.clear();
         alocacoes.addAll(alocacoesMap.values);
-        final alocacoesOtimistasPreservadas =
-            alocacoes.where((a) => a.id.startsWith('otimista_')).length;
-        debugPrint(
-            '✅ Alocações mescladas: ${alocacoes.length} total ($alocacoesOtimistasPreservadas otimistas preservadas)');
       },
       unidade: unidade,
       dataFiltroDia: data,
@@ -429,17 +411,24 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       excecoesCanceladas: datasComExcecoesCanceladas,
     );
 
-    // Cancelar timer de progresso contínuo
-    timerProgressoContinuo.cancel();
-    final tempoDados = DateTime.now().difference(inicioDados).inMilliseconds;
-    debugPrint('⏱️ [PERF] Tempo para carregar dados do Firestore: ${tempoDados}ms');
+      // CORREÇÃO: Marcar carregamento como completo e cancelar timer imediatamente
+      carregamentoCompleto = true;
+      timerProgressoContinuo?.cancel();
+      timerProgressoContinuo = null;
+      
+      final tempoDados = DateTime.now().difference(inicioDados).inMilliseconds;
+      // Reduzir logs desnecessários - apenas mostrar se demorar muito
+      if (tempoDados > 1000) {
+        debugPrint('⏱️ [PERF] Dados Firestore: ${tempoDados}ms');
+      }
+    } finally {
+      // CORREÇÃO CRÍTICA: Garantir que timer seja sempre cancelado, mesmo em caso de erro
+      carregamentoCompleto = true;
+      timerProgressoContinuo?.cancel();
+      timerProgressoContinuo = null;
+    }
     
     // Garantir que o progresso esteja em 70% após carregar dados
-    onProgress?.call(0.70, 'A processar dados...');
-    
-    // Pequeno delay para mostrar a mensagem
-    await Future.delayed(const Duration(milliseconds: 100));
-    
     onProgress?.call(0.75, 'A processar médicos disponíveis...');
 
     // FASE 3: Calcular médicos disponíveis
@@ -494,12 +483,11 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     }).toList());
 
     final tempoTotal = DateTime.now().difference(inicioTotal).inMilliseconds;
-    debugPrint('⏱️ [PERF] Tempo total para atualizar dados do dia: ${tempoTotal}ms');
+    // CORREÇÃO: Reduzir logs - apenas mostrar se demorar muito (> 2000ms)
+    if (tempoTotal > 2000) {
+      debugPrint('⏱️ [PERF] Total: ${tempoTotal}ms');
+    }
     
-    onProgress?.call(0.90, 'A finalizar...');
-    await Future.delayed(const Duration(milliseconds: 100));
-    onProgress?.call(0.95, 'A finalizar...');
-    await Future.delayed(const Duration(milliseconds: 100));
     onProgress?.call(1.0, 'Concluído!');
 
     // Converter encerraDias para Map normal para evitar problemas de serialização
@@ -545,7 +533,6 @@ Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade, {required D
   final ano = data.year;
   final cached = _CacheEncerramento.getFeriados(unidade.id, ano);
   if (cached != null) {
-    debugPrint('💾 [CACHE] Usando cache de feriados para ${unidade.id} ano $ano');
     return cached;
   }
 
@@ -575,7 +562,6 @@ Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade, {required D
 
       // Armazenar no cache
       _CacheEncerramento.setFeriados(unidade.id, ano, result);
-      debugPrint('💾 [CACHE] Cache de feriados atualizado para ${unidade.id} ano $ano: ${result.length} feriados');
 
       return result;
     } catch (e) {
@@ -614,7 +600,6 @@ Future<List<Map<String, dynamic>>> _carregarDiasEncerramento(
   final ano = data.year;
   final cached = _CacheEncerramento.getDiasEncerramento(unidade.id, ano);
   if (cached != null) {
-    debugPrint('💾 [CACHE] Usando cache de dias de encerramento para ${unidade.id} ano $ano');
     return cached;
   }
 
@@ -645,7 +630,6 @@ Future<List<Map<String, dynamic>>> _carregarDiasEncerramento(
 
       // Armazenar no cache
       _CacheEncerramento.setDiasEncerramento(unidade.id, ano, result);
-      debugPrint('💾 [CACHE] Cache de dias de encerramento atualizado para ${unidade.id} ano $ano: ${result.length} dias');
 
       return result;
     } catch (e) {
@@ -684,7 +668,6 @@ Future<Map<String, dynamic>> _carregarHorariosEConfiguracoes(
   // Verificar cache primeiro
   final cached = _CacheEncerramento.getHorarios(unidade.id);
   if (cached != null) {
-    debugPrint('💾 [CACHE] Usando cache de horários e configurações para ${unidade.id}');
     return cached;
   }
 
@@ -730,7 +713,6 @@ Future<Map<String, dynamic>> _carregarHorariosEConfiguracoes(
 
         // Armazenar no cache
         _CacheEncerramento.setHorarios(unidade.id, result);
-        debugPrint('💾 [CACHE] Cache de horários e configurações atualizado para ${unidade.id}');
 
         return result;
       }

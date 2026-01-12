@@ -272,6 +272,7 @@ class ListaMedicosState extends State<ListaMedicos> {
 
       CollectionReference ocupantesRef;
       CollectionReference disponibilidadesRef;
+      CollectionReference seriesRef;
       CollectionReference excecoesRef;
 
       if (widget.unidade != null) {
@@ -282,12 +283,14 @@ class ListaMedicosState extends State<ListaMedicos> {
             .collection('ocupantes');
         disponibilidadesRef =
             ocupantesRef.doc(id).collection('disponibilidades');
+        seriesRef = ocupantesRef.doc(id).collection('series');
         excecoesRef = ocupantesRef.doc(id).collection('excecoes');
       } else {
         // Deleta da coleção antiga (fallback)
         ocupantesRef = firestore.collection('medicos');
         disponibilidadesRef =
             ocupantesRef.doc(id).collection('disponibilidades');
+        seriesRef = ocupantesRef.doc(id).collection('series');
         excecoesRef = ocupantesRef.doc(id).collection('excecoes');
       }
 
@@ -330,47 +333,115 @@ class ListaMedicosState extends State<ListaMedicos> {
         }
       }
 
-      // 2. Apaga exceções do médico
-      final excecoesAnosSnapshot = await excecoesRef.get();
-      for (final anoDoc in excecoesAnosSnapshot.docs) {
-        final registosRef = anoDoc.reference.collection('registos');
-        final todosRegistos = await registosRef.get();
-        for (final doc in todosRegistos.docs) {
-          final data = doc.data();
-          final dataExcecao = data['data'] as String?;
-
-          if (dataExcecao != null) {
-            final dataExcecaoDate = DateTime.parse(dataExcecao);
-            final dataExcecaoNormalizada = DateTime(
-              dataExcecaoDate.year,
-              dataExcecaoDate.month,
-              dataExcecaoDate.day,
-            );
-
-            // Se apagarTodos, remove tudo. Senão, remove apenas a partir de hoje (>= hoje)
-            final deveRemover = apagarTodos ||
-                (dataExcecaoNormalizada.isAtSameMomentAs(dataAtualNormalizada) ||
-                    dataExcecaoNormalizada.isAfter(dataAtualNormalizada));
-            if (deveRemover) {
+      // 2. Apaga séries do médico (quando apagarTodos é true)
+      if (apagarTodos) {
+        try {
+          final seriesSnapshot = await seriesRef.get();
+          for (final doc in seriesSnapshot.docs) {
+            try {
               await doc.reference.delete();
-            }
-          } else {
-            // Se não tem data, remover apenas se apagarTodos
-            if (apagarTodos) {
-              await doc.reference.delete();
+            } catch (e) {
+              debugPrint('Erro ao apagar série ${doc.id}: $e');
+              // Continuar mesmo se houver erro
             }
           }
-        }
-
-        // Verificar se ainda há registos no ano
-        final registosRestantes = await registosRef.get();
-        if (registosRestantes.docs.isEmpty) {
-          // Remove o documento do ano se estiver vazio
-          await anoDoc.reference.delete();
+        } catch (e) {
+          debugPrint('Erro ao apagar séries: $e');
         }
       }
 
-      // 3. Apaga alocações do médico
+      // 3. Apaga exceções do médico de forma mais robusta
+      if (apagarTodos) {
+        // Quando apagarTodos é true, apagar TODAS as exceções sem verificar datas
+        final excecoesAnosSnapshot = await excecoesRef.get();
+        for (final anoDoc in excecoesAnosSnapshot.docs) {
+          final registosRef = anoDoc.reference.collection('registos');
+          final todosRegistos = await registosRef.get();
+          // Apagar todas as exceções sem verificar data
+          for (final doc in todosRegistos.docs) {
+            try {
+              await doc.reference.delete();
+            } catch (e) {
+              debugPrint('Erro ao apagar exceção ${doc.id}: $e');
+              // Continuar mesmo se houver erro
+            }
+          }
+          // Apagar o documento do ano após remover todos os registos
+          try {
+            await anoDoc.reference.delete();
+          } catch (e) {
+            debugPrint('Erro ao apagar documento de ano ${anoDoc.id}: $e');
+          }
+        }
+        
+        // Verificação final: garantir que todas as exceções foram apagadas
+        try {
+          final verificacaoFinal = await excecoesRef.get();
+          for (final anoDoc in verificacaoFinal.docs) {
+            final registosRef = anoDoc.reference.collection('registos');
+            final registosFinais = await registosRef.get();
+            for (final doc in registosFinais.docs) {
+              try {
+                await doc.reference.delete();
+              } catch (e) {
+                debugPrint('Erro ao apagar exceção final ${doc.id}: $e');
+              }
+            }
+            try {
+              await anoDoc.reference.delete();
+            } catch (e) {
+              debugPrint('Erro ao apagar documento de ano final ${anoDoc.id}: $e');
+            }
+          }
+        } catch (e) {
+          debugPrint('Erro na verificação final de exceções: $e');
+        }
+      } else {
+        // Quando apagarTodos é false, remover apenas exceções a partir de hoje
+        final excecoesAnosSnapshot = await excecoesRef.get();
+        for (final anoDoc in excecoesAnosSnapshot.docs) {
+          final registosRef = anoDoc.reference.collection('registos');
+          final todosRegistos = await registosRef.get();
+          for (final doc in todosRegistos.docs) {
+            try {
+              final data = doc.data();
+              final dataExcecao = data['data'] as String?;
+
+              if (dataExcecao != null) {
+                final dataExcecaoDate = DateTime.parse(dataExcecao);
+                final dataExcecaoNormalizada = DateTime(
+                  dataExcecaoDate.year,
+                  dataExcecaoDate.month,
+                  dataExcecaoDate.day,
+                );
+
+                // Remove apenas a partir de hoje (>= hoje)
+                if (dataExcecaoNormalizada.isAtSameMomentAs(dataAtualNormalizada) ||
+                    dataExcecaoNormalizada.isAfter(dataAtualNormalizada)) {
+                  await doc.reference.delete();
+                }
+              }
+              // Se não tem data, não remover (preservar histórico)
+            } catch (e) {
+              debugPrint('Erro ao apagar exceção ${doc.id}: $e');
+              // Continuar mesmo se houver erro
+            }
+          }
+
+          // Verificar se ainda há registos no ano
+          final registosRestantes = await registosRef.get();
+          if (registosRestantes.docs.isEmpty) {
+            // Remove o documento do ano se estiver vazio
+            try {
+              await anoDoc.reference.delete();
+            } catch (e) {
+              debugPrint('Erro ao apagar documento de ano ${anoDoc.id}: $e');
+            }
+          }
+        }
+      }
+
+      // 4. Apaga alocações do médico
       if (widget.unidade != null) {
         final unidadeId = widget.unidade!.id;
         // Buscar alocações do ano atual e próximo ano
@@ -415,11 +486,33 @@ class ListaMedicosState extends State<ListaMedicos> {
         }
       }
 
-      // 4. Se apagarTodos, deleta o documento do médico completamente
+      // 5. Se apagarTodos, deleta o documento do médico completamente em "ocupantes"
       // Senão, apenas marca como inativo para preservar histórico
       if (apagarTodos) {
-        // Deleta o documento do médico completamente
-        await ocupantesRef.doc(id).delete();
+        // Verificar se ainda existem subcoleções antes de apagar o documento
+        try {
+          final disponibilidadesRestantes = await disponibilidadesRef.get();
+          final excecoesRestantes = await excecoesRef.get();
+          
+          if (disponibilidadesRestantes.docs.isEmpty && excecoesRestantes.docs.isEmpty) {
+            // Deleta o documento do médico completamente em "ocupantes"
+            await ocupantesRef.doc(id).delete();
+            debugPrint('✅ Documento do médico apagado em ocupantes: $id');
+          } else {
+            debugPrint('⚠️ Ainda existem subcoleções, mas apagando documento mesmo assim');
+            // Ainda assim apagar o documento, pois as subcoleções ficarão órfãs mas não aparecerão no app
+            await ocupantesRef.doc(id).delete();
+          }
+        } catch (e) {
+          debugPrint('Erro ao apagar documento do médico: $e');
+          // Tentar apagar mesmo assim
+          try {
+            await ocupantesRef.doc(id).delete();
+          } catch (e2) {
+            debugPrint('Erro ao forçar apagar documento do médico: $e2');
+            rethrow;
+          }
+        }
       } else {
         // Marca o médico como inativo em vez de apagá-lo
         // Isso preserva o histórico e evita cartões "Desconhecido"

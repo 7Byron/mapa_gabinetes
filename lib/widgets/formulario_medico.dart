@@ -73,10 +73,16 @@ class FormularioMedicoState extends State<FormularioMedico> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: Colors.white,
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 16),
+      clipBehavior: Clip.none,
+      decoration: BoxDecoration(
+        color: MyAppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: MyAppTheme.shadowCard3D,
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

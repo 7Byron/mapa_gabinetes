@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'dart:convert';
 import '../models/disponibilidade.dart';
+import '../models/alocacao.dart';
+import '../models/gabinete.dart';
+import '../models/unidade.dart';
+import '../models/serie_recorrencia.dart';
+import 'alocacao_card.dart';
+import '../utils/alocacao_card_actions.dart';
+import '../utils/alocacao_card_handlers.dart';
+import '../services/disponibilidade_data_gestao_service.dart';
+import '../utils/debug_log_file.dart';
 
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
@@ -8,6 +17,11 @@ class DisponibilidadesGrid extends StatefulWidget {
   final Function(Disponibilidade)? onEditarDisponibilidade;
   final VoidCallback? onChanged; // notifica alterações (horários etc.)
   final Function(Disponibilidade, List<String>)? onAtualizarSerie; // callback para atualizar série quando horários são editados
+  final List<Alocacao>? alocacoes; // Alocações para exibir número do gabinete
+  final List<Gabinete>? gabinetes; // Lista de gabinetes para obter nomes
+  final Unidade? unidade; // Unidade para navegação
+  final Function(Disponibilidade, String?)? onGabineteChanged; // Callback quando gabinete é alterado (null = desalocar)
+  final List<SerieRecorrencia>? series; // Lista de séries para validação de horários
 
   const DisponibilidadesGrid({
     super.key,
@@ -16,6 +30,11 @@ class DisponibilidadesGrid extends StatefulWidget {
     this.onEditarDisponibilidade,
     this.onChanged,
     this.onAtualizarSerie,
+    this.alocacoes,
+    this.gabinetes,
+    this.unidade,
+    this.onGabineteChanged,
+    this.series,
   });
 
   @override
@@ -23,102 +42,114 @@ class DisponibilidadesGrid extends StatefulWidget {
 }
 
 class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
-  // Determina cor do cartão baseado na validação dos horários
-  Color _determinarCorDoCartao(Disponibilidade disponibilidade) {
-    if (disponibilidade.horarios.isEmpty) {
-      return Colors.orange.shade200; // Nenhum horário definido
-    }
-    if (disponibilidade.horarios.length == 1) {
-      return Colors.orange.shade200; // Apenas um horário definido
-    }
+  // Contador para forçar rebuild quando alocações mudam drasticamente
+  int _rebuildCounter = 0;
+  List<String>? _lastAlocacoesHash;
+  // Key única para forçar rebuild completo do GridView quando necessário
+  Key? _gridUniqueKey;
+  // Hash e contador das alocações para detectar mudanças drasticas
+  int? _lastAlocacoesHashCode;
+  int? _lastNumAlocacoes;
 
+  @override
+  void didUpdateWidget(DisponibilidadesGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // #region agent log
     try {
-      final inicio = TimeOfDay(
-        hour: int.parse(disponibilidade.horarios[0].split(':')[0]),
-        minute: int.parse(disponibilidade.horarios[0].split(':')[1]),
-      );
-      final fim = TimeOfDay(
-        hour: int.parse(disponibilidade.horarios[1].split(':')[0]),
-        minute: int.parse(disponibilidade.horarios[1].split(':')[1]),
-      );
-
-      if (inicio.hour < fim.hour ||
-          (inicio.hour == fim.hour && inicio.minute < fim.minute)) {
-        return Colors.lightGreen.shade100; // Válido
+      final logEntry = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'location': 'disponibilidades_grid.dart:didUpdateWidget',
+        'message': 'didUpdateWidget chamado',
+        'data': {
+          'alocacoesAntes': oldWidget.alocacoes?.length ?? 0,
+          'alocacoesDepois': widget.alocacoes?.length ?? 0,
+          'hypothesisId': 'P1'
+        },
+        'sessionId': 'debug-session',
+        'runId': 'run1',
+      };
+      writeLogToFile(jsonEncode(logEntry));
+    } catch (e) {}
+    // #endregion
+    
+    // CORREÇÃO: Detectar mudanças significativas nas alocações e forçar rebuild
+    final currentHashList = widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
+    final numAlocacoesAtual = widget.alocacoes?.length ?? 0;
+    final numAlocacoesAntigo = oldWidget.alocacoes?.length ?? 0;
+    
+    if (currentHashList != null) {
+      currentHashList.sort();
+      if (_lastAlocacoesHash != null) {
+        final hashChanged = currentHashList.join('|') != _lastAlocacoesHash!.join('|');
+        // CORREÇÃO CRÍTICA: Se o número de alocações diminuiu significativamente (desalocação de série),
+        // forçar rebuild completo do GridView com UniqueKey
+        final desalocacaoSignificativa = numAlocacoesAtual < numAlocacoesAntigo - 5;
+        
+        if (hashChanged || desalocacaoSignificativa) {
+          // #region agent log
+          try {
+            final logEntry = {
+              'timestamp': DateTime.now().millisecondsSinceEpoch,
+              'location': 'disponibilidades_grid.dart:didUpdateWidget',
+              'message': 'Alocações mudaram - forçando rebuild',
+              'data': {
+                'alocacoesAntes': _lastAlocacoesHash!.length,
+                'alocacoesDepois': currentHashList.length,
+                'numAlocacoesAntigo': numAlocacoesAntigo,
+                'numAlocacoesAtual': numAlocacoesAtual,
+                'desalocacaoSignificativa': desalocacaoSignificativa,
+                'rebuildCounter': _rebuildCounter + 1,
+                'hypothesisId': 'P1'
+              },
+              'sessionId': 'debug-session',
+              'runId': 'run1',
+            };
+            writeLogToFile(jsonEncode(logEntry));
+          } catch (e) {}
+          // #endregion
+          _rebuildCounter++;
+          _lastAlocacoesHash = currentHashList;
+          // CORREÇÃO CRÍTICA: Sempre criar nova UniqueKey quando há desalocação significativa
+          // Isso força o Flutter a descartar completamente o GridView e criar um novo
+          if (desalocacaoSignificativa || hashChanged) {
+            _gridUniqueKey = UniqueKey();
+            _lastAlocacoesHashCode = null; // Resetar para forçar recálculo no build()
+            _lastNumAlocacoes = null;
+          }
+          // Forçar rebuild
+          if (mounted) {
+            setState(() {});
+          }
+        }
       } else {
-        return Colors.red.shade100; // Início depois do fim
+        _lastAlocacoesHash = currentHashList;
       }
-    } catch (e) {
-      return Colors.red.shade300; // Erro de formatação
+    }
+    
+    // Atualizar contadores
+    _lastNumAlocacoes = numAlocacoesAtual;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final initialHash = widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
+    if (initialHash != null) {
+      initialHash.sort();
+      _lastAlocacoesHash = initialHash;
     }
   }
 
+  // Métodos auxiliares mantidos para compatibilidade (agora usam helpers)
   Future<void> _mostrarDialogoRemocaoSeries(
     BuildContext context,
     Disponibilidade disponibilidade,
   ) async {
-    final isSerie = disponibilidade.tipo != 'Única';
-
-    if (isSerie) {
-      final escolha = await showDialog<String>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Remover disponibilidade'),
-            content: Text(
-              'Remover apenas este dia ou toda a série desde este dia em diante (${disponibilidade.tipo})?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop('single'),
-                child: const Text('Apenas este dia'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop('all'),
-                child: const Text('Toda a série'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(null),
-                child: const Text('Cancelar'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (escolha == 'single') {
-        widget.onRemoverData(disponibilidade.data, false);
-      } else if (escolha == 'all') {
-        widget.onRemoverData(disponibilidade.data, true);
-      }
-    } else {
-      final confirmacao = await showDialog<bool>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Remover disponibilidade'),
-            content: Text(
-              'Tem certeza que deseja remover o dia '
-              '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Não'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Sim'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (confirmacao == true) {
-        widget.onRemoverData(disponibilidade.data, false);
-      }
-    }
+    await AlocacaoCardHandlers.mostrarDialogoRemocao(
+      context,
+      disponibilidade,
+      onRemoverData: widget.onRemoverData,
+    );
   }
 
   Future<void> _selecionarHorario(
@@ -251,144 +282,188 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
   }
 
-  /// Traduz dia da semana de inglês para português
-  String _traduzirDiaSemana(String diaIngles) {
-    const traducoes = {
-      'Monday': '2ª feira',
-      'Tuesday': '3ª feira',
-      'Wednesday': '4ª feira',
-      'Thursday': '5ª feira',
-      'Friday': '6ª feira',
-      'Saturday': 'Sábado',
-      'Sunday': 'Domingo',
-    };
-    return traducoes[diaIngles] ?? diaIngles;
-  }
 
   void _verDisponibilidade(Disponibilidade disponibilidade) {
-    // Ao tocar no cartão, executa a mesma lógica que editar (abre o CadastroMedico)
-    widget.onEditarDisponibilidade?.call(disponibilidade);
+    // CORREÇÃO: Validar horários ANTES de abrir o diálogo
+    // Se é uma série, verificar se tem horários configurados
+    if (disponibilidade.tipo != 'Única' && widget.series != null) {
+      // Encontrar a série correspondente
+      final serieEncontrada = DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+        disponibilidade,
+        widget.series!,
+        disponibilidade.data,
+      );
+      
+      // Se encontrou a série e não tem horários configurados, mostrar erro
+      if (serieEncontrada != null && 
+          serieEncontrada.id.isNotEmpty &&
+          (serieEncontrada.horarios.isEmpty || serieEncontrada.horarios.length < 2)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Introduza as horas de inicio e fim primeiro!'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return; // Não abrir o diálogo
+      }
+    }
+    
+    // Ao clicar no cartão, mostrar diálogo para selecionar/desalocar gabinete
+    AlocacaoCardHandlers.mostrarDialogoSelecaoGabinete(
+      context,
+      disponibilidade,
+      widget.gabinetes,
+      widget.alocacoes,
+      onGabineteChanged: (disp, novoGabineteId) {
+        widget.onGabineteChanged?.call(disp, novoGabineteId);
+      },
+    );
+  }
+
+  /// Navega para a tela de alocação no dia correspondente ao cartão
+  void _navegarParaMapa(BuildContext context, DateTime data) {
+    AlocacaoCardActions.navegarParaMapa(
+      context,
+      data,
+      widget.unidade,
+      onVoltar: widget.onChanged,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // #region agent log
+    try {
+      final logEntry = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'location': 'disponibilidades_grid.dart:build',
+        'message': 'DisponibilidadesGrid.build chamado',
+        'data': {
+          'totalAlocacoes': widget.alocacoes?.length ?? 0,
+          'totalDisponibilidades': widget.disponibilidades.length,
+          'rebuildCounter': _rebuildCounter,
+          'hypothesisId': 'P1'
+        },
+        'sessionId': 'debug-session',
+        'runId': 'run1',
+      };
+      writeLogToFile(jsonEncode(logEntry));
+    } catch (e) {}
+    // #endregion
+    
+    // CORREÇÃO CRÍTICA: Forçar rebuild completo quando as alocações mudam drasticamente
+    // Calcular hash das alocações ANTES do LayoutBuilder para garantir detecção precisa
+    final numAlocacoes = widget.alocacoes?.length ?? 0;
+    final alocacoesParaHash = widget.alocacoes != null
+        ? (widget.alocacoes!.map((a) => '${a.id}_${a.gabineteId}_${a.data.toString().substring(0, 10)}').toList()..sort())
+        : <String>[];
+    final alocacoesHashCode = alocacoesParaHash.join('|').hashCode;
+    final alocacoesComGabinete = widget.alocacoes?.where((a) => a.gabineteId.isNotEmpty).length ?? 0;
+    final alocacoesSemGabinete = (widget.alocacoes?.length ?? 0) - alocacoesComGabinete;
+    
+    // CORREÇÃO CRÍTICA: Se o hash das alocações mudou, sempre criar nova UniqueKey
+    // Isso força o Flutter a descartar completamente o GridView e criar um novo
+    if (_lastAlocacoesHashCode != null && _lastAlocacoesHashCode != alocacoesHashCode) {
+      // Sempre criar nova UniqueKey quando o hash muda (indica mudança nas alocações)
+      _gridUniqueKey = UniqueKey();
+      _rebuildCounter++;
+    }
+    // Atualizar hash apenas se for diferente (para evitar criar UniqueKey desnecessariamente)
+    if (_lastAlocacoesHashCode != alocacoesHashCode) {
+      _lastAlocacoesHashCode = alocacoesHashCode;
+      _lastNumAlocacoes = numAlocacoes;
+    }
+    
     return LayoutBuilder(
       builder: (context, constraints) {
         final int crossAxisCount = (constraints.maxWidth / 200).floor();
         // Ordena por data para garantir ordem cronológica na grelha
         widget.disponibilidades.sort((a, b) => a.data.compareTo(b.data));
+        // CORREÇÃO CRÍTICA: Usar UniqueKey quando disponível, senão usar ValueKey baseado em hash
+        // Isso força rebuild completo do GridView quando as alocações mudam drasticamente
+        final gridKey = _gridUniqueKey ?? ValueKey('grid_${widget.disponibilidades.length}_${numAlocacoes}_${alocacoesComGabinete}_${alocacoesSemGabinete}_$alocacoesHashCode$_rebuildCounter');
         return GridView.builder(
+          key: gridKey,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             crossAxisSpacing: 8.0,
             mainAxisSpacing: 8.0,
-            childAspectRatio: 1.8,
+            childAspectRatio: 1.65, // Ajustado para dar mais altura aos cartões e evitar overflow
           ),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: widget.disponibilidades.length,
           itemBuilder: (context, index) {
             final disponibilidade = widget.disponibilidades[index];
-            // Traduzir dia da semana para português
-            final diaSemanaIngles = DateFormat('EEEE', 'en_US').format(disponibilidade.data);
-            final diaSemana = _traduzirDiaSemana(diaSemanaIngles);
-
-            final horarioInicio = disponibilidade.horarios.isNotEmpty
-                ? disponibilidade.horarios[0]
-                : 'Início';
-            final horarioFim = disponibilidade.horarios.length == 2
-                ? disponibilidade.horarios[1]
-                : 'Fim';
-
-            return InkWell(
+            // CORREÇÃO: Criar key baseada no gabineteId da alocação correspondente
+            // para forçar reconstrução do cartão quando o gabinete muda ou é removido
+            // Usar gabineteId diretamente da alocação em vez de nomeGabinete para garantir mudança
+            String gabineteKey = 'sem_gabinete';
+            final alocacoesDoDia = <Alocacao>[];
+            if (widget.alocacoes != null && widget.alocacoes!.isNotEmpty) {
+              alocacoesDoDia.addAll(widget.alocacoes!.where((a) {
+                final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                final dDate = DateTime(disponibilidade.data.year, disponibilidade.data.month, disponibilidade.data.day);
+                return a.medicoId == disponibilidade.medicoId && aDate == dDate;
+              }));
+              if (alocacoesDoDia.isNotEmpty) {
+                final alocacaoParaDia = alocacoesDoDia.first;
+                if (alocacaoParaDia.gabineteId.isNotEmpty) {
+                  gabineteKey = alocacaoParaDia.gabineteId;
+                }
+              }
+            }
+            // #region agent log
+            try {
+              final logEntry = {
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'location': 'disponibilidades_grid.dart:itemBuilder',
+                'message': 'Construindo cartão',
+                'data': {
+                  'index': index,
+                  'disponibilidadeId': disponibilidade.id,
+                  'data': disponibilidade.data.toString().substring(0, 10),
+                  'gabineteKey': gabineteKey,
+                  'totalAlocacoes': widget.alocacoes?.length ?? 0,
+                  'alocacoesParaEsteDia': alocacoesDoDia.length,
+                  'hypothesisId': 'P1'
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+              };
+              writeLogToFile(jsonEncode(logEntry));
+            } catch (e) {}
+            // #endregion
+            // CORREÇÃO CRÍTICA: Incluir data na key para garantir que cada cartão tem uma key única
+            // mesmo quando não há alocação (gabineteKey = 'sem_gabinete' para todos)
+            // Isso força o Flutter a reconstruir todos os cartões quando as alocações mudam
+            final dataKey = '${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}';
+            return AlocacaoCard(
+              key: ValueKey('card_${disponibilidade.id}_${dataKey}_$gabineteKey'),
+              disponibilidade: disponibilidade,
+              alocacoes: widget.alocacoes,
+              gabinetes: widget.gabinetes,
+              unidade: widget.unidade,
+              onChanged: widget.onChanged,
               onTap: () => _verDisponibilidade(disponibilidade),
-              child: Card(
-                elevation: 4,
-                margin: const EdgeInsets.all(8),
-                color: _determinarCorDoCartao(disponibilidade),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8.0, vertical: 4.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year} ($diaSemana)',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _mostrarDialogoRemocaoSeries(
-                                context,
-                                disponibilidade,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        'Série: ${disponibilidade.tipo}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade100,
-                                foregroundColor: Colors.black87,
-                              ),
-                              onPressed: () => _selecionarHorario(
-                                context,
-                                disponibilidade.data,
-                                true,
-                              ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  horarioInicio,
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade100,
-                                foregroundColor: Colors.black87,
-                              ),
-                              onPressed: () => _selecionarHorario(
-                                context,
-                                disponibilidade.data,
-                                false,
-                              ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  horarioFim,
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+              onRemover: () => _mostrarDialogoRemocaoSeries(
+                context,
+                disponibilidade,
+              ),
+              onNavegarParaMapa: () => _navegarParaMapa(
+                context,
+                disponibilidade.data,
+              ),
+              onSelecionarHorarioInicio: () => _selecionarHorario(
+                context,
+                disponibilidade.data,
+                true,
+              ),
+              onSelecionarHorarioFim: () => _selecionarHorario(
+                context,
+                disponibilidade.data,
+                false,
               ),
             );
           },

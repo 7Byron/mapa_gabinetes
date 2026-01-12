@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import '../utils/cadastro_medicos_helper.dart';
+import '../utils/alocacao_medicos_logic.dart';
 
 /// Serviço para salvar disponibilidades únicas no Firestore
 /// Extracted from cadastro_medicos.dart to reduce code duplication
@@ -50,6 +51,11 @@ class DisponibilidadeUnicaService {
 
         final dataMap = dispComId.toMap();
         await disponibilidadesRef.doc(idParaSalvar).set(dataMap);
+        
+        // CORREÇÃO CRÍTICA: Invalidar cache do dia específico quando uma disponibilidade única é salva
+        // Isso garante que quando o utilizador navega para esse dia, a disponibilidade aparecerá imediatamente
+        AlocacaoMedicosLogic.invalidateCacheForDay(disp.data);
+        
         unicasSalvas++;
       } catch (e) {
         unicasErros++;

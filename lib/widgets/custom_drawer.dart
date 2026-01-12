@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../utils/app_theme.dart';
 
 // Suas telas de referência
@@ -9,6 +10,7 @@ import '../screens/config_clinica_screen.dart';
 import '../screens/dias_encerramento_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
 import '../screens/lista_alocacoes_screen.dart';
+import '../screens/scripts_screen.dart';
 
 /// Drawer personalizado com menu de navegação
 /// Inclui opções separadas para configurar horários e dias de encerramento
@@ -191,6 +193,25 @@ class CustomDrawer extends StatelessWidget {
               );
             },
           ),
+
+          // Item de Scripts (apenas em modo debug)
+          if (kDebugMode)
+            ListTile(
+              leading: const Icon(Icons.code, color: Colors.orange),
+              title: const Text(
+                'Scripts...',
+                style: TextStyle(color: Colors.orange),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ScriptsScreen(unidade: unidade),
+                  ),
+                );
+              },
+            ),
 
           const Spacer(), // Empurra o botão de sair para baixo
 

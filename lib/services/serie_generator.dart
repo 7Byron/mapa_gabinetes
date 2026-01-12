@@ -234,8 +234,15 @@ class SerieGenerator {
         // Removidos logs excessivos para melhorar performance
         // (Logs de debug apenas quando necessário para troubleshooting)
 
-        // Se cancelada, não criar alocação
+        // Se cancelada, não criar alocação (exceção de disponibilidade)
         if (excecao?.cancelada ?? false) continue;
+
+        // CORREÇÃO CRÍTICA: Se há exceção de gabinete com gabineteId null, não criar alocação
+        // O médico fica sem gabinete neste dia mas continua disponível (exceção de gabinete)
+        if (excecao != null && excecao.gabineteId == null) {
+          // Exceção de gabinete: médico sem gabinete neste dia
+          continue;
+        }
 
         // CORREÇÃO: Se há exceção com gabineteId (alocação individual), gerar alocação da exceção
         // e NÃO da série. Se não há exceção, gerar alocação da série.
@@ -319,7 +326,9 @@ class SerieGenerator {
           final chave = '${serie.id}_$dataKey';
           final excecao = excecoesMap[chave];
           // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
-          // independentemente de ter gabineteId ou não
+          // independentemente de ter gabineteId ou não (exceção de disponibilidade)
+          // IMPORTANTE: Se há exceção de gabinete com gabineteId null, AINDA CRIAMOS A DISPONIBILIDADE
+          // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
           if (!(excecao?.cancelada ?? false)) {
             cartoes.add(Disponibilidade(
               id: 'serie_${serie.id}_$dataKey',
@@ -384,88 +393,18 @@ class SerieGenerator {
       final chave = '${serie.id}_$dataKey';
       final excecao = excecoesMap[chave];
 
-      // Debug: verificar se exceção foi encontrada
-      if (excecao != null) {
-        debugPrint(
-            '🔍 [GERAÇÃO SEMANAL] Data=$dataKey, Série=${serie.id}, Chave=$chave, Exceção encontrada: cancelada=${excecao.cancelada}, gabineteId=${serie.gabineteId}');
-      } else {
-        // Debug: verificar chaves disponíveis no mapa (apenas para datas problemáticas)
-        if (dataNormalizada.year == 2026 &&
-            (dataNormalizada.month == 2 &&
-                (dataNormalizada.day == 9 ||
-                    dataNormalizada.day == 12 ||
-                    dataNormalizada.day == 16))) {
-          debugPrint(
-              '⚠️ [GERAÇÃO SEMANAL] Data=$dataKey, Série=${serie.id}, Chave=$chave, EXCEÇÃO NÃO ENCONTRADA!');
-          debugPrint(
-              '   Chaves disponíveis no mapa: ${excecoesMap.keys.where((k) => k.contains(dataKey)).join(", ")}');
-        }
-      }
-
       // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
-      // independentemente de ter gabineteId ou não
+      // independentemente de ter gabineteId ou não (exceção de disponibilidade)
       final excecaoCancelada = excecao?.cancelada ?? false;
 
-      // #region agent log
-      if (dataNormalizada.year == 2026 &&
-          (dataNormalizada.month == 2 &&
-              (dataNormalizada.day == 9 ||
-                  dataNormalizada.day == 12 ||
-                  dataNormalizada.day == 16))) {
-        _writeDebugLog(
-            'serie_generator.dart:314', 'Verificando exceção cancelada', {
-          'data': dataKey,
-          'serieId': serie.id,
-          'excecaoCancelada': excecaoCancelada,
-          'gabineteId': serie.gabineteId,
-          'hypothesisId': 'A'
-        });
-        debugPrint(
-            '🔬 [DEBUG EXCEÇÃO] Data=$dataKey, Série=${serie.id}, excecaoCancelada=$excecaoCancelada, gabineteId=${serie.gabineteId}');
-      }
-      // #endregion
-
       if (excecaoCancelada) {
-        // #region agent log
-        if (dataNormalizada.year == 2026 &&
-            (dataNormalizada.month == 2 &&
-                (dataNormalizada.day == 9 ||
-                    dataNormalizada.day == 12 ||
-                    dataNormalizada.day == 16))) {
-          _writeDebugLog(
-              'serie_generator.dart:325', 'Pulando cartão cancelado', {
-            'data': dataKey,
-            'serieId': serie.id,
-            'excecaoCancelada': excecaoCancelada,
-            'gabineteId': serie.gabineteId,
-            'hypothesisId': 'C'
-          });
-        }
-        // #endregion
-        debugPrint(
-            '✅ [GERAÇÃO SEMANAL] Pulando cartão cancelado: data=$dataKey, série=${serie.id}, gabineteId=${serie.gabineteId}');
         dataAtual = dataAtual.add(const Duration(days: 7));
         continue;
       }
 
-      // #region agent log
-      if (dataNormalizada.year == 2026 &&
-          (dataNormalizada.month == 2 &&
-              (dataNormalizada.day == 9 ||
-                  dataNormalizada.day == 12 ||
-                  dataNormalizada.day == 16))) {
-        _writeDebugLog(
-            'serie_generator.dart:350', 'Adicionando cartão à lista', {
-          'data': dataKey,
-          'serieId': serie.id,
-          'excecaoCancelada': excecaoCancelada,
-          'gabineteId': serie.gabineteId,
-          'hypothesisId': 'D'
-        });
-        debugPrint(
-            '➕ [DEBUG EXCEÇÃO] ADICIONANDO cartão: data=$dataKey, série=${serie.id}, excecaoCancelada=$excecaoCancelada, gabineteId=${serie.gabineteId}');
-      }
-      // #endregion
+      // IMPORTANTE: Se há exceção de gabinete com gabineteId null, AINDA CRIAMOS A DISPONIBILIDADE
+      // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
+      // Isso permite que o médico apareça em "médicos por alocar"
 
       cartoes.add(Disponibilidade(
         id: 'serie_${serie.id}_$dataKey',
@@ -488,84 +427,274 @@ class SerieGenerator {
     DateTime fim,
     Map<String, ExcecaoSerie> excecoesMap,
   ) {
+    // #region agent log
+    try {
+      final logEntry = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'location': 'serie_generator.dart:411',
+        'message': '🔵 [HYP-C] _gerarQuinzenal - ENTRADA',
+        'data': {
+          'serieId': serie.id,
+          'serieTipo': serie.tipo,
+          'serieDataInicio': serie.dataInicio.toString(),
+          'serieDataFim': serie.dataFim?.toString() ?? 'null',
+          'periodoInicio': inicio.toString(),
+          'periodoFim': fim.toString(),
+          'weekday': serie.dataInicio.weekday,
+          'hypothesisId': 'C'
+        },
+        'sessionId': 'debug-session',
+        'runId': 'run1',
+      };
+      writeLogToFile(jsonEncode(logEntry));
+    } catch (e) {}
+    // #endregion
+
     final cartoes = <Disponibilidade>[];
     final base = DateTime(
         serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
     final weekday = serie.dataInicio.weekday;
 
-    // CORREÇÃO: Se a série começou muito antes do período, calcular a primeira data válida
-    // mais próxima do início do período para evitar loops infinitos
-    DateTime dataAtual = inicio;
+    // CORREÇÃO CRÍTICA: Normalizar inicio e fim para comparação correta
+    final inicioNormalizado = DateTime(inicio.year, inicio.month, inicio.day);
+    final fimNormalizado = DateTime(fim.year, fim.month, fim.day);
 
-    // Se a série começou antes do período, calcular a primeira data válida após o início
-    if (base.isBefore(inicio)) {
-      final diffInicio = inicio.difference(base).inDays;
-      // Calcular quantas quinzenas (14 dias) já passaram desde o início da série
-      final quinzenasPassadas = (diffInicio / 14).floor();
-      // Começar da próxima quinzena válida
-      final proximaQuinzena =
-          base.add(Duration(days: (quinzenasPassadas + 1) * 14));
-
-      // Ajustar para o weekday correto se necessário
-      if (proximaQuinzena.weekday != weekday) {
-        final diffWeekday = (weekday - proximaQuinzena.weekday + 7) % 7;
-        dataAtual = proximaQuinzena.add(Duration(days: diffWeekday));
+    // CORREÇÃO CRÍTICA: Cálculo simplificado da primeira data válida
+    // Ao avançar de 14 em 14 dias a partir de 'base', sempre mantemos o mesmo weekday
+    // Então basta calcular a primeira quinzena válida que seja >= inicio
+    
+    DateTime dataAtual;
+    
+    // Se a série começou antes ou no início do período solicitado
+    if (base.isBefore(inicioNormalizado) || base.isAtSameMomentAs(inicioNormalizado)) {
+      final diffInicio = inicioNormalizado.difference(base).inDays;
+      
+      // CORREÇÃO CRÍTICA: Primeiro verificar se 'inicio' é uma quinzena válida
+      // Se sim, usar inicio; caso contrário, calcular a próxima quinzena >= inicio
+      if (diffInicio >= 0 && diffInicio % 14 == 0) {
+        // O próprio inicio é uma quinzena válida da série
+        if (inicioNormalizado.weekday == weekday) {
+          // Inicio é uma quinzena válida com o weekday correto - usar inicio
+          dataAtual = inicioNormalizado;
+        } else {
+          // Inicio é múltiplo de 14 dias, mas weekday errado - avançar para próxima quinzena
+          final quinzenasParaAvancar = (diffInicio / 14).ceil() + 1;
+          dataAtual = base.add(Duration(days: quinzenasParaAvancar * 14));
+        }
       } else {
-        dataAtual = proximaQuinzena;
-      }
-
-      // Garantir que não começamos antes do período solicitado
-      if (dataAtual.isBefore(inicio)) {
-        dataAtual = dataAtual.add(const Duration(days: 14));
+        // Inicio não é uma quinzena válida - calcular a próxima quinzena >= inicio
+        // Usar ceil para arredondar para cima e garantir que estamos >= inicio
+        final quinzenasParaAvancar = (diffInicio / 14).ceil();
+        dataAtual = base.add(Duration(days: quinzenasParaAvancar * 14));
+        
+        // CORREÇÃO CRÍTICA: Se dataAtual calculada é menor que inicio, garantir que seja >= inicio
+        // Isso pode acontecer quando diffInicio é negativo mas arredondado para 0
+        if (dataAtual.isBefore(inicioNormalizado)) {
+          dataAtual = inicioNormalizado;
+          // Se inicio não é uma quinzena válida, avançar para a próxima
+          final diffDesdeBase = dataAtual.difference(base).inDays;
+          if (diffDesdeBase % 14 != 0 || dataAtual.weekday != weekday) {
+            // Avançar para a próxima quinzena válida
+            final quinzenasAteInicio = (diffInicio / 14).floor();
+            dataAtual = base.add(Duration(days: (quinzenasAteInicio + 1) * 14));
+          }
+        }
       }
     } else {
-      // Série começou no período ou depois - começar do início da série
-      dataAtual = base;
-    }
-
-    // Limitar iterações para evitar loops infinitos (máximo 1000 iterações = ~27 anos)
-    int iteracoes = 0;
-    const maxIteracoes = 1000;
-
-    while (dataAtual.isBefore(fim.add(const Duration(days: 1))) &&
-        iteracoes < maxIteracoes) {
-      iteracoes++;
-
-      final diff = dataAtual.difference(base).inDays;
-      // Verificar se é o mesmo dia da semana e múltiplo de 14 dias
-      if (diff >= 0 && diff % 14 == 0 && dataAtual.weekday == weekday) {
-        // Normalizar a data para garantir correspondência exata
-        final dataNormalizada = DateTime(
-          dataAtual.year,
-          dataAtual.month,
-          dataAtual.day,
-        );
-        final dataKey = _dataKey(dataNormalizada);
-        final chave = '${serie.id}_$dataKey';
-        final excecao = excecoesMap[chave];
-
-        // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
-        // independentemente de ter gabineteId ou não
-        if (excecao?.cancelada ?? false) {
-          dataAtual = dataAtual.add(const Duration(days: 14));
-          continue;
-        }
-
-        cartoes.add(Disponibilidade(
-          id: 'serie_${serie.id}_$dataKey',
-          medicoId: serie.medicoId,
-          data: dataNormalizada,
-          horarios: excecao?.horarios ?? serie.horarios,
-          tipo: 'Quinzenal',
-        ));
-
-        // Avançar para a próxima quinzena
-        dataAtual = dataAtual.add(const Duration(days: 14));
+      // Série começou depois do início do período solicitado
+      // Verificar se base está dentro do período (entre inicio e fim, inclusive)
+      // Se sim, começar do início da série; caso contrário, não gerar nada
+      final baseNormalizado = DateTime(base.year, base.month, base.day);
+      
+      // Verificar se base está dentro do período: base >= inicio && base <= fim
+      final baseDentroDoPeriodo = (baseNormalizado.isAfter(inicioNormalizado) || 
+                                    (baseNormalizado.year == inicioNormalizado.year &&
+                                     baseNormalizado.month == inicioNormalizado.month &&
+                                     baseNormalizado.day == inicioNormalizado.day)) &&
+                                   (baseNormalizado.isBefore(fimNormalizado.add(const Duration(days: 1))) ||
+                                    (baseNormalizado.year == fimNormalizado.year &&
+                                     baseNormalizado.month == fimNormalizado.month &&
+                                     baseNormalizado.day == fimNormalizado.day));
+      
+      // #region agent log
+      try {
+        final logEntry = {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'location': 'serie_generator.dart:492',
+          'message': '🟡 [HYP-C] _gerarQuinzenal - Verificando se base está no período',
+          'data': {
+            'serieId': serie.id,
+            'base': baseNormalizado.toString(),
+            'inicio': inicioNormalizado.toString(),
+            'fim': fimNormalizado.toString(),
+            'baseDentroDoPeriodo': baseDentroDoPeriodo,
+            'baseMaiorIgualInicio': (baseNormalizado.isAfter(inicioNormalizado) || 
+                                    (baseNormalizado.year == inicioNormalizado.year &&
+                                     baseNormalizado.month == inicioNormalizado.month &&
+                                     baseNormalizado.day == inicioNormalizado.day)),
+            'baseMenorIgualFim': (baseNormalizado.isBefore(fimNormalizado.add(const Duration(days: 1))) ||
+                                 (baseNormalizado.year == fimNormalizado.year &&
+                                  baseNormalizado.month == fimNormalizado.month &&
+                                  baseNormalizado.day == fimNormalizado.day)),
+            'hypothesisId': 'C'
+          },
+          'sessionId': 'debug-session',
+          'runId': 'run1',
+        };
+        writeLogToFile(jsonEncode(logEntry));
+      } catch (e) {}
+      // #endregion
+      
+      if (baseDentroDoPeriodo) {
+        // Base está dentro do período - começar do início da série
+        dataAtual = base;
       } else {
-        // Avançar um dia se não encontrou a data válida
-        dataAtual = dataAtual.add(const Duration(days: 1));
+        // Série começa fora do período - não gerar nada
+        // #region agent log
+        try {
+          final logEntry = {
+            'timestamp': DateTime.now().millisecondsSinceEpoch,
+            'location': 'serie_generator.dart:521',
+            'message': '🔴 [HYP-C] _gerarQuinzenal - Base fora do período, retornando vazio',
+            'data': {
+              'serieId': serie.id,
+              'base': baseNormalizado.toString(),
+              'inicio': inicioNormalizado.toString(),
+              'fim': fimNormalizado.toString(),
+              'hypothesisId': 'C'
+            },
+            'sessionId': 'debug-session',
+            'runId': 'run1',
+          };
+          writeLogToFile(jsonEncode(logEntry));
+        } catch (e) {}
+        // #endregion
+        return [];
       }
     }
+
+    // #region agent log
+    try {
+      final logEntry = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'location': 'serie_generator.dart:451',
+        'message': '🟡 [HYP-C] _gerarQuinzenal - dataAtual calculada',
+        'data': {
+          'serieId': serie.id,
+        'base': base.toString(),
+        'inicio': inicioNormalizado.toString(),
+        'dataAtual': dataAtual.toString(),
+        'diff': dataAtual.difference(base).inDays,
+        'weekday': weekday,
+        'hypothesisId': 'C'
+      },
+      'sessionId': 'debug-session',
+      'runId': 'run1',
+    };
+    writeLogToFile(jsonEncode(logEntry));
+  } catch (e) {}
+  // #endregion
+
+  // Limitar iterações para evitar loops infinitos (máximo 1000 iterações = ~27 anos)
+  int iteracoes = 0;
+  const maxIteracoes = 1000;
+
+  // CORREÇÃO: Simplificar o loop - avançar sempre de 14 em 14 dias
+  // e verificar apenas se está no período e se é uma quinzena válida
+  while (dataAtual.isBefore(fimNormalizado.add(const Duration(days: 1))) &&
+      iteracoes < maxIteracoes) {
+    iteracoes++;
+
+    // Verificar se está no período solicitado
+    if (!dataAtual.isBefore(inicioNormalizado) && dataAtual.isBefore(fimNormalizado.add(const Duration(days: 1)))) {
+        final diff = dataAtual.difference(base).inDays;
+        
+        // Verificar se é múltiplo de 14 dias e tem o weekday correto
+        if (diff >= 0 && diff % 14 == 0 && dataAtual.weekday == weekday) {
+          // Normalizar a data para garantir correspondência exata
+          final dataNormalizada = DateTime(
+            dataAtual.year,
+            dataAtual.month,
+            dataAtual.day,
+          );
+          final dataKey = _dataKey(dataNormalizada);
+          final chave = '${serie.id}_$dataKey';
+          final excecao = excecoesMap[chave];
+
+          // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
+          // independentemente de ter gabineteId ou não (exceção de disponibilidade)
+          if (excecao?.cancelada ?? false) {
+            dataAtual = dataAtual.add(const Duration(days: 14));
+            continue;
+          }
+
+          // IMPORTANTE: Se há exceção de gabinete com gabineteId null, AINDA CRIAMOS A DISPONIBILIDADE
+          // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
+          // Isso permite que o médico apareça em "médicos por alocar"
+
+          // #region agent log
+          try {
+            // Log especial para séries quinzenais que começam em 9/2 para identificar Sara Valadares
+            final serieInicio2026_02_09 = serie.dataInicio.year == 2026 && 
+                                          serie.dataInicio.month == 2 && 
+                                          serie.dataInicio.day == 9;
+            final logEntry = {
+              'timestamp': DateTime.now().millisecondsSinceEpoch,
+              'location': 'serie_generator.dart:492',
+              'message': serieInicio2026_02_09 ? '🔵 [HYP-C] Cartão quinzenal gerado - SÉRIE 9/2' : '🟢 [HYP-C] Cartão quinzenal gerado',
+              'data': {
+                'serieId': serie.id,
+                'medicoId': serie.medicoId,
+                'dataGerada': dataNormalizada.toString(),
+                'dataKey': dataKey,
+                'diff': diff,
+                'weekday': dataAtual.weekday,
+                'serieDataInicio': serie.dataInicio.toString(),
+                'periodoInicio': inicioNormalizado.toString(),
+                'periodoFim': fimNormalizado.toString(),
+                'isSerie2026_02_09': serieInicio2026_02_09,
+                'hypothesisId': 'C'
+              },
+              'sessionId': 'debug-session',
+              'runId': 'run1',
+            };
+            writeLogToFile(jsonEncode(logEntry));
+          } catch (e) {}
+          // #endregion
+
+          cartoes.add(Disponibilidade(
+            id: 'serie_${serie.id}_$dataKey',
+            medicoId: serie.medicoId,
+            data: dataNormalizada,
+            horarios: excecao?.horarios ?? serie.horarios,
+            tipo: 'Quinzenal',
+          ));
+        }
+      }
+      
+      // Avançar sempre para a próxima quinzena (14 dias)
+      dataAtual = dataAtual.add(const Duration(days: 14));
+    }
+    
+    // #region agent log
+    try {
+      final logEntry = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'location': 'serie_generator.dart:520',
+        'message': '🟢 [HYP-C] _gerarQuinzenal - SAÍDA',
+        'data': {
+          'serieId': serie.id,
+          'totalCartoesGerados': cartoes.length,
+          'datasGeradas': cartoes.map((c) => c.data.toString()).toList(),
+          'iteracoes': iteracoes,
+          'hypothesisId': 'C'
+        },
+        'sessionId': 'debug-session',
+        'runId': 'run1',
+      };
+      writeLogToFile(jsonEncode(logEntry));
+    } catch (e) {}
+    // #endregion
 
     // #region agent log
     if (iteracoes >= maxIteracoes) {
@@ -637,10 +766,14 @@ class SerieGenerator {
         }
 
         // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
-        // independentemente de ter gabineteId ou não
+        // independentemente de ter gabineteId ou não (exceção de disponibilidade)
         if (excecao?.cancelada ?? false) {
           continue;
         }
+
+        // IMPORTANTE: Se há exceção de gabinete com gabineteId null, AINDA CRIAMOS A DISPONIBILIDADE
+        // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
+        // Isso permite que o médico apareça em "médicos por alocar"
 
         cartoes.add(Disponibilidade(
           id: 'serie_${serie.id}_$dataKey',
@@ -711,11 +844,15 @@ class SerieGenerator {
       final excecao = excecoesMap[chave];
 
       // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
-      // independentemente de ter gabineteId ou não
+      // independentemente de ter gabineteId ou não (exceção de disponibilidade)
       if (excecao?.cancelada ?? false) {
         dataAtual = dataAtual.add(const Duration(days: 1));
         continue;
       }
+
+      // IMPORTANTE: Se há exceção de gabinete com gabineteId null, AINDA CRIAMOS A DISPONIBILIDADE
+      // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
+      // Isso permite que o médico apareça em "médicos por alocar"
 
       cartoes.add(Disponibilidade(
         id: 'serie_${serie.id}_$dataKey',

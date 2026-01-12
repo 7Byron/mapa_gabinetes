@@ -9,21 +9,29 @@ import 'date_picker_customizado.dart';
 class DialogoExcecaoSerie extends StatefulWidget {
   final SerieRecorrencia serie;
   final Function(DateTime dataInicio, DateTime dataFim) onConfirmar;
+  final Function(DateTime dataFim)? onCancelarSerie; // Novo: para cancelar a série a partir de uma data
 
   const DialogoExcecaoSerie({
     super.key,
     required this.serie,
     required this.onConfirmar,
+    this.onCancelarSerie,
   });
 
   @override
   State<DialogoExcecaoSerie> createState() => _DialogoExcecaoSerieState();
 }
 
+enum TipoExcecao {
+  diaUnico,
+  periodo,
+  cancelarSerie,
+}
+
 class _DialogoExcecaoSerieState extends State<DialogoExcecaoSerie> {
   DateTime? _dataInicio;
   DateTime? _dataFim;
-  bool _periodo = false; // false = data única, true = período
+  TipoExcecao _tipoExcecao = TipoExcecao.diaUnico;
 
   @override
   Widget build(BuildContext context) {
@@ -76,90 +84,119 @@ class _DialogoExcecaoSerieState extends State<DialogoExcecaoSerie> {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Checkbox(
-                  value: !_periodo,
-                  onChanged: (value) {
-                    setState(() {
-                      _periodo = !(value ?? true);
-                      if (_periodo) {
-                        _dataFim = null; // Limpar data fim se não for período
-                      }
-                    });
-                  },
-                ),
-                const Expanded(
-                  child: Text('Cancelar um único dia'),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Checkbox(
-                  value: _periodo,
-                  onChanged: (value) {
-                    setState(() {
-                      _periodo = value ?? false;
-                      if (!_periodo) {
-                        _dataFim = null; // Limpar data fim se não for período
-                      }
-                    });
-                  },
-                ),
-                const Expanded(
-                  child: Text('Cancelar período (ex: férias, interrupção)'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              title: Text(
-                _dataInicio != null
-                    ? 'Data inicial: ${DateFormat('dd/MM/yyyy').format(_dataInicio!)}'
-                    : 'Selecionar data inicial',
-              ),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: () async {
-                final data = await showDatePickerCustomizado(
-                  context: context,
-                  initialDate: _dataInicio ?? DateTime.now(),
-                  firstDate: widget.serie.dataInicio,
-                  lastDate: widget.serie.dataFim ?? DateTime(2100),
-                );
-                if (data != null) {
-                  setState(() {
-                    _dataInicio = data;
-                    // Se for período e não tiver data fim, definir como data fim também
-                    if (_periodo && _dataFim == null) {
-                      _dataFim = data;
-                    }
-                  });
-                }
+            RadioListTile<TipoExcecao>(
+              title: const Text('Cancelar um único dia'),
+              value: TipoExcecao.diaUnico,
+              groupValue: _tipoExcecao,
+              onChanged: (value) {
+                setState(() {
+                  _tipoExcecao = value!;
+                  _dataFim = null; // Limpar data fim quando não for período
+                });
               },
+              dense: true,
             ),
-            if (_periodo)
+            RadioListTile<TipoExcecao>(
+              title: const Text('Cancelar período (ex: férias, interrupção)'),
+              value: TipoExcecao.periodo,
+              groupValue: _tipoExcecao,
+              onChanged: (value) {
+                setState(() {
+                  _tipoExcecao = value!;
+                  if (_dataFim == null && _dataInicio != null) {
+                    _dataFim = _dataInicio;
+                  }
+                });
+              },
+              dense: true,
+            ),
+            if (widget.serie.dataFim == null) // Só mostrar se a série for infinita
+              RadioListTile<TipoExcecao>(
+                title: const Text('Cancelar série a partir de data'),
+                subtitle: const Text('Encerra a série a partir da data selecionada'),
+                value: TipoExcecao.cancelarSerie,
+                groupValue: _tipoExcecao,
+                onChanged: (value) {
+                  setState(() {
+                    _tipoExcecao = value!;
+                    _dataFim = null; // Limpar data fim
+                  });
+                },
+                dense: true,
+              ),
+            const SizedBox(height: 16),
+            if (_tipoExcecao == TipoExcecao.cancelarSerie)
               ListTile(
                 title: Text(
-                  _dataFim != null
-                      ? 'Data final: ${DateFormat('dd/MM/yyyy').format(_dataFim!)}'
-                      : 'Selecionar data final',
+                  _dataInicio != null
+                      ? 'Cancelar série a partir de: ${DateFormat('dd/MM/yyyy').format(_dataInicio!)}'
+                      : 'Selecionar data de cancelamento',
+                ),
+                subtitle: const Text('A série será encerrada no dia anterior à data selecionada'),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final data = await showDatePickerCustomizado(
+                    context: context,
+                    initialDate: _dataInicio ?? DateTime.now(),
+                    firstDate: widget.serie.dataInicio,
+                    lastDate: DateTime(2100),
+                  );
+                  if (data != null) {
+                    setState(() {
+                      _dataInicio = data;
+                    });
+                  }
+                },
+              )
+            else ...[
+              ListTile(
+                title: Text(
+                  _dataInicio != null
+                      ? 'Data inicial: ${DateFormat('dd/MM/yyyy').format(_dataInicio!)}'
+                      : 'Selecionar data inicial',
                 ),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
                   final data = await showDatePickerCustomizado(
                     context: context,
-                    initialDate: _dataFim ?? _dataInicio ?? DateTime.now(),
-                    firstDate: _dataInicio ?? widget.serie.dataInicio,
+                    initialDate: _dataInicio ?? DateTime.now(),
+                    firstDate: widget.serie.dataInicio,
                     lastDate: widget.serie.dataFim ?? DateTime(2100),
                   );
                   if (data != null) {
                     setState(() {
-                      _dataFim = data;
+                      _dataInicio = data;
+                      // Se for período e não tiver data fim, definir como data fim também
+                      if (_tipoExcecao == TipoExcecao.periodo && _dataFim == null) {
+                        _dataFim = data;
+                      }
                     });
                   }
                 },
               ),
+              if (_tipoExcecao == TipoExcecao.periodo)
+                ListTile(
+                  title: Text(
+                    _dataFim != null
+                        ? 'Data final: ${DateFormat('dd/MM/yyyy').format(_dataFim!)}'
+                        : 'Selecionar data final',
+                  ),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final data = await showDatePickerCustomizado(
+                      context: context,
+                      initialDate: _dataFim ?? _dataInicio ?? DateTime.now(),
+                      firstDate: _dataInicio ?? widget.serie.dataInicio,
+                      lastDate: widget.serie.dataFim ?? DateTime(2100),
+                    );
+                    if (data != null) {
+                      setState(() {
+                        _dataFim = data;
+                      });
+                    }
+                  },
+                ),
+            ],
           ],
         ),
       ),
@@ -171,10 +208,18 @@ class _DialogoExcecaoSerieState extends State<DialogoExcecaoSerie> {
         ElevatedButton(
           onPressed: _dataInicio != null
               ? () {
-                  final dataFim = _periodo && _dataFim != null
-                      ? _dataFim!
-                      : _dataInicio!;
-                  widget.onConfirmar(_dataInicio!, dataFim);
+                  if (_tipoExcecao == TipoExcecao.cancelarSerie) {
+                    // Cancelar série a partir da data
+                    if (widget.onCancelarSerie != null) {
+                      widget.onCancelarSerie!(_dataInicio!);
+                    }
+                  } else {
+                    // Cancelar dia único ou período
+                    final dataFim = _tipoExcecao == TipoExcecao.periodo && _dataFim != null
+                        ? _dataFim!
+                        : _dataInicio!;
+                    widget.onConfirmar(_dataInicio!, dataFim);
+                  }
                   Navigator.of(context).pop();
                 }
               : null,

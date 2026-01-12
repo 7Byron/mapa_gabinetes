@@ -43,8 +43,8 @@ class _DatePickerCustomizadoState extends State<DatePickerCustomizado> {
     
     final diasNoMes = DateTime(_displayDate.year, _displayDate.month + 1, 0).day;
     final primeiroDiaSemana = DateTime(_displayDate.year, _displayDate.month, 1).weekday;
-    // Ajustar para segunda-feira = 0
-    final primeiroDiaAjustado = primeiroDiaSemana == 7 ? 0 : primeiroDiaSemana - 1;
+    // Ajustar para segunda-feira = 0, domingo = 6 (conforme cabeçalho ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'])
+    final primeiroDiaAjustado = primeiroDiaSemana == 7 ? 6 : primeiroDiaSemana - 1;
 
     return Dialog(
       child: Container(

@@ -42,7 +42,7 @@ class RealocacaoUnicoService {
     required Future<void> Function(String medicoId, String gabineteId,
             {DateTime? dataEspecifica})
         onAlocarMedico,
-    required VoidCallback onAtualizarEstado,
+    required Future<void> Function() onAtualizarEstado,
     required void Function(double progresso, String mensagem) onProgresso,
   }) async {
 
@@ -191,7 +191,7 @@ class RealocacaoUnicoService {
           onProgresso(0.8, 'A sincronizar...');
           await Future.delayed(const Duration(milliseconds: 300));
           onProgresso(0.9, 'A sincronizar com servidor...');
-          onAtualizarEstado();
+          await onAtualizarEstado();
           await Future.delayed(const Duration(milliseconds: 300));
           onProgresso(1.0, 'Completo!');
           await Future.delayed(const Duration(milliseconds: 300));
@@ -204,15 +204,21 @@ class RealocacaoUnicoService {
       // Remover alocação antiga e criar nova
       onProgresso(0.5, 'A atualizar alocação...');
 
-      // Invalidar cache
+      // CORREÇÃO CRÍTICA: Invalidar cache ANTES de realocar
       AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
+      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
 
       // Criar nova alocação no destino
       await onAlocarMedico(medicoId, gabineteDestino, dataEspecifica: data);
 
-      // Invalidar cache novamente
+      // CORREÇÃO CRÍTICA: Invalidar cache novamente APÓS realocar
+      // Garantir que o cache seja invalidado tanto antes quanto depois para máxima confiabilidade
       AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
+      
+      // Invalidar também cache de séries se houver alguma série relacionada
+      final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+      SerieService.invalidateCacheSeries(unidadeId, medicoId);
 
       onProgresso(1.0, 'Completo!');
       await Future.delayed(const Duration(milliseconds: 300));

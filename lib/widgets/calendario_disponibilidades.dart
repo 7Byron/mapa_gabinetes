@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:intl/intl.dart';
+import '../utils/app_theme.dart';
 
 class CalendarioDisponibilidades extends StatefulWidget {
   final List<DateTime> diasSelecionados;
@@ -261,9 +262,17 @@ class _CalendarioDisponibilidadesState
         DateFormat('MMMM', 'pt_PT').format(displayDate));
     final ano = displayDate.year.toString();
 
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Column(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.none,
+      decoration: BoxDecoration(
+        color: MyAppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: MyAppTheme.shadowCard3D,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
           children: [
             // Header customizado com mês em português e ano destacado
             Padding(
@@ -391,9 +400,15 @@ class _CalendarioDisponibilidadesState
                                 final indiceMes = meses.indexOf(novoMes) + 1;
                                 final novaData =
                                     DateTime(displayDate.year, indiceMes, 1);
+                                
+                                // Marcar como atualização programática para evitar conflitos
+                                _lastProgrammaticDate = novaData;
+                                
                                 setState(() {});
                                 _calendarController.displayDate = novaData;
-                                _calendarController.forward!();
+                                // CORREÇÃO: Não chamar forward!() pois isso avança apenas um mês
+                                // Apenas atualizar o displayDate é suficiente
+                                
                                 // Notificar mudança
                                 if (widget.onViewChanged != null) {
                                   WidgetsBinding.instance
@@ -429,8 +444,9 @@ class _CalendarioDisponibilidadesState
             // Header customizado para os dias da semana em português
             Padding(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                  const EdgeInsets.symmetric(horizontal: 0.0, vertical: 4.0),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']
                     .asMap()
                     .entries
@@ -593,6 +609,7 @@ class _CalendarioDisponibilidadesState
             ),
           ],
         ),
+      ),
     );
   }
 }

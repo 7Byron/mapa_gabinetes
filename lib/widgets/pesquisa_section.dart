@@ -31,7 +31,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: MyAppTheme.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: Colors.grey.shade300,

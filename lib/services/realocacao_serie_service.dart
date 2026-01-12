@@ -7,6 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import '../models/alocacao.dart';
 import '../models/serie_recorrencia.dart';
+import '../models/excecao_serie.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart';
 import '../services/disponibilidade_serie_service.dart';
@@ -23,7 +24,7 @@ class RealocacaoSerieService {
   /// [alocacoes] - Lista de alocações atuais (para encontrar a alocação)
   /// [unidade] - Unidade para buscar séries/exceções
   /// [onRealocacaoOtimista] - Callback opcional para atualização otimista
-  /// [onAtualizarEstado] - Callback para atualizar o estado após realocação
+    /// [onAtualizarEstado] - Callback async para atualizar o estado após realocação
   /// [onProgresso] - Callback para atualizar progresso (progresso, mensagem)
   /// [onRealocacaoConcluida] - Callback opcional para limpar flags após realocação
   /// [context] - Contexto do Flutter para mostrar mensagens
@@ -40,7 +41,7 @@ class RealocacaoSerieService {
     required Unidade? unidade,
     required BuildContext context,
     void Function(String medicoId, String gabineteOrigem, String gabineteDestino, DateTime data)? onRealocacaoOtimista,
-    required VoidCallback onAtualizarEstado,
+    required Future<void> Function() onAtualizarEstado,
     required void Function(double progresso, String mensagem) onProgresso,
     VoidCallback? onRealocacaoConcluida,
     required bool Function(DateTime data, SerieRecorrencia serie) verificarSeDataCorrespondeSerie,
@@ -217,17 +218,197 @@ class RealocacaoSerieService {
 
       onProgresso(0.1, 'A atualizar série...');
 
-      // Invalidar cache ANTES de atualizar série
-      AlocacaoMedicosLogic.invalidateCacheForDay(dataRefNormalizada);
-      final dataFim = serie.dataFim ?? DateTime(dataRef.year + 1, 12, 31);
-      DateTime dataCache = dataRefNormalizada.add(const Duration(days: 1));
-      while (dataCache.isBefore(dataFim.add(const Duration(days: 1)))) {
-        AlocacaoMedicosLogic.invalidateCacheForDay(dataCache);
-        dataCache = dataCache.add(const Duration(days: 1));
+      // CORREÇÃO: Não atualizar toda a série de uma vez
+      // Em vez disso, criar exceções para manter o gabinete original nas datas anteriores
+      // e atualizar apenas o gabinete da série (que afetará apenas datas futuras sem exceção)
+      
+      final dataInicioSerie = DateTime(
+        serie.dataInicio.year,
+        serie.dataInicio.month,
+        serie.dataInicio.day,
+      );
+
+      // Se há datas anteriores à data de referência, criar exceções APENAS para datas que não têm exceção
+      // ou que têm exceção mas o gabineteId já é diferente do gabineteOrigem
+      // NÃO criar/atualizar se já existe exceção com gabineteId == null (sem gabinete - deve manter)
+      if (dataRefNormalizada.isAfter(dataInicioSerie)) {
+        onProgresso(0.15, 'A verificar datas anteriores...');
+        
+        // Carregar todas as exceções existentes de uma vez (mais eficiente)
+        final excecoesExistentes = await SerieService.carregarExcecoes(
+          medicoId,
+          unidade: unidade,
+          dataInicio: dataInicioSerie,
+          dataFim: dataRefNormalizada.subtract(const Duration(days: 1)),
+          serieId: serieIdFinal,
+          forcarServidor: true, // CORREÇÃO: Forçar servidor para garantir dados atualizados
+        );
+        
+        // Criar mapa de exceções por data para busca rápida
+        final excecoesPorData = <String, ExcecaoSerie>{};
+        for (final excecao in excecoesExistentes) {
+          if (excecao.serieId == serieIdFinal && !excecao.cancelada) {
+            final dataKey = '${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+            excecoesPorData[dataKey] = excecao;
+          }
+        }
+        
+        DateTime dataAtual = dataInicioSerie;
+        int totalDatas = 0;
+        int datasProcessadas = 0;
+
+        // Contar quantas datas precisam ser processadas (apenas as que não têm exceção ou têm exceção com gabinete diferente)
+        while (dataAtual.isBefore(dataRefNormalizada)) {
+          if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
+            final dataKey = '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
+            final excecaoExistente = excecoesPorData[dataKey];
+            
+            // CORREÇÃO: Só precisa criar/atualizar exceção se:
+            // 1. Não há exceção, OU
+            // 2. Há exceção mas o gabineteId é diferente do gabineteOrigem E não é null
+            // NÃO criar/atualizar se gabineteId é null (exceção de gabinete sem gabinete - deve manter)
+            if (excecaoExistente == null) {
+              // Não há exceção - precisa criar
+              totalDatas++;
+            } else if (excecaoExistente.gabineteId != null && excecaoExistente.gabineteId != gabineteOrigem) {
+              // Há exceção mas com gabinete diferente - precisa atualizar
+              totalDatas++;
+            }
+            // Se excecaoExistente.gabineteId == null, não criar/atualizar (manter exceção de gabinete sem gabinete)
+          }
+          dataAtual = dataAtual.add(const Duration(days: 1));
+        }
+
+        // Criar exceções apenas para datas que precisam
+        if (totalDatas > 0) {
+          onProgresso(0.20, 'A criar exceções para datas anteriores... ($totalDatas datas)');
+          
+          dataAtual = dataInicioSerie;
+          while (dataAtual.isBefore(dataRefNormalizada)) {
+            if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
+              final dataKey = '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
+              final excecaoExistente = excecoesPorData[dataKey];
+              
+              // CORREÇÃO: Só criar/atualizar exceção se necessário
+              // NÃO criar/atualizar se já existe exceção com gabineteId == null
+              if (excecaoExistente == null) {
+                // Não há exceção - criar exceção para manter o gabinete original
+                await DisponibilidadeSerieService.modificarGabineteDataSerie(
+                  serieId: serieIdFinal,
+                  medicoId: medicoId,
+                  data: dataAtual,
+                  novoGabineteId: gabineteOrigem, // Manter gabinete original nas datas anteriores
+                  unidade: unidade,
+                );
+
+                datasProcessadas++;
+                if (totalDatas > 0) {
+                  final progressoExcecoes = datasProcessadas / totalDatas;
+                  onProgresso(0.20 + (0.20 * progressoExcecoes), 'A criar exceções... ($datasProcessadas/$totalDatas)');
+                }
+              } else if (excecaoExistente.gabineteId != null && excecaoExistente.gabineteId != gabineteOrigem) {
+                // Há exceção mas com gabinete diferente - atualizar para manter gabinete original
+                await DisponibilidadeSerieService.modificarGabineteDataSerie(
+                  serieId: serieIdFinal,
+                  medicoId: medicoId,
+                  data: dataAtual,
+                  novoGabineteId: gabineteOrigem, // Manter gabinete original nas datas anteriores
+                  unidade: unidade,
+                );
+
+                datasProcessadas++;
+                if (totalDatas > 0) {
+                  final progressoExcecoes = datasProcessadas / totalDatas;
+                  onProgresso(0.20 + (0.20 * progressoExcecoes), 'A criar exceções... ($datasProcessadas/$totalDatas)');
+                }
+              }
+              // CORREÇÃO: Se excecaoExistente.gabineteId == null, não fazer nada (manter exceção de gabinete sem gabinete)
+            }
+            dataAtual = dataAtual.add(const Duration(days: 1));
+          }
+        }
       }
 
-      // Atualizar o gabinete da série
+      // Passo 2: Remover/atualizar exceções com gabineteId: null para datas >= dataRef
+      // Essas exceções foram criadas quando desalocamos "a partir de uma data"
+      // Precisamos substituí-las por exceções com o novo gabineteId
+      onProgresso(0.40, 'A atualizar exceções para datas futuras...');
+      
+      final dataFimSerie = serie.dataFim ?? DateTime(dataRef.year + 1, 12, 31);
+      final dataFimProcessamento = DateTime(dataFimSerie.year, dataFimSerie.month, dataFimSerie.day);
+      
+      // Carregar exceções para datas >= dataRef
+      final excecoesFuturas = await SerieService.carregarExcecoes(
+        medicoId,
+        unidade: unidade,
+        dataInicio: dataRefNormalizada,
+        dataFim: dataFimProcessamento,
+        serieId: serieIdFinal,
+        forcarServidor: true,
+      );
+      
+      // Criar mapa de exceções por data para busca rápida
+      final excecoesFuturasPorData = <String, ExcecaoSerie>{};
+      for (final excecao in excecoesFuturas) {
+        if (excecao.serieId == serieIdFinal && !excecao.cancelada) {
+          final dataKey = '${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+          excecoesFuturasPorData[dataKey] = excecao;
+        }
+      }
+      
+      // Atualizar exceções com gabineteId: null para ter o novo gabineteId
+      DateTime dataAtual = dataRefNormalizada;
+      int totalExcecoesFuturas = 0;
+      int excecoesProcessadas = 0;
+      
+      // Contar quantas exceções precisam ser atualizadas
+      while (!dataAtual.isAfter(dataFimSerie)) {
+        if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
+          final dataKey = '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
+          final excecaoExistente = excecoesFuturasPorData[dataKey];
+          
+          // Se há exceção com gabineteId: null, precisa ser atualizada
+          if (excecaoExistente != null && excecaoExistente.gabineteId == null) {
+            totalExcecoesFuturas++;
+          }
+        }
+        dataAtual = dataAtual.add(const Duration(days: 1));
+      }
+      
+      // Atualizar exceções
+      if (totalExcecoesFuturas > 0) {
+        dataAtual = dataRefNormalizada;
+        while (!dataAtual.isAfter(dataFimSerie)) {
+          if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
+            final dataKey = '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
+            final excecaoExistente = excecoesFuturasPorData[dataKey];
+            
+            // Se há exceção com gabineteId: null, atualizar para o novo gabineteId
+            if (excecaoExistente != null && excecaoExistente.gabineteId == null) {
+              await DisponibilidadeSerieService.modificarGabineteDataSerie(
+                serieId: serieIdFinal,
+                medicoId: medicoId,
+                data: dataAtual,
+                novoGabineteId: gabineteDestino,
+                unidade: unidade,
+              );
+              
+              excecoesProcessadas++;
+              if (totalExcecoesFuturas > 0) {
+                final progressoExcecoes = excecoesProcessadas / totalExcecoesFuturas;
+                onProgresso(0.40 + (0.05 * progressoExcecoes), 'A atualizar exceções... ($excecoesProcessadas/$totalExcecoesFuturas)');
+              }
+            }
+          }
+          dataAtual = dataAtual.add(const Duration(days: 1));
+        }
+      }
 
+      onProgresso(0.45, 'A atualizar série...');
+
+      // Atualizar o gabinete da série (isso afetará apenas datas futuras sem exceção)
+      // As datas anteriores já têm exceções criadas acima, então manterão o gabinete original
+      // As datas futuras que tinham exceções com gabineteId: null já foram atualizadas acima
       await DisponibilidadeSerieService.alocarSerie(
         serieId: serieIdFinal,
         medicoId: medicoId,
@@ -235,70 +416,53 @@ class RealocacaoSerieService {
         unidade: unidade,
       );
 
-      onProgresso(0.3, 'A criar exceções...');
+      onProgresso(0.65, 'A invalidar cache...');
 
-      // Criar exceções para as datas anteriores à data de referência
-      final dataInicioSerie = DateTime(
-        serie.dataInicio.year,
-        serie.dataInicio.month,
-        serie.dataInicio.day,
-      );
-
+      // CORREÇÃO CRÍTICA: Invalidar cache para datas anteriores (onde criamos exceções)
+      // Isso garante que as exceções sejam respeitadas ao recarregar
       if (dataRefNormalizada.isAfter(dataInicioSerie)) {
-        DateTime dataAtual = dataInicioSerie;
-        int totalDatas = 0;
-        int datasProcessadas = 0;
-
-        // Contar quantas datas precisam ser processadas
-        while (dataAtual.isBefore(dataRefNormalizada)) {
-          if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
-            totalDatas++;
+        DateTime dataCacheAnterior = dataInicioSerie;
+        while (dataCacheAnterior.isBefore(dataRefNormalizada)) {
+          if (verificarSeDataCorrespondeSerie(dataCacheAnterior, serie)) {
+            AlocacaoMedicosLogic.invalidateCacheForDay(dataCacheAnterior);
           }
-          dataAtual = dataAtual.add(const Duration(days: 1));
-        }
-
-        // Processar cada data
-        dataAtual = dataInicioSerie;
-        while (dataAtual.isBefore(dataRefNormalizada)) {
-          if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
-            await DisponibilidadeSerieService.modificarGabineteDataSerie(
-              serieId: serieIdFinal,
-              medicoId: medicoId,
-              data: dataAtual,
-              novoGabineteId: gabineteOrigem,
-              unidade: unidade,
-            );
-
-            datasProcessadas++;
-            if (totalDatas > 0) {
-              final progressoExcecoes = datasProcessadas / totalDatas;
-              onProgresso(0.3 + (0.4 * progressoExcecoes), 'A criar exceções... ($datasProcessadas/$totalDatas)');
-            }
-          }
-          dataAtual = dataAtual.add(const Duration(days: 1));
+          dataCacheAnterior = dataCacheAnterior.add(const Duration(days: 1));
         }
       }
-
-      onProgresso(0.7, 'A invalidar cache...');
-
-      // Invalidar cache APÓS atualizar série e criar exceções
-      AlocacaoMedicosLogic.invalidateCacheForDay(dataRefNormalizada);
-      final dataFimSerie = serie.dataFim ?? DateTime(dataRef.year + 1, 12, 31);
-      DateTime dataCacheFinal = dataRefNormalizada.add(const Duration(days: 1));
-      while (dataCacheFinal.isBefore(dataFimSerie.add(const Duration(days: 1)))) {
-        AlocacaoMedicosLogic.invalidateCacheForDay(dataCacheFinal);
-        dataCacheFinal = dataCacheFinal.add(const Duration(days: 1));
+      
+      // Invalidar cache para datas futuras (da data de referência em diante)
+      final dataFim = serie.dataFim ?? DateTime(dataRef.year + 1, 12, 31);
+      DateTime dataCache = dataRefNormalizada;
+      while (dataCache.isBefore(dataFim.add(const Duration(days: 1)))) {
+        AlocacaoMedicosLogic.invalidateCacheForDay(dataCache);
+        dataCache = dataCache.add(const Duration(days: 1));
       }
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(dataRef.year, 1, 1));
+      
+      onProgresso(0.80, 'A sincronizar...');
+      
+      // Buscar a série atualizada do servidor para garantir que temos os dados mais recentes
+      final seriesAtualizadas = await SerieService.carregarSeries(
+        medicoId,
+        unidade: unidade,
+        forcarServidor: true, // Forçar servidor para garantir dados atualizados
+      );
+      final serieAtualizada = seriesAtualizadas.firstWhere(
+        (s) => s.id == serieIdFinal,
+        orElse: () => serie,
+      );
+      
+      // Invalidar cache da série completa (já foi feito acima, mas garantir)
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada, unidade: unidade);
 
-      onProgresso(0.8, 'A sincronizar...');
-      await Future.delayed(const Duration(milliseconds: 800));
-      onProgresso(0.9, 'A sincronizar com servidor...');
-      await Future.delayed(const Duration(milliseconds: 800));
-      onAtualizarEstado();
-      await Future.delayed(const Duration(milliseconds: 300));
+      onProgresso(0.90, 'A concluir...');
+      // CORREÇÃO: Chamar onAtualizarEstado ANTES de chegar a 1.0 para garantir que progressbar acompanha recarregamento
+      // onAtualizarEstado agora apenas recarrega alocações (não disponibilidades), então é rápido
+      try {
+        await onAtualizarEstado();
+      } catch (e) {
+        debugPrint('⚠️ Erro em onAtualizarEstado: $e');
+      }
       onProgresso(1.0, 'Completo!');
-      await Future.delayed(const Duration(milliseconds: 300));
 
       if (onRealocacaoConcluida != null) {
         onRealocacaoConcluida();

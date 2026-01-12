@@ -239,6 +239,11 @@ class DisponibilidadeDataGestaoService {
         parametros: parametros,
       );
 
+      // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
+      // Usar a função helper que calcula todos os dias corretamente baseado no tipo da série
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
+      
+      // Também invalidar usando o método antigo para compatibilidade
       invalidarCachesRelacionados(date, medicoId);
 
       final geradas = criarDisponibilidadesSerie(
@@ -290,6 +295,11 @@ class DisponibilidadeDataGestaoService {
         dataFim: date.add(Duration(days: numeroDias - 1)),
       );
 
+      // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
+      // Usar a função helper que calcula todos os dias corretamente baseado no tipo da série
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
+      
+      // Também invalidar usando o método antigo para compatibilidade
       invalidarCachesRelacionados(date, medicoId);
 
       final geradas = criarDisponibilidadesSerie(
@@ -347,11 +357,11 @@ class DisponibilidadeDataGestaoService {
         permanente: true,
       );
 
-      final anoSerie = serie.dataInicio.year;
-      // Cache removido - não precisa invalidar
-    // AlocacaoMedicosLogic.invalidateSeriesCacheForMedico(medicoId, anoSerie);
-      // Cache removido - não precisa invalidar
-    // AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoSerie, 1, 1));
+      // CORREÇÃO: Invalidar cache após remover série permanentemente
+      // Isso garante que quando criamos uma nova série, não apareçam alocações da série antiga
+      final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+      SerieService.invalidateCacheSeries(unidadeId, medicoId);
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
 
       return true;
     } catch (e) {

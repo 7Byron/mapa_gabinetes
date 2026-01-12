@@ -22,7 +22,7 @@ class GabinetesSection extends StatefulWidget {
   final List<Medico> medicos;
   final List<Disponibilidade> disponibilidades;
   final DateTime selectedDate;
-  final VoidCallback onAtualizarEstado;
+  final Future<void> Function() onAtualizarEstado;
   final Future<void> Function(String medicoId) onDesalocarMedicoComPergunta;
   final bool isAdmin; // Novo parâmetro para controlar permissões
   final Set<String>

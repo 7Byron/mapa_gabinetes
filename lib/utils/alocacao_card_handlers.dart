@@ -3,6 +3,7 @@ import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 import '../models/gabinete.dart';
 import 'alocacao_card_actions.dart';
+import 'series_helper.dart';
 
 /// Handlers para ações dos cartões de alocação
 /// Encapsula a lógica de diálogos e interações
@@ -374,11 +375,30 @@ class AlocacaoCardHandlers {
           horariosCompletos.add(horario);
         }
 
-        // Atualizar todos os cartões locais da mesma série
-        for (final disp in todasDisponibilidades
-            .where((d) => d.tipo == disponibilidadeEncontrada.tipo)) {
-          disp.horarios = List.from(horariosCompletos);
-          onAtualizarLocal(disp);
+        // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
+        // para atualizar apenas as disponibilidades da MESMA série específica
+        final serieIdDaDisponibilidade = disponibilidadeEncontrada.id.startsWith('serie_')
+            ? SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidadeEncontrada.id)
+            : null;
+
+        // Atualizar todos os cartões locais da mesma série ESPECÍFICA
+        for (final disp in todasDisponibilidades) {
+          // Verificar se pertence à mesma série específica
+          bool pertenceMesmaSerie = false;
+          
+          if (serieIdDaDisponibilidade != null && disp.id.startsWith('serie_')) {
+            // Se ambas são séries, comparar os IDs das séries
+            final serieIdDaDisp = SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
+            pertenceMesmaSerie = serieIdDaDisp == serieIdDaDisponibilidade;
+          } else if (serieIdDaDisponibilidade == null && !disp.id.startsWith('serie_')) {
+            // Se nenhuma é série (ambas são "Única"), verificar apenas o tipo
+            pertenceMesmaSerie = disp.tipo == disponibilidadeEncontrada.tipo;
+          }
+          
+          if (pertenceMesmaSerie) {
+            disp.horarios = List.from(horariosCompletos);
+            onAtualizarLocal(disp);
+          }
         }
 
         // Notificar para atualizar a série no Firestore

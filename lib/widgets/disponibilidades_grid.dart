@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
+// import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 import '../models/gabinete.dart';
@@ -8,8 +8,9 @@ import '../models/serie_recorrencia.dart';
 import 'alocacao_card.dart';
 import '../utils/alocacao_card_actions.dart';
 import '../utils/alocacao_card_handlers.dart';
+import '../utils/series_helper.dart';
 import '../services/disponibilidade_data_gestao_service.dart';
-import '../utils/debug_log_file.dart';
+// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
@@ -54,23 +55,25 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   @override
   void didUpdateWidget(DisponibilidadesGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // #region agent log
-    try {
-      final logEntry = {
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'location': 'disponibilidades_grid.dart:didUpdateWidget',
-        'message': 'didUpdateWidget chamado',
-        'data': {
-          'alocacoesAntes': oldWidget.alocacoes?.length ?? 0,
-          'alocacoesDepois': widget.alocacoes?.length ?? 0,
-          'hypothesisId': 'P1'
-        },
-        'sessionId': 'debug-session',
-        'runId': 'run1',
-      };
-      writeLogToFile(jsonEncode(logEntry));
-    } catch (e) {}
-    // #endregion
+    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//    try {
+//      final logEntry = {
+//        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//        'location': 'disponibilidades_grid.dart:didUpdateWidget',
+//        'message': 'didUpdateWidget chamado',
+//        'data': {
+//          'alocacoesAntes': oldWidget.alocacoes?.length ?? 0,
+//          'alocacoesDepois': widget.alocacoes?.length ?? 0,
+//          'hypothesisId': 'P1'
+//        },
+//        'sessionId': 'debug-session',
+//        'runId': 'run1',
+//      };
+//      writeLogToFile(jsonEncode(logEntry));
+//    } catch (e) {}
+    
+// #endregion
     
     // CORREÇÃO: Detectar mudanças significativas nas alocações e forçar rebuild
     final currentHashList = widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
@@ -86,27 +89,29 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         final desalocacaoSignificativa = numAlocacoesAtual < numAlocacoesAntigo - 5;
         
         if (hashChanged || desalocacaoSignificativa) {
-          // #region agent log
-          try {
-            final logEntry = {
-              'timestamp': DateTime.now().millisecondsSinceEpoch,
-              'location': 'disponibilidades_grid.dart:didUpdateWidget',
-              'message': 'Alocações mudaram - forçando rebuild',
-              'data': {
-                'alocacoesAntes': _lastAlocacoesHash!.length,
-                'alocacoesDepois': currentHashList.length,
-                'numAlocacoesAntigo': numAlocacoesAntigo,
-                'numAlocacoesAtual': numAlocacoesAtual,
-                'desalocacaoSignificativa': desalocacaoSignificativa,
-                'rebuildCounter': _rebuildCounter + 1,
-                'hypothesisId': 'P1'
-              },
-              'sessionId': 'debug-session',
-              'runId': 'run1',
-            };
-            writeLogToFile(jsonEncode(logEntry));
-          } catch (e) {}
-          // #endregion
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//          try {
+//            final logEntry = {
+//              'timestamp': DateTime.now().millisecondsSinceEpoch,
+//              'location': 'disponibilidades_grid.dart:didUpdateWidget',
+//              'message': 'Alocações mudaram - forçando rebuild',
+//              'data': {
+//                'alocacoesAntes': _lastAlocacoesHash!.length,
+//                'alocacoesDepois': currentHashList.length,
+//                'numAlocacoesAntigo': numAlocacoesAntigo,
+//                'numAlocacoesAtual': numAlocacoesAtual,
+//                'desalocacaoSignificativa': desalocacaoSignificativa,
+//                'rebuildCounter': _rebuildCounter + 1,
+//                'hypothesisId': 'P1'
+//              },
+//              'sessionId': 'debug-session',
+//              'runId': 'run1',
+//            };
+//            writeLogToFile(jsonEncode(logEntry));
+//          } catch (e) {}
+          
+// #endregion
           _rebuildCounter++;
           _lastAlocacoesHash = currentHashList;
           // CORREÇÃO CRÍTICA: Sempre criar nova UniqueKey quando há desalocação significativa
@@ -257,11 +262,30 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 horariosCompletos.add(horario);
               }
               
-              // Atualizar todos os cartões locais
+              // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
+              // para atualizar apenas as disponibilidades da MESMA série específica
+              final serieIdDaDisponibilidade = disponibilidade.id.startsWith('serie_')
+                  ? SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id)
+                  : null;
+
+              // Atualizar todos os cartões locais da mesma série ESPECÍFICA
               setState(() {
-                for (final disp in widget.disponibilidades
-                    .where((d) => d.tipo == disponibilidade.tipo)) {
-                  disp.horarios = List.from(horariosCompletos);
+                for (final disp in widget.disponibilidades) {
+                  // Verificar se pertence à mesma série específica
+                  bool pertenceMesmaSerie = false;
+                  
+                  if (serieIdDaDisponibilidade != null && disp.id.startsWith('serie_')) {
+                    // Se ambas são séries, comparar os IDs das séries
+                    final serieIdDaDisp = SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
+                    pertenceMesmaSerie = serieIdDaDisp == serieIdDaDisponibilidade;
+                  } else if (serieIdDaDisponibilidade == null && !disp.id.startsWith('serie_')) {
+                    // Se nenhuma é série (ambas são "Única"), verificar apenas o tipo
+                    pertenceMesmaSerie = disp.tipo == disponibilidade.tipo;
+                  }
+                  
+                  if (pertenceMesmaSerie) {
+                    disp.horarios = List.from(horariosCompletos);
+                  }
                 }
               });
               
@@ -333,24 +357,26 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 
   @override
   Widget build(BuildContext context) {
-    // #region agent log
-    try {
-      final logEntry = {
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'location': 'disponibilidades_grid.dart:build',
-        'message': 'DisponibilidadesGrid.build chamado',
-        'data': {
-          'totalAlocacoes': widget.alocacoes?.length ?? 0,
-          'totalDisponibilidades': widget.disponibilidades.length,
-          'rebuildCounter': _rebuildCounter,
-          'hypothesisId': 'P1'
-        },
-        'sessionId': 'debug-session',
-        'runId': 'run1',
-      };
-      writeLogToFile(jsonEncode(logEntry));
-    } catch (e) {}
-    // #endregion
+    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//    try {
+//      final logEntry = {
+//        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//        'location': 'disponibilidades_grid.dart:build',
+//        'message': 'DisponibilidadesGrid.build chamado',
+//        'data': {
+//          'totalAlocacoes': widget.alocacoes?.length ?? 0,
+//          'totalDisponibilidades': widget.disponibilidades.length,
+//          'rebuildCounter': _rebuildCounter,
+//          'hypothesisId': 'P1'
+//        },
+//        'sessionId': 'debug-session',
+//        'runId': 'run1',
+//      };
+//      writeLogToFile(jsonEncode(logEntry));
+//    } catch (e) {}
+    
+// #endregion
     
     // CORREÇÃO CRÍTICA: Forçar rebuild completo quando as alocações mudam drasticamente
     // Calcular hash das alocações ANTES do LayoutBuilder para garantir detecção precisa
@@ -414,27 +440,29 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 }
               }
             }
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'disponibilidades_grid.dart:itemBuilder',
-                'message': 'Construindo cartão',
-                'data': {
-                  'index': index,
-                  'disponibilidadeId': disponibilidade.id,
-                  'data': disponibilidade.data.toString().substring(0, 10),
-                  'gabineteKey': gabineteKey,
-                  'totalAlocacoes': widget.alocacoes?.length ?? 0,
-                  'alocacoesParaEsteDia': alocacoesDoDia.length,
-                  'hypothesisId': 'P1'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
-            // #endregion
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//            try {
+//              final logEntry = {
+//                'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                'location': 'disponibilidades_grid.dart:itemBuilder',
+//                'message': 'Construindo cartão',
+//                'data': {
+//                  'index': index,
+//                  'disponibilidadeId': disponibilidade.id,
+//                  'data': disponibilidade.data.toString().substring(0, 10),
+//                  'gabineteKey': gabineteKey,
+//                  'totalAlocacoes': widget.alocacoes?.length ?? 0,
+//                  'alocacoesParaEsteDia': alocacoesDoDia.length,
+//                  'hypothesisId': 'P1'
+//                },
+//                'sessionId': 'debug-session',
+//                'runId': 'run1',
+//              };
+//              writeLogToFile(jsonEncode(logEntry));
+//            } catch (e) {}
+            
+// #endregion
             // CORREÇÃO CRÍTICA: Incluir data na key para garantir que cada cartão tem uma key única
             // mesmo quando não há alocação (gabineteKey = 'sem_gabinete' para todos)
             // Isso força o Flutter a reconstruir todos os cartões quando as alocações mudam

@@ -98,7 +98,9 @@ Future<bool> realocarCartaoSerie({
       onRealocacaoOtimista(medicoId, gabineteOrigem, gabineteDestino, data);
     }
 
-    // Atualizar UI imediatamente após atualização otimista
+    // CORREÇÃO CRÍTICA: A lista já foi modificada acima.
+    // O setState deve ser chamado pelo widget pai, que deve criar nova referência da lista.
+    // Exemplo no widget: setState(() { alocacoes = List<Alocacao>.from(alocacoes); });
     setState();
     debugPrint('✅ [UI-REALOCAR-SERIE] FASE 1 completa: UI atualizada (otimista)');
 

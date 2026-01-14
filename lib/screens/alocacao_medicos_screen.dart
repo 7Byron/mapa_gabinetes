@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
-import 'dart:convert';
+// import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import '../utils/ui_alocar_cartoes_unicos.dart';
 import '../utils/ui_desalocar_cartao_unico.dart';
 import '../utils/ui_desalocar_cartao_serie.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../utils/debug_log_file.dart';
+// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 // Se criou o custom_drawer.dart
 import '../widgets/custom_drawer.dart';
@@ -39,23 +39,25 @@ import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
 import 'cadastro_medicos.dart';
 
-// #region agent log helper
-void _writeDebugLog(String location, String message, Map<String, dynamic> data, {String hypothesisId = 'A'}) {
-  try {
-    final logEntry = {
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'location': location,
-      'message': message,
-      'data': data,
-      'sessionId': 'debug-session',
-      'runId': 'run1',
-      'hypothesisId': hypothesisId,
-    };
-    writeLogToFile(jsonEncode(logEntry));
-  } catch (e) {
+// #region agent log (COMENTADO - pode ser reativado se necessário)
+// helper
+//void _writeDebugLog(String location, String message, Map<String, dynamic> data, {String hypothesisId = 'A'}) {
+//  try {
+//    final logEntry = {
+//      'timestamp': DateTime.now().millisecondsSinceEpoch,
+//      'location': location,
+//      'message': message,
+//      'data': data,
+//      'sessionId': 'debug-session',
+//      'runId': 'run1',
+//      'hypothesisId': hypothesisId,
+//    };
+//    writeLogToFile(jsonEncode(logEntry));
+//  } catch (e) {
     // Ignorar erros de escrita de log
-  }
-}
+//  }
+//}
+
 // #endregion
 
 /// Tela principal de alocação de médicos aos gabinetes
@@ -1234,20 +1236,22 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
         final temExcecaoCancelada = datasComExcecoesCanceladas.contains(dataKey);
         
-        // #region agent log
-        final medico = medicos.firstWhere((m) => m.id == d.medicoId, orElse: () => Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false));
-        if (medico.nome.toLowerCase().contains('francisco') && medico.nome.toLowerCase().contains('gama')) {
-          _writeDebugLog('alocacao_medicos_screen.dart:1270', 'Disponibilidade de Francisco Gama encontrada', {
-            'medicoId': d.medicoId,
-            'medicoNome': medico.nome,
-            'data': '${dd.day}/${dd.month}/${dd.year}',
-            'selectedDate': '${selectedDateNormalized.day}/${selectedDateNormalized.month}/${selectedDateNormalized.year}',
-            'dataKey': dataKey,
-            'temExcecaoCancelada': temExcecaoCancelada,
-            'seraAdicionado': !temExcecaoCancelada,
-          }, hypothesisId: 'V');
-        }
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        final medico = medicos.firstWhere((m) => m.id == d.medicoId, orElse: () => Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false));
+//        if (medico.nome.toLowerCase().contains('francisco') && medico.nome.toLowerCase().contains('gama')) {
+//          _writeDebugLog('alocacao_medicos_screen.dart:1270', 'Disponibilidade de Francisco Gama encontrada', {
+//            'medicoId': d.medicoId,
+//            'medicoNome': medico.nome,
+//            'data': '${dd.day}/${dd.month}/${dd.year}',
+//            'selectedDate': '${selectedDateNormalized.day}/${selectedDateNormalized.month}/${selectedDateNormalized.year}',
+//            'dataKey': dataKey,
+//            'temExcecaoCancelada': temExcecaoCancelada,
+//            'seraAdicionado': !temExcecaoCancelada,
+//          }, hypothesisId: 'V');
+//        }
+        
+// #endregion
         
         if (!temExcecaoCancelada) {
           medicosComDisponibilidade.add(d.medicoId);
@@ -1255,27 +1259,29 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       }
     }
     
-    // #region agent log
-    final franciscoGama = medicos.firstWhere(
-      (m) => m.nome.toLowerCase().contains('francisco') && m.nome.toLowerCase().contains('gama'),
-      orElse: () => Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false),
-    );
-    if (franciscoGama.id.isNotEmpty) {
-      _writeDebugLog('alocacao_medicos_screen.dart:1285', 'Francisco Gama - verificação final', {
-        'medicoId': franciscoGama.id,
-        'medicoNome': franciscoGama.nome,
-        'ativo': franciscoGama.ativo,
-        'estaAlocado': medicosAlocados.contains(franciscoGama.id),
-        'temDisponibilidade': medicosComDisponibilidade.contains(franciscoGama.id),
-        'medicosComDisponibilidade': medicosComDisponibilidade.toList(),
-        'totalDisponibilidades': disponibilidades.length,
-        'disponibilidadesDoDia': disponibilidades.where((d) {
-          final dd = DateTime(d.data.year, d.data.month, d.data.day);
-          return dd == selectedDateNormalized;
-        }).length,
-      }, hypothesisId: 'V');
-    }
-    // #endregion
+    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//    final franciscoGama = medicos.firstWhere(
+//      (m) => m.nome.toLowerCase().contains('francisco') && m.nome.toLowerCase().contains('gama'),
+//      orElse: () => Medico(id: '', nome: '', especialidade: '', disponibilidades: [], ativo: false),
+//    );
+//    if (franciscoGama.id.isNotEmpty) {
+//      _writeDebugLog('alocacao_medicos_screen.dart:1285', 'Francisco Gama - verificação final', {
+//        'medicoId': franciscoGama.id,
+//        'medicoNome': franciscoGama.nome,
+//        'ativo': franciscoGama.ativo,
+//        'estaAlocado': medicosAlocados.contains(franciscoGama.id),
+//        'temDisponibilidade': medicosComDisponibilidade.contains(franciscoGama.id),
+//        'medicosComDisponibilidade': medicosComDisponibilidade.toList(),
+//        'totalDisponibilidades': disponibilidades.length,
+//        'disponibilidadesDoDia': disponibilidades.where((d) {
+//          final dd = DateTime(d.data.year, d.data.month, d.data.day);
+//          return dd == selectedDateNormalized;
+//        }).length,
+//      }, hypothesisId: 'V');
+//    }
+    
+// #endregion
 
     if (mounted) {
       setState(() {
@@ -1883,8 +1889,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         '✅ [ALOCAÇÃO-SÉRIE-OTIMISTA] Cartão removido dos desalocados e adicionado ao gabinete');
   }
 
-  void _realocacaoOtimista(String medicoId, String gabineteOrigem,
-      String gabineteDestino, DateTime data) {
+  Future<void> _realocacaoOtimista(String medicoId, String gabineteOrigem,
+      String gabineteDestino, DateTime data) async {
     debugPrint(
         '🔵 [OTIMISTA] INÍCIO: médico=$medicoId, origem=$gabineteOrigem, destino=$gabineteDestino');
     debugPrint('🔵 [OTIMISTA] Estado atual');
@@ -1910,15 +1916,36 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }).toList();
 
     // CORREÇÃO CRÍTICA: Se não encontrou alocação no gabinete origem (cartão está nos desalocados),
-    // criar alocação otimista diretamente no destino
+    // verificar se já existe alocação no destino antes de criar uma nova (evitar duplicação)
     if (alocacoesParaMover.isEmpty) {
       debugPrint(
-          '🟢 [OTIMISTA] Nenhuma alocação encontrada no gabinete origem - cartão está nos desalocados. Criando alocação otimista no destino.');
+          '🟢 [OTIMISTA] Nenhuma alocação encontrada no gabinete origem - cartão está nos desalocados. Verificando se já existe alocação no destino...');
+
+      final dataNormalizada = DateTime(data.year, data.month, data.day);
+      
+      // CORREÇÃO: Verificar se já existe alocação deste médico neste dia no destino
+      final jaExisteNoDestino = alocacoes.any((a) {
+        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+        return a.medicoId == medicoId &&
+            a.gabineteId == gabineteDestino &&
+            aDate.year == data.year &&
+            aDate.month == data.month &&
+            aDate.day == data.day;
+      });
+
+      if (jaExisteNoDestino) {
+        debugPrint(
+            '⚠️ [OTIMISTA] Alocação já existe no destino - não criar duplicada');
+        // Não fazer nada - já existe alocação no destino
+        return;
+      }
+
+      debugPrint(
+          '🟢 [OTIMISTA] Criando alocação otimista no destino...');
 
       // Buscar horários da disponibilidade
       String horarioInicio = '08:00';
       String horarioFim = '15:00';
-      final dataNormalizada = DateTime(data.year, data.month, data.day);
       final dispDoDia = disponibilidades.where((disp) {
         final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
         return disp.medicoId == medicoId && dd == dataNormalizada;
@@ -1993,11 +2020,17 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           '❌ Erro ao atualizar médicos disponíveis após atualização otimista: $e');
     });
 
-    // Atualizar UI imediatamente
+    // CORREÇÃO CRÍTICA: Criar nova referência das listas para forçar detecção de mudança
+    // Isso garante que widgets filhos (como DisponibilidadesGrid) detectem a mudança
     if (mounted) {
       setState(() {
-        // Forçar rebuild para mostrar mudança imediata
+        // Criar novas referências das listas para forçar detecção de mudança
+        alocacoes = List<Alocacao>.from(alocacoes);
+        disponibilidades = List<Disponibilidade>.from(disponibilidades);
+        medicosDisponiveis = List<Medico>.from(medicosDisponiveis);
       });
+      // Aguardar um frame para garantir que o setState foi processado
+      await Future.delayed(Duration.zero);
     }
 
     debugPrint(
@@ -2065,14 +2098,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Usar o ano visualizado no calendário (pode ser diferente de selectedDate se o usuário navegou sem clicar)
       final ano = _dataCalendarioVisualizada.year;
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2066', 'Início _mostrarMedicosNaoAlocadosAno', {
-        'ano': ano,
-        'totalMedicos': medicos.length,
-        'medicosAtivos': medicos.where((m) => m.ativo).length,
-        'medicosIds': medicos.map((m) => m.id).toList(),
-      }, hypothesisId: 'A');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2066', 'Início _mostrarMedicosNaoAlocadosAno', {
+//        'ano': ano,
+//        'totalMedicos': medicos.length,
+//        'medicosAtivos': medicos.where((m) => m.ativo).length,
+//        'medicosIds': medicos.map((m) => m.id).toList(),
+//      }, hypothesisId: 'A');
+      
+// #endregion
 
       // Atualizar progresso para 10%
       setStateDialog?.call(() {
@@ -2086,13 +2121,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         anoEspecifico: ano.toString(),
       );
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2078', 'Disponibilidades de séries carregadas', {
-        'totalDisponibilidadesSeries': todasDisponibilidadesSeries.length,
-        'medicosComDisponibilidadeSeries': todasDisponibilidadesSeries.map((d) => d.medicoId).toSet().length,
-        'datasUnicas': todasDisponibilidadesSeries.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().length,
-      }, hypothesisId: 'B');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2078', 'Disponibilidades de séries carregadas', {
+//        'totalDisponibilidadesSeries': todasDisponibilidadesSeries.length,
+//        'medicosComDisponibilidadeSeries': todasDisponibilidadesSeries.map((d) => d.medicoId).toSet().length,
+//        'datasUnicas': todasDisponibilidadesSeries.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().length,
+//      }, hypothesisId: 'B');
+      
+// #endregion
 
       // Atualizar progresso para 30%
       setStateDialog?.call(() {
@@ -2102,13 +2139,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       // Carregar disponibilidades únicas de todos os médicos para o ano EM PARALELO
       final medicosAtivos = medicos.where((m) => m.ativo).toList();
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2086', 'Médicos ativos identificados', {
-        'totalMedicosAtivos': medicosAtivos.length,
-        'medicosAtivosIds': medicosAtivos.map((m) => m.id).toList(),
-        'medicosAtivosNomes': medicosAtivos.map((m) => m.nome).toList(),
-      }, hypothesisId: 'C');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2086', 'Médicos ativos identificados', {
+//        'totalMedicosAtivos': medicosAtivos.length,
+//        'medicosAtivosIds': medicosAtivos.map((m) => m.id).toList(),
+//        'medicosAtivosNomes': medicosAtivos.map((m) => m.nome).toList(),
+//      }, hypothesisId: 'C');
+      
+// #endregion
 
       final futuresUnicas = medicosAtivos.map((medico) {
         return DisponibilidadeUnicaService.carregarDisponibilidadesUnicas(
@@ -2116,13 +2155,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           ano,
           widget.unidade,
         ).catchError((e) {
-          // #region agent log
-          _writeDebugLog('alocacao_medicos_screen.dart:2093', 'Erro ao carregar disponibilidades únicas', {
-            'medicoId': medico.id,
-            'medicoNome': medico.nome,
-            'erro': e.toString(),
-          }, hypothesisId: 'D');
-          // #endregion
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//          _writeDebugLog('alocacao_medicos_screen.dart:2093', 'Erro ao carregar disponibilidades únicas', {
+//            'medicoId': medico.id,
+//            'medicoNome': medico.nome,
+//            'erro': e.toString(),
+//          }, hypothesisId: 'D');
+          
+// #endregion
           // Retornar lista vazia em caso de erro
           return <Disponibilidade>[];
         });
@@ -2135,25 +2176,29 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         todasDisponibilidadesUnicas.addAll(resultado);
       }
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2103', 'Disponibilidades únicas carregadas', {
-        'totalDisponibilidadesUnicas': todasDisponibilidadesUnicas.length,
-        'medicosComDisponibilidadeUnicas': todasDisponibilidadesUnicas.map((d) => d.medicoId).toSet().length,
-      }, hypothesisId: 'E');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2103', 'Disponibilidades únicas carregadas', {
+//        'totalDisponibilidadesUnicas': todasDisponibilidadesUnicas.length,
+//        'medicosComDisponibilidadeUnicas': todasDisponibilidadesUnicas.map((d) => d.medicoId).toSet().length,
+//      }, hypothesisId: 'E');
+      
+// #endregion
 
       // Combinar séries e únicas
       final todasDisponibilidades = <Disponibilidade>[];
       todasDisponibilidades.addAll(todasDisponibilidadesSeries);
       todasDisponibilidades.addAll(todasDisponibilidadesUnicas);
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2108', 'Todas disponibilidades combinadas', {
-        'totalDisponibilidades': todasDisponibilidades.length,
-        'medicosComDisponibilidade': todasDisponibilidades.map((d) => d.medicoId).toSet().length,
-        'datasUnicas': todasDisponibilidades.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().length,
-      }, hypothesisId: 'F');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2108', 'Todas disponibilidades combinadas', {
+//        'totalDisponibilidades': todasDisponibilidades.length,
+//        'medicosComDisponibilidade': todasDisponibilidades.map((d) => d.medicoId).toSet().length,
+//        'datasUnicas': todasDisponibilidades.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().length,
+//      }, hypothesisId: 'F');
+      
+// #endregion
 
       // Atualizar progresso para 50%
       setStateDialog?.call(() {
@@ -2178,11 +2223,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       
         debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Carregadas ${registosSnapshot.docs.length} alocações do ano $ano do servidor');
         
-        // #region agent log
-        _writeDebugLog('alocacao_medicos_screen.dart:2128', 'Alocações do servidor carregadas', {
-          'totalAlocacoesServidor': registosSnapshot.docs.length,
-        }, hypothesisId: 'G');
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        _writeDebugLog('alocacao_medicos_screen.dart:2128', 'Alocações do servidor carregadas', {
+//          'totalAlocacoesServidor': registosSnapshot.docs.length,
+//        }, hypothesisId: 'G');
+        
+// #endregion
         
         for (final doc in registosSnapshot.docs) {
           final data = doc.data();
@@ -2257,13 +2304,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           
           debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Geradas ${alocacoesGeradasAno.length} alocações de séries para o ano $ano');
         
-        // #region agent log
-        _writeDebugLog('alocacao_medicos_screen.dart:2202', 'Alocações de séries geradas', {
-          'totalAlocacoesGeradas': alocacoesGeradasAno.length,
-          'medicosComAlocacoesGeradas': alocacoesGeradasAno.map((a) => a.medicoId).toSet().length,
-          'datasUnicas': alocacoesGeradasAno.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().length,
-        }, hypothesisId: 'H');
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        _writeDebugLog('alocacao_medicos_screen.dart:2202', 'Alocações de séries geradas', {
+//          'totalAlocacoesGeradas': alocacoesGeradasAno.length,
+//          'medicosComAlocacoesGeradas': alocacoesGeradasAno.map((a) => a.medicoId).toSet().length,
+//          'datasUnicas': alocacoesGeradasAno.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().length,
+//        }, hypothesisId: 'H');
+        
+// #endregion
         
         // Mesclar evitando duplicados
         final alocacoesMap = <String, Alocacao>{};
@@ -2280,13 +2329,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         
         debugPrint('🔍 [MÉDICOS NÃO ALOCADOS] Total após mesclar com séries: ${todasAlocacoes.length} alocações');
 
-        // #region agent log
-        _writeDebugLog('alocacao_medicos_screen.dart:2218', 'Alocações mescladas', {
-          'totalAlocacoesMescladas': todasAlocacoes.length,
-          'medicosComAlocacoes': todasAlocacoes.map((a) => a.medicoId).toSet().length,
-          'datasUnicas': todasAlocacoes.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().length,
-        }, hypothesisId: 'I');
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        _writeDebugLog('alocacao_medicos_screen.dart:2218', 'Alocações mescladas', {
+//          'totalAlocacoesMescladas': todasAlocacoes.length,
+//          'medicosComAlocacoes': todasAlocacoes.map((a) => a.medicoId).toSet().length,
+//          'datasUnicas': todasAlocacoes.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().length,
+//        }, hypothesisId: 'I');
+        
+// #endregion
       } catch (e) {
         debugPrint('⚠️ [MÉDICOS NÃO ALOCADOS] Erro ao carregar alocações de séries: $e');
       }
@@ -2303,12 +2354,14 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .map((d) => d.medicoId)
           .toSet();
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2234', 'Médicos com disponibilidade identificados', {
-        'totalMedicosComDisponibilidade': medicosComDisponibilidade.length,
-        'medicosComDisponibilidadeIds': medicosComDisponibilidade.toList(),
-      }, hypothesisId: 'J');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2234', 'Médicos com disponibilidade identificados', {
+//        'totalMedicosComDisponibilidade': medicosComDisponibilidade.length,
+//        'medicosComDisponibilidadeIds': medicosComDisponibilidade.toList(),
+//      }, hypothesisId: 'J');
+      
+// #endregion
 
       // Incluir TODOS os médicos com disponibilidade (não filtrar por terem alocações)
       final medicosNaoAlocadosIds = medicosComDisponibilidade.toList();
@@ -2328,13 +2381,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .where((m) => m.ativo && m.nome != 'Desconhecido')
           .toList();
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2252', 'Médicos não alocados após filtro', {
-        'totalMedicosNaoAlocados': medicosNaoAlocados.length,
-        'medicosNaoAlocadosIds': medicosNaoAlocados.map((m) => m.id).toList(),
-        'medicosNaoAlocadosNomes': medicosNaoAlocados.map((m) => m.nome).toList(),
-      }, hypothesisId: 'K');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2252', 'Médicos não alocados após filtro', {
+//        'totalMedicosNaoAlocados': medicosNaoAlocados.length,
+//        'medicosNaoAlocadosIds': medicosNaoAlocados.map((m) => m.id).toList(),
+//        'medicosNaoAlocadosNomes': medicosNaoAlocados.map((m) => m.nome).toList(),
+//      }, hypothesisId: 'K');
+      
+// #endregion
 
       // Ordenar por nome
       medicosNaoAlocados.sort((a, b) => a.nome.compareTo(b.nome));
@@ -2347,14 +2402,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       int processedMedicos = 0;
       
       for (final medicoId in medicosNaoAlocadosIds) {
-        // #region agent log
-        final todasDisponibilidadesMedico = todasDisponibilidades
-            .where((d) => d.medicoId == medicoId && d.data.year == ano)
-            .toList();
-        final todasAlocacoesMedico = todasAlocacoes
-            .where((a) => a.medicoId == medicoId && a.data.year == ano)
-            .toList();
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        final todasDisponibilidadesMedico = todasDisponibilidades
+//            .where((d) => d.medicoId == medicoId && d.data.year == ano)
+//            .toList();
+//        final todasAlocacoesMedico = todasAlocacoes
+//            .where((a) => a.medicoId == medicoId && a.data.year == ano)
+//            .toList();
+        
+// #endregion
 
         final diasComDisponibilidade = todasDisponibilidades
             .where((d) =>
@@ -2372,19 +2429,21 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         medicosComDias[medicoId] = diasComDisponibilidade.length;
         medicosComDatas[medicoId] = diasComDisponibilidade;
 
-        // #region agent log
-        final medicoNome = medicos.firstWhere((m) => m.id == medicoId, orElse: () => Medico(id: medicoId, nome: 'Desconhecido', especialidade: '', disponibilidades: [], ativo: false)).nome;
-        _writeDebugLog('alocacao_medicos_screen.dart:2265', 'Processando médico', {
-          'medicoId': medicoId,
-          'medicoNome': medicoNome,
-          'totalDisponibilidadesMedico': todasDisponibilidadesMedico.length,
-          'totalAlocacoesMedico': todasAlocacoesMedico.length,
-          'diasComDisponibilidadeNaoAlocados': diasComDisponibilidade.length,
-          'datasDisponibilidades': todasDisponibilidadesMedico.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().toList(),
-          'datasAlocacoes': todasAlocacoesMedico.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().toList(),
-          'datasNaoAlocadas': diasComDisponibilidade.map((d) => '${d.year}-${d.month}-${d.day}').toList(),
-        }, hypothesisId: 'L');
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        final medicoNome = medicos.firstWhere((m) => m.id == medicoId, orElse: () => Medico(id: medicoId, nome: 'Desconhecido', especialidade: '', disponibilidades: [], ativo: false)).nome;
+//        _writeDebugLog('alocacao_medicos_screen.dart:2265', 'Processando médico', {
+//          'medicoId': medicoId,
+//          'medicoNome': medicoNome,
+//          'totalDisponibilidadesMedico': todasDisponibilidadesMedico.length,
+//          'totalAlocacoesMedico': todasAlocacoesMedico.length,
+//          'diasComDisponibilidadeNaoAlocados': diasComDisponibilidade.length,
+//          'datasDisponibilidades': todasDisponibilidadesMedico.map((d) => '${d.data.year}-${d.data.month}-${d.data.day}').toSet().toList(),
+//          'datasAlocacoes': todasAlocacoesMedico.map((a) => '${a.data.year}-${a.data.month}-${a.data.day}').toSet().toList(),
+//          'datasNaoAlocadas': diasComDisponibilidade.map((d) => '${d.year}-${d.month}-${d.day}').toList(),
+//        }, hypothesisId: 'L');
+        
+// #endregion
         
         // Atualizar progresso durante processamento (70% -> 95%)
         processedMedicos++;
@@ -2401,20 +2460,22 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           .where((m) => (medicosComDias[m.id] ?? 0) > 0)
           .toList();
 
-      // #region agent log
-      _writeDebugLog('alocacao_medicos_screen.dart:2294', 'Resultado final', {
-        'totalMedicosComDiasNaoAlocados': medicosComDiasNaoAlocados.length,
-        'medicosComDiasNaoAlocados': medicosComDiasNaoAlocados.map((m) => {
-          'id': m.id,
-          'nome': m.nome,
-          'diasNaoAlocados': medicosComDias[m.id] ?? 0,
-        }).toList(),
-        'resumoDias': medicosComDias.entries.map((e) => {
-          'medicoId': e.key,
-          'dias': e.value,
-        }).toList(),
-      }, hypothesisId: 'M');
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      _writeDebugLog('alocacao_medicos_screen.dart:2294', 'Resultado final', {
+//        'totalMedicosComDiasNaoAlocados': medicosComDiasNaoAlocados.length,
+//        'medicosComDiasNaoAlocados': medicosComDiasNaoAlocados.map((m) => {
+//          'id': m.id,
+//          'nome': m.nome,
+//          'diasNaoAlocados': medicosComDias[m.id] ?? 0,
+//        }).toList(),
+//        'resumoDias': medicosComDias.entries.map((e) => {
+//          'medicoId': e.key,
+//          'dias': e.value,
+//        }).toList(),
+//      }, hypothesisId: 'M');
+      
+// #endregion
       
       // Finalizar progresso: 95% -> 100%
       setStateDialog?.call(() {
@@ -3852,7 +3913,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                         onWillAcceptWithDetails: (details) {
                           final medicoId = details.data;
 
-                          // Verifica se o médico realmente está alocado no dia selecionado antes de aceitar o cartão
+                          // CORREÇÃO CRÍTICA: Verificar se o médico realmente está alocado no dia selecionado
+                          // ANTES de aceitar o cartão. Mas também verificar se está sendo arrastado de um gabinete.
+                          // Se está sendo arrastado de um gabinete (não dos desalocados), NÃO aceitar aqui.
                           final dataAlvo = DateTime(selectedDate.year,
                               selectedDate.month, selectedDate.day);
                           final estaAlocado = alocacoes.any((a) {
@@ -3866,6 +3929,23 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
                                 '❌ Médico $medicoId NÃO está alocado no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, ignorando desalocação.');
                             return false;
                           }
+
+                          // CORREÇÃO: Verificar se o médico está sendo arrastado de um gabinete
+                          // Se estiver, não aceitar aqui (deve ser tratado como realocação no gabinete destino)
+                          final estaAlocadoEmAlgumGabinete = alocacoes.any((a) {
+                            final aDate =
+                                DateTime(a.data.year, a.data.month, a.data.day);
+                            return a.medicoId == medicoId && 
+                                   a.gabineteId.isNotEmpty &&
+                                   aDate == dataAlvo;
+                          });
+
+                          if (estaAlocadoEmAlgumGabinete) {
+                            debugPrint(
+                                '⚠️ Médico $medicoId está alocado em um gabinete - não aceitar para desalocar (deve ser realocação)');
+                            return false; // Não aceitar - deve ser tratado como realocação
+                          }
+
                           debugPrint(
                               '✅ Médico $medicoId está alocado no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, aceitando para desalocar.');
                           return true;

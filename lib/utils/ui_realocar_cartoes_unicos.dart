@@ -33,10 +33,10 @@ Future<bool> realocarCartaoUnico({
   required String gabineteOrigem,
   required String gabineteDestino,
   required DateTime data,
-  required List<Alocacao> alocacoes,
+  required List<Alocacao> alocacoes, // Será modificada
   required List<Disponibilidade> disponibilidades,
   required Unidade unidade,
-  required VoidCallback setState,
+  required VoidCallback setState, // Função setState do widget
   required Future<void> Function(List<String> gabineteIds) recarregarAlocacoesGabinetes,
 }) async {
   try {
@@ -80,7 +80,9 @@ Future<bool> realocarCartaoUnico({
       debugPrint('   - Adicionado no destino: id=${novaAloc.id}, novo gabinete=${novaAloc.gabineteId}');
     }
 
-    // Atualizar UI imediatamente após atualização otimista
+    // CORREÇÃO CRÍTICA: A lista já foi modificada acima.
+    // O setState deve ser chamado pelo widget pai, que deve criar nova referência da lista.
+    // Exemplo no widget: setState(() { alocacoes = List<Alocacao>.from(alocacoes); });
     setState();
     debugPrint('✅ [UI-REALOCAR] FASE 1 completa: UI atualizada (otimista)');
 

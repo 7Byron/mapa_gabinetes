@@ -1,6 +1,6 @@
 // lib/services/disponibilidade_serie_service.dart
 
-import 'dart:convert';
+// import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/serie_recorrencia.dart';
@@ -9,7 +9,7 @@ import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import 'serie_service.dart';
 import '../utils/alocacao_medicos_logic.dart';
-import '../utils/debug_log_file.dart';
+// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 /// Serviço para criar séries de recorrência em vez de cartões individuais
 class DisponibilidadeSerieService {
@@ -57,50 +57,54 @@ class DisponibilidadeSerieService {
       ativo: true,
     );
 
-    // #region agent log
-    try {
-      final logEntry = {
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'location': 'disponibilidade_serie_service.dart:59',
-        'message': '🔵 [HYP-A] Criando série - ANTES de salvar',
-        'data': {
-          'serieId': serie.id,
-          'medicoId': medicoId,
-          'tipo': tipo,
-          'dataInicio': dataInicial.toString(),
-          'dataFim': dataFim?.toString() ?? 'null',
-          'ativo': true,
-          'hypothesisId': 'A'
-        },
-        'sessionId': 'debug-session',
-        'runId': 'run1',
-      };
-      writeLogToFile(jsonEncode(logEntry));
-    } catch (e) {}
-    // #endregion
+    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//    try {
+//      final logEntry = {
+//        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//        'location': 'disponibilidade_serie_service.dart:59',
+//        'message': '🔵 [HYP-A] Criando série - ANTES de salvar',
+//        'data': {
+//          'serieId': serie.id,
+//          'medicoId': medicoId,
+//          'tipo': tipo,
+//          'dataInicio': dataInicial.toString(),
+//          'dataFim': dataFim?.toString() ?? 'null',
+//          'ativo': true,
+//          'hypothesisId': 'A'
+//        },
+//        'sessionId': 'debug-session',
+//        'runId': 'run1',
+//      };
+//      writeLogToFile(jsonEncode(logEntry));
+//    } catch (e) {}
+    
+// #endregion
 
     // Salvar no Firestore
     await SerieService.salvarSerie(serie, unidade: unidade);
 
-    // #region agent log
-    try {
-      final logEntry = {
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'location': 'disponibilidade_serie_service.dart:75',
-        'message': '🟢 [HYP-A] Série salva no Firestore - DEPOIS de salvar',
-        'data': {
-          'serieId': serie.id,
-          'medicoId': medicoId,
-          'tipo': tipo,
-          'dataInicio': dataInicial.toString(),
-          'hypothesisId': 'A'
-        },
-        'sessionId': 'debug-session',
-        'runId': 'run1',
-      };
-      writeLogToFile(jsonEncode(logEntry));
-    } catch (e) {}
-    // #endregion
+    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//    try {
+//      final logEntry = {
+//        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//        'location': 'disponibilidade_serie_service.dart:75',
+//        'message': '🟢 [HYP-A] Série salva no Firestore - DEPOIS de salvar',
+//        'data': {
+//          'serieId': serie.id,
+//          'medicoId': medicoId,
+//          'tipo': tipo,
+//          'dataInicio': dataInicial.toString(),
+//          'hypothesisId': 'A'
+//        },
+//        'sessionId': 'debug-session',
+//        'runId': 'run1',
+//      };
+//      writeLogToFile(jsonEncode(logEntry));
+//    } catch (e) {}
+    
+// #endregion
 
     // CORREÇÃO CRÍTICA: Invalidar cache para todos os dias que esta série afeta
     // Isso garante que quando o utilizador navega para qualquer dia da série,
@@ -443,30 +447,32 @@ class DisponibilidadeSerieService {
       final series =
           await SerieService.carregarSeries(medicoId, unidade: unidade, forcarServidor: true);
       
-      // #region agent log
-      try {
-        final serieEncontradaLog = series.where((s) => s.id == serieId).isNotEmpty 
-            ? series.firstWhere((s) => s.id == serieId).gabineteId 
-            : null;
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'disponibilidade_serie_service.dart:alocarSerie',
-          'message': 'Série carregada do servidor ANTES de alocar',
-          'data': {
-            'serieId': serieId,
-            'medicoId': medicoId,
-            'totalSeries': series.length,
-            'serieEncontrada': series.any((s) => s.id == serieId),
-            'gabineteIdAtual': serieEncontradaLog,
-            'novoGabineteId': gabineteId,
-            'hypothesisId': 'A'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId, gabineteIdAtual=$serieEncontradaLog');
-      } catch (e) {}
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      try {
+//        final serieEncontradaLog = series.where((s) => s.id == serieId).isNotEmpty 
+//            ? series.firstWhere((s) => s.id == serieId).gabineteId 
+//            : null;
+//        final logEntry = {
+//          'timestamp': DateTime.now().millisecondsSinceEpoch,
+//          'location': 'disponibilidade_serie_service.dart:alocarSerie',
+//          'message': 'Série carregada do servidor ANTES de alocar',
+//          'data': {
+//            'serieId': serieId,
+//            'medicoId': medicoId,
+//            'totalSeries': series.length,
+//            'serieEncontrada': series.any((s) => s.id == serieId),
+//            'gabineteIdAtual': serieEncontradaLog,
+//            'novoGabineteId': gabineteId,
+//            'hypothesisId': 'A'
+//          },
+//          'sessionId': 'debug-session',
+//          'runId': 'run1',
+//        };
+//        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId, gabineteIdAtual=$serieEncontradaLog');
+//      } catch (e) {}
+      
+// #endregion
       
       final serie = series.firstWhere(
         (s) => s.id == serieId,
@@ -539,48 +545,52 @@ class DisponibilidadeSerieService {
 
       await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
       
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'disponibilidade_serie_service.dart:alocarSerie-salva',
-          'message': 'Série salva no Firestore',
-          'data': {
-            'serieId': serieId,
-            'medicoId': medicoId,
-            'gabineteIdAnterior': serie.gabineteId,
-            'gabineteIdNovo': gabineteId,
-            'hypothesisId': 'A'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId, gabineteIdAnterior=${serie.gabineteId}, gabineteIdNovo=$gabineteId');
-        writeLogToFile(jsonEncode(logEntry));
-      } catch (e) {}
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      try {
+//        final logEntry = {
+//          'timestamp': DateTime.now().millisecondsSinceEpoch,
+//          'location': 'disponibilidade_serie_service.dart:alocarSerie-salva',
+//          'message': 'Série salva no Firestore',
+//          'data': {
+//            'serieId': serieId,
+//            'medicoId': medicoId,
+//            'gabineteIdAnterior': serie.gabineteId,
+//            'gabineteIdNovo': gabineteId,
+//            'hypothesisId': 'A'
+//          },
+//          'sessionId': 'debug-session',
+//          'runId': 'run1',
+//        };
+//        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId, gabineteIdAnterior=${serie.gabineteId}, gabineteIdNovo=$gabineteId');
+//        writeLogToFile(jsonEncode(logEntry));
+//      } catch (e) {}
+      
+// #endregion
       
       // CORREÇÃO CRÍTICA: Aguardar após salvar para garantir que a escrita foi persistida
       await Future.delayed(const Duration(milliseconds: 500));
       
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'disponibilidade_serie_service.dart:alocarSerie-apos-delay',
-          'message': 'Depois de aguardar 500ms após salvar',
-          'data': {
-            'serieId': serieId,
-            'medicoId': medicoId,
-            'gabineteIdNovo': gabineteId,
-            'hypothesisId': 'A'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        writeLogToFile(jsonEncode(logEntry));
-      } catch (e) {}
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      try {
+//        final logEntry = {
+//          'timestamp': DateTime.now().millisecondsSinceEpoch,
+//          'location': 'disponibilidade_serie_service.dart:alocarSerie-apos-delay',
+//          'message': 'Depois de aguardar 500ms após salvar',
+//          'data': {
+//            'serieId': serieId,
+//            'medicoId': medicoId,
+//            'gabineteIdNovo': gabineteId,
+//            'hypothesisId': 'A'
+//          },
+//          'sessionId': 'debug-session',
+//          'runId': 'run1',
+//        };
+//        writeLogToFile(jsonEncode(logEntry));
+//      } catch (e) {}
+      
+// #endregion
 
       // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
       // Isso garante que quando o utilizador navega para qualquer dia da série,
@@ -631,25 +641,27 @@ class DisponibilidadeSerieService {
       // as alocações serão removidas imediatamente
       AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada, unidade: unidade);
 
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'disponibilidade_serie_service.dart:desalocarSerie',
-          'message': 'Série desalocada - gabineteId removido',
-          'data': {
-            'serieId': serieId,
-            'medicoId': medicoId,
-            'gabineteIdAntes': serie.gabineteId,
-            'gabineteIdDepois': null,
-            'hypothesisId': 'B'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId');
-      } catch (e) {}
-      // #endregion
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//      try {
+//        final logEntry = {
+//          'timestamp': DateTime.now().millisecondsSinceEpoch,
+//          'location': 'disponibilidade_serie_service.dart:desalocarSerie',
+//          'message': 'Série desalocada - gabineteId removido',
+//          'data': {
+//            'serieId': serieId,
+//            'medicoId': medicoId,
+//            'gabineteIdAntes': serie.gabineteId,
+//            'gabineteIdDepois': null,
+//            'hypothesisId': 'B'
+//          },
+//          'sessionId': 'debug-session',
+//          'runId': 'run1',
+//        };
+//        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId');
+//      } catch (e) {}
+      
+// #endregion
 
       debugPrint('✅ Série desalocada (gabinete removido)');
     } catch (e) {

@@ -32,14 +32,15 @@ import '../widgets/dialogo_excecao_serie.dart';
 import '../widgets/dialogo_excecao_periodo.dart';
 import '../widgets/date_picker_customizado.dart';
 import '../widgets/excecoes_card.dart';
+import '../widgets/medico_appbar_title.dart';
 import 'package:intl/intl.dart';
 
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/series_helper.dart';
 import '../utils/cadastro_medicos_helper.dart';
 import '../utils/alocacao_medicos_logic.dart';
-import '../utils/debug_log_file.dart';
+// import '../utils/ui_modificar_gabinete_cartao.dart'; // Comentado - não usado no momento
+// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 import 'alocacao_medicos_screen.dart';
 
 class CadastroMedico extends StatefulWidget {
@@ -146,6 +147,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       // Carregar disponibilidades, alocações e gabinetes com progress bar
       _anoVisualizado = DateTime.now().year;
       _dataCalendario = DateTime.now();
+      
       _carregarDadosIniciaisCompleto(widget.medico!.id);
 
       // Guarda os valores originais
@@ -228,8 +230,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
       final medicos = await buscarMedicos(unidade: widget.unidade);
       // Ordenar alfabeticamente por nome (sem acentos)
       medicos.sort((a, b) {
-        final nomeA = _normalize(a.nome);
-        final nomeB = _normalize(b.nome);
+        final nomeA = CadastroMedicosHelper.normalizarString(a.nome);
+        final nomeB = CadastroMedicosHelper.normalizarString(b.nome);
         return nomeA.compareTo(nomeB);
       });
       setState(() {
@@ -436,6 +438,58 @@ class CadastroMedicoState extends State<CadastroMedico> {
   }
 
   /// Navega para a página de alocação, salvando antes se houver mudanças
+  /// Salva antes de navegar para o mapa (usado pelos cartões)
+  Future<bool> _salvarAntesDeNavegarParaMapa() async {
+    // CORREÇÃO CRÍTICA: Sempre verificar mudanças e disponibilidades únicas
+    // Antes de qualquer outra operação, para garantir que sejam capturadas corretamente
+    _verificarMudancas();
+
+    // CORREÇÃO CRÍTICA: Capturar disponibilidades únicas ANTES de qualquer validação
+    // que possa modificar a lista (fazendo cópia profunda)
+    final todasDisponibilidadesCopia =
+        CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
+            disponibilidades);
+    final disponibilidadesUnicasParaVerificar =
+        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
+            todasDisponibilidadesCopia, _medicoId);
+
+    // CORREÇÃO RADICAL: Se há disponibilidades únicas na lista, SEMPRE salvar, mesmo que _houveMudancas seja false
+    // porque pode ser que as disponibilidades únicas tenham sido criadas mas a flag não foi atualizada
+    final deveSalvar =
+        _houveMudancas || disponibilidadesUnicasParaVerificar.isNotEmpty;
+
+    if (!deveSalvar) {
+      return true; // Não há mudanças, pode navegar
+    }
+
+    // Validar formulário antes de salvar
+    if (!_formKey.currentState!.validate()) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor, corrija os erros no formulário antes de continuar'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return false;
+    }
+
+    // Verificar se o nome foi preenchido
+    if (nomeController.text.trim().isEmpty) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Introduza o nome do médico antes de continuar'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return false;
+    }
+
+    // Salvar antes de navegar
+    return await _salvarMedicoSemSair();
+  }
+
   Future<void> _navegarParaAlocacao() async {
     // CORREÇÃO CRÍTICA: Sempre verificar mudanças e disponibilidades únicas
     // Antes de qualquer outra operação, para garantir que sejam capturadas corretamente
@@ -560,14 +614,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
   /// Carrega os dados de um novo médico
   Future<void> _carregarMedico(Medico medico) async {
-    // Ativar progress bar para mudança de médico
-    if (mounted) {
-      setState(() {
-        _isCarregandoInicial = true;
-        _progressoCarregamentoInicial = 0.0;
-        _mensagemCarregamentoInicial = 'A mudar médico...';
-      });
-    }
+    // CORREÇÃO CRÍTICA: NÃO definir _isCarregandoInicial aqui
+    // Isso será feito dentro de _carregarDadosIniciaisCompleto
+    // Se definirmos aqui, _carregarDadosIniciaisCompleto vai ver que já está carregando e retornar sem fazer nada
+    
+    // Guardar o ID do médico anterior para detectar mudança
+    final medicoAnteriorId = _medicoAtual?.id;
 
     setState(() {
       _medicoAtual = medico;
@@ -627,7 +679,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
 
       // Carregar disponibilidades, alocações e gabinetes com progress bar completa
-      await _carregarDadosIniciaisCompleto(medico.id);
+      // Passar informação se é mudança de médico para exibir mensagem apropriada
+      await _carregarDadosIniciaisCompleto(medico.id, isMudancaMedico: medicoAnteriorId != null && medicoAnteriorId != medico.id);
     } catch (e) {
       debugPrint('❌ Erro ao carregar médico: $e');
       if (mounted) {
@@ -951,14 +1004,23 @@ class CadastroMedicoState extends State<CadastroMedico> {
   }
 
   /// Carrega todos os dados iniciais (disponibilidades, alocações e gabinetes) com progress bar
-  Future<void> _carregarDadosIniciaisCompleto(String medicoId) async {
+  Future<void> _carregarDadosIniciaisCompleto(String medicoId, {bool isMudancaMedico = false}) async {
     if (!mounted) return;
+    
+    // CORREÇÃO CRÍTICA: Proteção contra execuções concorrentes
+    // Se já está carregando, não iniciar novo carregamento
+    if (_isCarregandoInicial) {
+      debugPrint('⚠️ [PROTEÇÃO] _carregarDadosIniciaisCompleto já está em execução, ignorando chamada duplicada');
+      return;
+    }
 
     // Ativar progress bar inicial
+    // CORREÇÃO: Definir mensagem apropriada baseada no contexto (mudança de médico ou carregamento inicial)
+    final mensagemInicial = isMudancaMedico ? 'A mudar médico...' : 'A iniciar...';
     setState(() {
       _isCarregandoInicial = true;
       _progressoCarregamentoInicial = 0.0;
-      _mensagemCarregamentoInicial = 'A iniciar...';
+      _mensagemCarregamentoInicial = mensagemInicial;
     });
 
     try {
@@ -1084,6 +1146,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
               // Quando progresso = 1.0, deve resultar em 92% do progresso total
               // Fórmula: 25% + (progresso * 67%) = 25% + 67% = 92% quando progresso = 1.0
               final progressoTotal = 0.25 + (progresso * 0.67);
+              
+              
               setState(() {
                 _progressoCarregamentoInicial =
                     progressoTotal.clamp(0.25, 0.92);
@@ -1204,6 +1268,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       {int? ano,
       Function(double, String)? onProgressoExterno,
       bool forcarRecarregamentoSeries = false}) async {
+    
     // Carrega o ano especificado ou o ano atual por padrão
     final anoParaCarregar = ano ?? DateTime.now().year;
 
@@ -1234,27 +1299,29 @@ class CadastroMedicoState extends State<CadastroMedico> {
         series.isNotEmpty &&
         series.first.medicoId == medicoId;
 
-    // #region agent log
-    try {
-      final logEntry = {
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'location': 'cadastro_medicos.dart:_carregarDisponibilidadesFirestore',
-        'message': 'Verificando séries já carregadas',
-        'data': {
-          'medicoId': medicoId,
-          'forcarRecarregamentoSeries': forcarRecarregamentoSeries,
-          'seriesJaCarregadas': seriesJaCarregadas,
-          'totalSeriesLocal': series.length,
-          'seriesIdsLocal': series.map((s) => s.id).toList(),
-          'seriesGabineteIdsLocal': series.map((s) => s.gabineteId).toList(),
-          'hypothesisId': 'D'
-        },
-        'sessionId': 'debug-session',
-        'runId': 'run1',
-      };
-      writeLogToFile(jsonEncode(logEntry));
-    } catch (e) {}
-    // #endregion
+    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//    try {
+//      final logEntry = {
+//        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//        'location': 'cadastro_medicos.dart:_carregarDisponibilidadesFirestore',
+//        'message': 'Verificando séries já carregadas',
+//        'data': {
+//          'medicoId': medicoId,
+//          'forcarRecarregamentoSeries': forcarRecarregamentoSeries,
+//          'seriesJaCarregadas': seriesJaCarregadas,
+//          'totalSeriesLocal': series.length,
+//          'seriesIdsLocal': series.map((s) => s.id).toList(),
+//          'seriesGabineteIdsLocal': series.map((s) => s.gabineteId).toList(),
+//          'hypothesisId': 'D'
+//        },
+//        'sessionId': 'debug-session',
+//        'runId': 'run1',
+//      };
+//      writeLogToFile(jsonEncode(logEntry));
+//    } catch (e) {}
+    
+// #endregion
 
     // NOVO MODELO: Apenas séries - carregar séries e gerar disponibilidades dinamicamente
     final disponibilidades = <Disponibilidade>[];
@@ -1278,6 +1345,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
           onProgressoExterno(0.15, 'A carregar séries...');
         }
 
+        
         // Carregar séries do médico (carregar TODAS as séries ativas, não apenas do ano)
         // CORREÇÃO CRÍTICA: Forçar busca do servidor quando carregar pela primeira vez
         // para garantir que dados recém-salvos sejam carregados após reabrir a aplicação
@@ -1288,59 +1356,64 @@ class CadastroMedicoState extends State<CadastroMedico> {
               true, // Forçar servidor para garantir dados atualizados
           // Não filtrar por data para carregar todas as séries ativas
         );
+        
 
         // Atualizar progresso após carregar séries (esta operação pode demorar)
         if (onProgressoExterno != null) {
           onProgressoExterno(0.50, 'A carregar exceções...');
         }
 
-        // #region agent log
-        try {
-          final logEntry = {
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-            'location': 'cadastro_medicos.dart:863',
-            'message': '🟢 [HYP-D] Séries carregadas do servidor',
-            'data': {
-              'medicoId': medicoId,
-              'totalSeries': seriesCarregadas.length,
-              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
-              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
-              'seriesDataInicio':
-                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
-              'hypothesisId': 'D'
-            },
-            'sessionId': 'debug-session',
-            'runId': 'run1',
-          };
-          writeLogToFile(jsonEncode(logEntry));
-        } catch (e) {}
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        try {
+//          final logEntry = {
+//            'timestamp': DateTime.now().millisecondsSinceEpoch,
+//            'location': 'cadastro_medicos.dart:863',
+//            'message': '🟢 [HYP-D] Séries carregadas do servidor',
+//            'data': {
+//              'medicoId': medicoId,
+//              'totalSeries': seriesCarregadas.length,
+//              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
+//              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
+//              'seriesDataInicio':
+//                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
+//              'hypothesisId': 'D'
+//            },
+//            'sessionId': 'debug-session',
+//            'runId': 'run1',
+//          };
+//          writeLogToFile(jsonEncode(logEntry));
+//        } catch (e) {}
+        
+// #endregion
       } else {
         // Usar séries já carregadas
         seriesCarregadas = series;
 
-        // #region agent log
-        try {
-          final logEntry = {
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-            'location': 'cadastro_medicos.dart:866',
-            'message':
-                '🟡 [HYP-D] Usando séries já carregadas (NÃO recarregou do servidor)',
-            'data': {
-              'medicoId': medicoId,
-              'totalSeries': seriesCarregadas.length,
-              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
-              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
-              'seriesDataInicio':
-                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
-              'hypothesisId': 'D'
-            },
-            'sessionId': 'debug-session',
-            'runId': 'run1',
-          };
-          writeLogToFile(jsonEncode(logEntry));
-        } catch (e) {}
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        try {
+//          final logEntry = {
+//            'timestamp': DateTime.now().millisecondsSinceEpoch,
+//            'location': 'cadastro_medicos.dart:866',
+//            'message':
+//                '🟡 [HYP-D] Usando séries já carregadas (NÃO recarregou do servidor)',
+//            'data': {
+//              'medicoId': medicoId,
+//              'totalSeries': seriesCarregadas.length,
+//              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
+//              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
+//              'seriesDataInicio':
+//                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
+//              'hypothesisId': 'D'
+//            },
+//            'sessionId': 'debug-session',
+//            'runId': 'run1',
+//          };
+//          writeLogToFile(jsonEncode(logEntry));
+//        } catch (e) {}
+        
+// #endregion
       }
 
       if (!seriesJaCarregadas) {
@@ -1359,30 +1432,32 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // CORREÇÃO CRÍTICA: Se forcarRecarregamentoSeries é true, substituir completamente as séries
         // para garantir que séries atualizadas (ex: com novo gabineteId) substituam as antigas
         if (forcarRecarregamentoSeries) {
-          // #region agent log
-          try {
-            final logEntry = {
-              'timestamp': DateTime.now().millisecondsSinceEpoch,
-              'location':
-                  'cadastro_medicos.dart:_carregarDisponibilidadesFirestore-substituir-series',
-              'message':
-                  'Substituindo séries completamente (forcarRecarregamentoSeries=true)',
-              'data': {
-                'medicoId': medicoId,
-                'seriesAntesTamanho': series.length,
-                'seriesCarregadasTamanho': seriesCarregadas.length,
-                'seriesCarregadasIds':
-                    seriesCarregadas.map((s) => s.id).toList(),
-                'seriesCarregadasGabineteIds':
-                    seriesCarregadas.map((s) => s.gabineteId).toList(),
-                'hypothesisId': 'H'
-              },
-              'sessionId': 'debug-session',
-              'runId': 'run1',
-            };
-            writeLogToFile(jsonEncode(logEntry));
-          } catch (e) {}
-          // #endregion
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//          try {
+//            final logEntry = {
+//              'timestamp': DateTime.now().millisecondsSinceEpoch,
+//              'location':
+//                  'cadastro_medicos.dart:_carregarDisponibilidadesFirestore-substituir-series',
+//              'message':
+//                  'Substituindo séries completamente (forcarRecarregamentoSeries=true)',
+//              'data': {
+//                'medicoId': medicoId,
+//                'seriesAntesTamanho': series.length,
+//                'seriesCarregadasTamanho': seriesCarregadas.length,
+//                'seriesCarregadasIds':
+//                    seriesCarregadas.map((s) => s.id).toList(),
+//                'seriesCarregadasGabineteIds':
+//                    seriesCarregadas.map((s) => s.gabineteId).toList(),
+//                'hypothesisId': 'H'
+//              },
+//              'sessionId': 'debug-session',
+//              'runId': 'run1',
+//            };
+//            writeLogToFile(jsonEncode(logEntry));
+//          } catch (e) {}
+          
+// #endregion
 
           // Substituir completamente para garantir dados atualizados
           setState(() {
@@ -1562,29 +1637,31 @@ class CadastroMedicoState extends State<CadastroMedico> {
           onProgressoExterno(0.78, 'A gerar disponibilidades...');
         }
 
-        // #region agent log
-        try {
-          final logEntry = {
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-            'location': 'cadastro_medicos.dart:1014',
-            'message': '🔵 [HYP-C] Gerando disponibilidades - ANTES',
-            'data': {
-              'medicoId': medicoId,
-              'totalSeries': seriesCarregadas.length,
-              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
-              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
-              'seriesDataInicio':
-                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
-              'periodoInicio': dataInicio.toString(),
-              'periodoFim': dataFim.toString(),
-              'hypothesisId': 'C'
-            },
-            'sessionId': 'debug-session',
-            'runId': 'run1',
-          };
-          writeLogToFile(jsonEncode(logEntry));
-        } catch (e) {}
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        try {
+//          final logEntry = {
+//            'timestamp': DateTime.now().millisecondsSinceEpoch,
+//            'location': 'cadastro_medicos.dart:1014',
+//            'message': '🔵 [HYP-C] Gerando disponibilidades - ANTES',
+//            'data': {
+//              'medicoId': medicoId,
+//              'totalSeries': seriesCarregadas.length,
+//              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
+//              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
+//              'seriesDataInicio':
+//                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
+//              'periodoInicio': dataInicio.toString(),
+//              'periodoFim': dataFim.toString(),
+//              'hypothesisId': 'C'
+//            },
+//            'sessionId': 'debug-session',
+//            'runId': 'run1',
+//          };
+//          writeLogToFile(jsonEncode(logEntry));
+//        } catch (e) {}
+        
+// #endregion
 
         final dispsGeradas = SerieGenerator.gerarDisponibilidades(
           series: seriesCarregadas,
@@ -1598,25 +1675,27 @@ class CadastroMedicoState extends State<CadastroMedico> {
           onProgressoExterno(0.85, 'A organizar dados...');
         }
 
-        // #region agent log
-        try {
-          final logEntry = {
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-            'location': 'cadastro_medicos.dart:1030',
-            'message': '🟢 [HYP-C] Disponibilidades geradas - DEPOIS',
-            'data': {
-              'medicoId': medicoId,
-              'totalDisponibilidades': dispsGeradas.length,
-              'tipos': dispsGeradas.map((d) => d.tipo).toList(),
-              'datas': dispsGeradas.map((d) => d.data.toString()).toList(),
-              'hypothesisId': 'C'
-            },
-            'sessionId': 'debug-session',
-            'runId': 'run1',
-          };
-          writeLogToFile(jsonEncode(logEntry));
-        } catch (e) {}
-        // #endregion
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//        try {
+//          final logEntry = {
+//            'timestamp': DateTime.now().millisecondsSinceEpoch,
+//            'location': 'cadastro_medicos.dart:1030',
+//            'message': '🟢 [HYP-C] Disponibilidades geradas - DEPOIS',
+//            'data': {
+//              'medicoId': medicoId,
+//              'totalDisponibilidades': dispsGeradas.length,
+//              'tipos': dispsGeradas.map((d) => d.tipo).toList(),
+//              'datas': dispsGeradas.map((d) => d.data.toString()).toList(),
+//              'hypothesisId': 'C'
+//            },
+//            'sessionId': 'debug-session',
+//            'runId': 'run1',
+//          };
+//          writeLogToFile(jsonEncode(logEntry));
+//        } catch (e) {}
+        
+// #endregion
 
         if (mostrarProgressoInterno && mounted) {
           setState(() {
@@ -1938,42 +2017,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
       debugPrint('⚠️ Erro ao carregar alocações e gabinetes: $e');
       // Continuar sem alocações se houver erro
     }
-  }
-
-  /// Callback para alocar médico único (usado pela função alocarCartaoSerie)
-  Future<void> _alocarMedicoUnico(
-    String medicoId,
-    String gabineteId, {
-    DateTime? dataEspecifica,
-    List<String>? horarios,
-  }) async {
-    if (dataEspecifica == null) return;
-
-    final dataNormalizada = DateTime(
-      dataEspecifica.year,
-      dataEspecifica.month,
-      dataEspecifica.day,
-    );
-
-    // Alocar usando AlocacaoMedicosLogic.alocarMedico
-    await AlocacaoMedicosLogic.alocarMedico(
-      selectedDate: dataNormalizada,
-      medicoId: medicoId,
-      gabineteId: gabineteId,
-      alocacoes: alocacoes,
-      disponibilidades: disponibilidades,
-      onAlocacoesChanged: () {
-        if (mounted) {
-          setState(() {
-            // Criar novas referências das listas para forçar detecção de mudança
-            alocacoes = List<Alocacao>.from(alocacoes);
-            disponibilidades = List<Disponibilidade>.from(disponibilidades);
-          });
-        }
-      },
-      horariosForcados: horarios,
-      unidade: widget.unidade,
-    );
   }
 
   /// Callback quando o gabinete de uma disponibilidade é alterado
@@ -2729,26 +2772,28 @@ class CadastroMedicoState extends State<CadastroMedico> {
                   onAtualizarEstado: () async {
                     // CORREÇÃO: Não recarregar disponibilidades - já fizemos update otimista
                     // Apenas recarregar alocações para garantir sincronização com servidor
-                    // #region agent log
-                    try {
-                      final logEntry = {
-                        'timestamp': DateTime.now().millisecondsSinceEpoch,
-                        'location':
-                            'cadastro_medicos.dart:onAtualizarEstado-realocacao',
-                        'message':
-                            'onAtualizarEstado chamado - recarregando apenas alocações',
-                        'data': {
-                          'medicoId': _medicoAtual?.id,
-                          'anoVisualizado': _anoVisualizado,
-                          'totalAlocacoesAntes': alocacoes.length,
-                          'hypothesisId': 'P2'
-                        },
-                        'sessionId': 'debug-session',
-                        'runId': 'run1',
-                      };
-                      writeLogToFile(jsonEncode(logEntry));
-                    } catch (e) {}
-                    // #endregion
+                    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//                    try {
+//                      final logEntry = {
+//                        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                        'location':
+//                            'cadastro_medicos.dart:onAtualizarEstado-realocacao',
+//                        'message':
+//                            'onAtualizarEstado chamado - recarregando apenas alocações',
+//                        'data': {
+//                          'medicoId': _medicoAtual?.id,
+//                          'anoVisualizado': _anoVisualizado,
+//                          'totalAlocacoesAntes': alocacoes.length,
+//                          'hypothesisId': 'P2'
+//                        },
+//                        'sessionId': 'debug-session',
+//                        'runId': 'run1',
+//                      };
+//                      writeLogToFile(jsonEncode(logEntry));
+//                    } catch (e) {}
+                    
+// #endregion
                     if (_medicoAtual != null &&
                         _anoVisualizado != null &&
                         mounted) {
@@ -5118,274 +5163,19 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 ),
             ],
           ),
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                _medicoAtual == null ? 'Novo Médico' : 'Editar Médico',
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.3), width: 1),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                child: SizedBox(
-                  width: 260,
-                  child: _carregandoMedicos
-                      ? const SizedBox(
-                          height: 40,
-                          child: Center(
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            ),
-                          ),
-                        )
-                      : _listaMedicos.isEmpty
-                          ? SizedBox(
-                              height: 40,
-                              child: TextField(
-                                enabled: false,
-                                textAlignVertical: TextAlignVertical.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.0,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Pesquisar médico...',
-                                  hintStyle: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 14,
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 12,
-                                  ),
-                                  isDense: true,
-                                ),
-                              ),
-                            )
-                          : SizedBox(
-                              height: 40,
-                              child: Autocomplete<Medico>(
-                                optionsBuilder:
-                                    (TextEditingValue textEditingValue) {
-                                  final texto =
-                                      _normalize(textEditingValue.text.trim());
-                                  if (texto.isEmpty) {
-                                    return _listaMedicos;
-                                  }
-                                  return _listaMedicos.where((medico) {
-                                    final nomeNormalizado =
-                                        _normalize(medico.nome);
-                                    return nomeNormalizado.contains(texto);
-                                  }).toList()
-                                    ..sort((a, b) {
-                                      final nomeA = _normalize(a.nome);
-                                      final nomeB = _normalize(b.nome);
-                                      return nomeA.compareTo(nomeB);
-                                    });
-                                },
-                                displayStringForOption: (Medico medico) =>
-                                    medico.nome,
-                                onSelected: (Medico medico) {
-                                  _mudarMedico(medico);
-                                },
-                                fieldViewBuilder: (
-                                  BuildContext context,
-                                  TextEditingController textEditingController,
-                                  FocusNode focusNode,
-                                  VoidCallback onFieldSubmitted,
-                                ) {
-                                  // Sincronizar com o controller local
-                                  if (textEditingController.text !=
-                                      _medicoAutocompleteController.text) {
-                                    textEditingController.text =
-                                        _medicoAutocompleteController.text;
-                                  }
-
-                                  // Criar um StatefulBuilder para atualizar o botão X
-                                  return StatefulBuilder(
-                                    builder: (context, setStateLocal) {
-                                      // Adicionar listener para atualizar o botão X
-                                      textEditingController.addListener(() {
-                                        if (textEditingController.text !=
-                                            _medicoAutocompleteController
-                                                .text) {
-                                          _medicoAutocompleteController.text =
-                                              textEditingController.text;
-                                        }
-                                        setStateLocal(() {});
-                                      });
-
-                                      return TextField(
-                                        controller: textEditingController,
-                                        focusNode: focusNode,
-                                        textAlignVertical:
-                                            TextAlignVertical.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          height: 1.0,
-                                        ),
-                                        decoration: InputDecoration(
-                                          hintText: 'Pesquisar médico...',
-                                          hintStyle: TextStyle(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.7),
-                                            fontSize: 14,
-                                          ),
-                                          border: InputBorder.none,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 12,
-                                          ),
-                                          isDense: true,
-                                          suffixIcon: textEditingController
-                                                  .text.isNotEmpty
-                                              ? IconButton(
-                                                  icon: Icon(
-                                                    Icons.clear,
-                                                    size: 18,
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.8),
-                                                  ),
-                                                  onPressed: () {
-                                                    textEditingController
-                                                        .clear();
-                                                    _medicoAutocompleteController
-                                                        .clear();
-                                                    setStateLocal(() {});
-                                                    focusNode.requestFocus();
-                                                  },
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(),
-                                                )
-                                              : null,
-                                        ),
-                                        onSubmitted: (String value) {
-                                          onFieldSubmitted();
-                                        },
-                                      );
-                                    },
-                                  );
-                                },
-                                optionsViewBuilder: (
-                                  BuildContext context,
-                                  AutocompleteOnSelected<Medico> onSelected,
-                                  Iterable<Medico> options,
-                                ) {
-                                  return Align(
-                                    alignment: Alignment.topLeft,
-                                    child: Material(
-                                      elevation: 8.0,
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          maxHeight: 300,
-                                          maxWidth: 300,
-                                        ),
-                                        child: ListView.builder(
-                                          shrinkWrap: true,
-                                          padding: EdgeInsets.zero,
-                                          itemCount: options.length,
-                                          itemBuilder: (BuildContext context,
-                                              int index) {
-                                            final Medico medico =
-                                                options.elementAt(index);
-                                            final bool isSelected =
-                                                _medicoAtual != null &&
-                                                    medico.id ==
-                                                        _medicoAtual!.id;
-                                            return InkWell(
-                                              onTap: () {
-                                                onSelected(medico);
-                                              },
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 16.0,
-                                                  vertical: 12.0,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: isSelected
-                                                      ? Colors.blue.withValues(
-                                                          alpha: 0.2)
-                                                      : Colors.transparent,
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        medico.nome,
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          color: isSelected
-                                                              ? Colors.blue[900]
-                                                              : Colors.black87,
-                                                          fontWeight: isSelected
-                                                              ? FontWeight.w600
-                                                              : FontWeight
-                                                                  .normal,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (isSelected)
-                                                      Icon(
-                                                        Icons.check,
-                                                        size: 18,
-                                                        color: Colors.blue[900],
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                ),
-              ),
-              if (_medicoAtual != null && _anoVisualizado != null) ...[
-                const SizedBox(width: 12),
-                Text(
-                  _anoVisualizado.toString(),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ],
+          title: MedicoAppBarTitle(
+            medicoAtual: _medicoAtual,
+            anoVisualizado: _anoVisualizado,
+            listaMedicos: _listaMedicos,
+            carregandoMedicos: _carregandoMedicos,
+            medicoAutocompleteController: _medicoAutocompleteController,
+            onMedicoSelecionado: _mudarMedico,
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.save, color: Colors.white),
               tooltip: 'Salvar',
-              onPressed: () => _salvarMedico(),
+              onPressed: () => _salvarMedicoSemSair(),
             ),
             IconButton(
               icon: const Icon(Icons.add, color: Colors.white),
@@ -5570,6 +5360,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                       unidade: widget.unidade,
                                       onGabineteChanged: _onGabineteChanged,
                                       series: series,
+                                      onNavegarParaMapa: _salvarAntesDeNavegarParaMapa,
                                     ),
                                   ),
                                 ),
@@ -6110,6 +5901,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                         unidade: widget.unidade,
                                         onGabineteChanged: _onGabineteChanged,
                                         series: series,
+                                        onNavegarParaMapa: _salvarAntesDeNavegarParaMapa,
                                       ),
                                     ),
                                     const SizedBox(height: 24),
@@ -6414,14 +6206,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
   /// Normaliza string removendo acentos e convertendo para minúsculas
   /// para ordenação e pesquisa corretas
-  String _normalize(String s) => s
-      .toLowerCase()
-      .replaceAll(RegExp(r"[áàâã]"), 'a')
-      .replaceAll(RegExp(r"[éê]"), 'e')
-      .replaceAll(RegExp(r"[í]"), 'i')
-      .replaceAll(RegExp(r"[óôõ]"), 'o')
-      .replaceAll(RegExp(r"[ú]"), 'u')
-      .replaceAll(RegExp(r"[ç]"), 'c');
 
   @override
   void dispose() {

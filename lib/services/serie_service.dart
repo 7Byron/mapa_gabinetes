@@ -1,13 +1,11 @@
 // lib/services/serie_service.dart
 
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart';
-import '../utils/debug_log_file.dart';
 
 /// Serviço para gerenciar séries de recorrência e exceções no Firestore
 class SerieService {
@@ -71,24 +69,24 @@ class SerieService {
       final serieMap = serie.toMap();
       await serieRef.set(serieMap);
       
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'serie_service.dart:salvarSerie',
-          'message': 'Série salva no Firestore',
-          'data': {
-            'serieId': serie.id,
-            'medicoId': serie.medicoId,
-            'gabineteId': serie.gabineteId,
-            'unidadeId': unidadeId,
-            'hypothesisId': 'F'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        writeLogToFile(jsonEncode(logEntry));
-      } catch (e) {}
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+      // try {
+      //   final logEntry = {
+      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+      //     'location': 'serie_service.dart:salvarSerie',
+      //     'message': 'Série salva no Firestore',
+      //     'data': {
+      //       'serieId': serie.id,
+      //       'medicoId': serie.medicoId,
+      //       'gabineteId': serie.gabineteId,
+      //       'unidadeId': unidadeId,
+      //       'hypothesisId': 'F'
+      //     },
+      //     'sessionId': 'debug-session',
+      //     'runId': 'run1',
+      //   };
+      //   writeLogToFile(jsonEncode(logEntry));
+      // } catch (e) {}
       // #endregion
       
       // Invalidar cache de séries após salvar
@@ -110,6 +108,7 @@ class SerieService {
     DateTime? dataFim,
     bool forcarServidor = false, // Novo parâmetro para forçar busca do servidor
   }) async {
+    
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
 
@@ -174,39 +173,232 @@ class SerieService {
       // Buscar apenas séries ativas (filtro na query para reduzir dados transferidos)
       // CORREÇÃO: Usar Source.server quando forçar servidor ou quando não há cache válido
       
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'serie_service.dart:carregarSeries-antes-query',
-          'message': 'Antes de buscar séries do Firestore',
-          'data': {
-            'medicoId': medicoId,
-            'unidadeId': unidadeId,
-            'forcarServidor': forcarServidor,
-            'hypothesisId': 'G'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        writeLogToFile(jsonEncode(logEntry));
-      } catch (e) {}
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+      // try {
+      //   final logEntry = {
+      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+      //     'location': 'serie_service.dart:carregarSeries-antes-query',
+      //     'message': 'Antes de buscar séries do Firestore',
+      //     'data': {
+      //       'medicoId': medicoId,
+      //       'unidadeId': unidadeId,
+      //       'forcarServidor': forcarServidor,
+      //       'hypothesisId': 'G'
+      //     },
+      //     'sessionId': 'debug-session',
+      //     'runId': 'run1',
+      //   };
+      //   writeLogToFile(jsonEncode(logEntry));
+      // } catch (e) {}
       // #endregion
       final source = forcarServidor ? Source.server : Source.serverAndCache;
-      final snapshot = await seriesRef
-          .where('ativo', isEqualTo: true)
-          .get(GetOptions(source: source));
       final series = <SerieRecorrencia>[];
+      final seriesIdsProcessados = <String>{};
+      bool usarQueryOtimizada = false;
 
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
+      // OTIMIZAÇÃO OPCIONAL: Tentar usar queries otimizadas quando há período definido
+      // Isso reduz dados transferidos do Firestore, especialmente séries antigas que já terminaram
+      // Se falhar, usa a query original (fallback seguro)
+      // CORREÇÃO: Só usar queries otimizadas quando AMBOS dataInicio E dataFim estão definidos
+      // Caso contrário, usar query original para evitar loops infinitos
+      
+      
+      if (dataInicio != null && dataFim != null) {
+        // Calcular data mínima para filtrar séries que terminaram antes do período
+        final dataMinimaFiltro = dataInicio;
+        
+        debugPrint('⚡ [OTIMIZAÇÃO] Tentando usar queries otimizadas para período: ${dataInicio.toString()} até ${dataFim.toString()}');
+        
+        
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+        // try {
+        //   final logEntry = {
+        //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+        //     'location': 'serie_service.dart:carregarSeries-otimizacao-tentativa',
+        //     'message': '⚡ Tentando usar queries otimizadas',
+        //     'data': {
+        //       'medicoId': medicoId,
+        //       'unidadeId': unidadeId,
+        //       'dataInicio': dataInicio?.toIso8601String(),
+        //       'dataFim': dataFim?.toIso8601String(),
+        //       'dataMinimaFiltro': dataMinimaFiltro.toIso8601String(),
+        //       'forcarServidor': forcarServidor,
+        //       'hypothesisId': 'OPT-1'
+        //     },
+        //     'sessionId': 'debug-session',
+        //     'runId': 'run1',
+        //   };
+        //   writeLogToFile(jsonEncode(logEntry));
+        // } catch (e) {}
+        // #endregion
+        
+        try {
+          // Query 1: Séries com dataFim >= dataMinimaFiltro (séries que ainda estão ativas no período)
+          // Isso exclui séries que já terminaram antes do período
+          final snapshotComDataFim = await seriesRef
+              .where('ativo', isEqualTo: true)
+              .where('dataFim', isGreaterThanOrEqualTo: Timestamp.fromDate(dataMinimaFiltro))
+              .get(GetOptions(source: source));
+          
+          debugPrint('📊 [OTIMIZAÇÃO] Query 1 (com dataFim): ${snapshotComDataFim.docs.length} séries encontradas');
+          
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+          // try {
+          //   final logEntry = {
+          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+          //     'location': 'serie_service.dart:carregarSeries-otimizacao-query1',
+          //     'message': '📊 Query 1 (com dataFim) executada',
+          //     'data': {
+          //       'medicoId': medicoId,
+          //       'seriesEncontradas': snapshotComDataFim.docs.length,
+          //       'hypothesisId': 'OPT-1'
+          //     },
+          //     'sessionId': 'debug-session',
+          //     'runId': 'run1',
+          //   };
+          //   writeLogToFile(jsonEncode(logEntry));
+          // } catch (e) {}
+          // #endregion
+          
+          for (final doc in snapshotComDataFim.docs) {
+            if (seriesIdsProcessados.contains(doc.id)) continue;
+            final data = doc.data();
+            final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
+            if (serie.ativo) {
+              series.add(serie);
+              seriesIdsProcessados.add(serie.id);
+            }
+          }
 
-        // Filtrar séries inativas
-        if (!serie.ativo) {
-          continue;
+          // Query 2: Séries infinitas (dataFim == null) - sempre relevantes se começaram antes ou no período
+          // Essas séries continuam indefinidamente, então precisamos incluí-las
+          final snapshotInfinitas = await seriesRef
+              .where('ativo', isEqualTo: true)
+              .where('dataFim', isNull: true)
+              .get(GetOptions(source: source));
+          
+          debugPrint('📊 [OTIMIZAÇÃO] Query 2 (infinitas): ${snapshotInfinitas.docs.length} séries encontradas');
+          
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+          // try {
+          //   final logEntry = {
+          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+          //     'location': 'serie_service.dart:carregarSeries-otimizacao-query2',
+          //     'message': '📊 Query 2 (infinitas) executada',
+          //     'data': {
+          //       'medicoId': medicoId,
+          //       'seriesEncontradas': snapshotInfinitas.docs.length,
+          //       'hypothesisId': 'OPT-1'
+          //     },
+          //     'sessionId': 'debug-session',
+          //     'runId': 'run1',
+          //   };
+          //   writeLogToFile(jsonEncode(logEntry));
+          // } catch (e) {}
+          // #endregion
+          
+          for (final doc in snapshotInfinitas.docs) {
+            if (seriesIdsProcessados.contains(doc.id)) continue;
+            final data = doc.data();
+            final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
+            if (serie.ativo) {
+              series.add(serie);
+              seriesIdsProcessados.add(serie.id);
+            }
+          }
+
+          usarQueryOtimizada = true;
+          debugPrint('✅ [OTIMIZAÇÃO] Queries otimizadas executadas com sucesso! Total: ${series.length} séries');
+          
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+          // try {
+          //   final logEntry = {
+          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+          //     'location': 'serie_service.dart:carregarSeries-otimizacao-sucesso',
+          //     'message': '✅ Queries otimizadas executadas com sucesso',
+          //     'data': {
+          //       'medicoId': medicoId,
+          //       'totalSeriesCarregadas': series.length,
+          //       'query1Count': snapshotComDataFim.docs.length,
+          //       'query2Count': snapshotInfinitas.docs.length,
+          //       'hypothesisId': 'OPT-1'
+          //     },
+          //     'sessionId': 'debug-session',
+          //     'runId': 'run1',
+          //   };
+          //   writeLogToFile(jsonEncode(logEntry));
+          // } catch (e) {}
+          // #endregion
+        } catch (e) {
+          // Se as queries otimizadas falharem (ex: índice não existe), usar query original
+          debugPrint('⚠️ [OTIMIZAÇÃO] Queries otimizadas falharam ($e), usando query original (fallback seguro)');
+          
+          // #region agent log (COMENTADO - pode ser reativado se necessário)
+          // try {
+          //   final logEntry = {
+          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+          //     'location': 'serie_service.dart:carregarSeries-otimizacao-falha',
+          //     'message': '⚠️ Queries otimizadas falharam, usando fallback',
+          //     'data': {
+          //       'medicoId': medicoId,
+          //       'erro': e.toString(),
+          //       'hypothesisId': 'OPT-1'
+          //     },
+          //     'sessionId': 'debug-session',
+          //     'runId': 'run1',
+          //   };
+          //   writeLogToFile(jsonEncode(logEntry));
+          // } catch (e2) {}
+          // #endregion
+          
+          series.clear();
+          seriesIdsProcessados.clear();
+          usarQueryOtimizada = false;
         }
+      }
 
+      // Se não usou query otimizada (ou falhou), usar query original
+      if (!usarQueryOtimizada) {
+        
+        debugPrint('📊 [QUERY ORIGINAL] Buscando todas as séries ativas (sem filtro no Firestore)');
+        final snapshot = await seriesRef
+            .where('ativo', isEqualTo: true)
+            .get(GetOptions(source: source));
+        
+        
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+        // try {
+        //   final logEntry = {
+        //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+        //     'location': 'serie_service.dart:carregarSeries-query-original',
+        //     'message': '📊 Usando query original (sem otimização)',
+        //     'data': {
+        //       'medicoId': medicoId,
+        //       'totalDocsNoFirestore': snapshot.docs.length,
+        //       'motivo': dataInicio == null && dataFim == null ? 'sem_periodo' : 'otimizacao_falhou',
+        //       'hypothesisId': 'OPT-1'
+        //     },
+        //     'sessionId': 'debug-session',
+        //     'runId': 'run1',
+        //   };
+        //   writeLogToFile(jsonEncode(logEntry));
+        // } catch (e) {}
+        // #endregion
+        
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
+          if (serie.ativo) {
+            series.add(serie);
+          }
+        }
+      }
+
+      // Aplicar filtros finais localmente para garantir precisão
+      // IMPORTANTE: Esta lógica NÃO muda - é a mesma de antes!
+      // Apenas otimizamos a query do Firestore, mas a filtragem final é igual
+      final seriesFiltradas = <SerieRecorrencia>[];
+      for (final serie in series) {
         // Filtrar por período se fornecido
         // IMPORTANTE: Para séries infinitas (dataFim == null), sempre incluir se começaram antes ou no período
         // CORREÇÃO CRÍTICA: Normalizar datas para comparação correta (sem hora/minutos/segundos)
@@ -217,25 +409,25 @@ class SerieService {
           final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
           final dataFimNormalizada = DateTime(dataFim.year, dataFim.month, dataFim.day);
           if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'serie_service.dart:153',
-                'message': '🔴 [HYP-B] Série filtrada - começou depois do dataFim',
-                'data': {
-                  'serieId': serie.id,
-                  'medicoId': serie.medicoId,
-                  'serieTipo': serie.tipo,
-                  'serieDataInicio': serieDataInicioNormalizada.toString(),
-                  'dataFim': dataFimNormalizada.toString(),
-                  'hypothesisId': 'B'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+            // try {
+            //   final logEntry = {
+            //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+            //     'location': 'serie_service.dart:153',
+            //     'message': '🔴 [HYP-B] Série filtrada - começou depois do dataFim',
+            //     'data': {
+            //       'serieId': serie.id,
+            //       'medicoId': serie.medicoId,
+            //       'serieTipo': serie.tipo,
+            //       'serieDataInicio': serieDataInicioNormalizada.toString(),
+            //       'dataFim': dataFimNormalizada.toString(),
+            //       'hypothesisId': 'B'
+            //     },
+            //     'sessionId': 'debug-session',
+            //     'runId': 'run1',
+            //   };
+            //   writeLogToFile(jsonEncode(logEntry));
+            // } catch (e) {}
             // #endregion
             continue;
           }
@@ -245,25 +437,25 @@ class SerieService {
           final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
           final dataFimNormalizada = DateTime(dataFim.year, dataFim.month, dataFim.day);
           if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'serie_service.dart:153',
-                'message': '🔴 [HYP-B] Série filtrada - começou depois do dataFim (dataInicio null)',
-                'data': {
-                  'serieId': serie.id,
-                  'medicoId': serie.medicoId,
-                  'serieTipo': serie.tipo,
-                  'serieDataInicio': serieDataInicioNormalizada.toString(),
-                  'dataFim': dataFimNormalizada.toString(),
-                  'hypothesisId': 'B'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+            // try {
+            //   final logEntry = {
+            //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+            //     'location': 'serie_service.dart:153',
+            //     'message': '🔴 [HYP-B] Série filtrada - começou depois do dataFim (dataInicio null)',
+            //     'data': {
+            //       'serieId': serie.id,
+            //       'medicoId': serie.medicoId,
+            //       'serieTipo': serie.tipo,
+            //       'serieDataInicio': serieDataInicioNormalizada.toString(),
+            //       'dataFim': dataFimNormalizada.toString(),
+            //       'hypothesisId': 'B'
+            //     },
+            //     'sessionId': 'debug-session',
+            //     'runId': 'run1',
+            //   };
+            //   writeLogToFile(jsonEncode(logEntry));
+            // } catch (e) {}
             // #endregion
             continue;
           }
@@ -276,25 +468,25 @@ class SerieService {
             final serieDataFimNormalizada = DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day);
             final dataInicioNormalizada = DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
             if (serieDataFimNormalizada.isBefore(dataInicioNormalizada)) {
-              // #region agent log
-              try {
-                final logEntry = {
-                  'timestamp': DateTime.now().millisecondsSinceEpoch,
-                  'location': 'serie_service.dart:159',
-                  'message': '🔴 [HYP-B] Série filtrada - terminou antes do dataInicio',
-                  'data': {
-                    'serieId': serie.id,
-                    'medicoId': serie.medicoId,
-                    'serieTipo': serie.tipo,
-                    'serieDataFim': serieDataFimNormalizada.toString(),
-                    'dataInicio': dataInicioNormalizada.toString(),
-                    'hypothesisId': 'B'
-                  },
-                  'sessionId': 'debug-session',
-                  'runId': 'run1',
-                };
-                writeLogToFile(jsonEncode(logEntry));
-              } catch (e) {}
+              // #region agent log (COMENTADO - pode ser reativado se necessário)
+              // try {
+              //   final logEntry = {
+              //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+              //     'location': 'serie_service.dart:159',
+              //     'message': '🔴 [HYP-B] Série filtrada - terminou antes do dataInicio',
+              //     'data': {
+              //       'serieId': serie.id,
+              //       'medicoId': serie.medicoId,
+              //       'serieTipo': serie.tipo,
+              //       'serieDataFim': serieDataFimNormalizada.toString(),
+              //       'dataInicio': dataInicioNormalizada.toString(),
+              //       'hypothesisId': 'B'
+              //     },
+              //     'sessionId': 'debug-session',
+              //     'runId': 'run1',
+              //   };
+              //   writeLogToFile(jsonEncode(logEntry));
+              // } catch (e) {}
               // #endregion
               continue; // Série terminou antes do período
             }
@@ -304,78 +496,103 @@ class SerieService {
           // (já verificado acima com isAfter)
         }
 
-        // #region agent log
-        try {
-          final logEntry = {
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-            'location': 'serie_service.dart:168',
-            'message': '🟢 [HYP-B] Série adicionada à lista de retorno',
-            'data': {
-              'serieId': serie.id,
-              'medicoId': serie.medicoId,
-              'tipo': serie.tipo,
-              'dataInicio': serie.dataInicio.toString(),
-              'dataFim': serie.dataFim?.toString() ?? 'null',
-              'ativo': serie.ativo,
-              'hypothesisId': 'B'
-            },
-            'sessionId': 'debug-session',
-            'runId': 'run1',
-          };
-          writeLogToFile(jsonEncode(logEntry));
-        } catch (e) {}
+        // #region agent log (COMENTADO - pode ser reativado se necessário)
+        // try {
+        //   final logEntry = {
+        //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+        //     'location': 'serie_service.dart:168',
+        //     'message': '🟢 [HYP-B] Série adicionada à lista de retorno',
+        //     'data': {
+        //       'serieId': serie.id,
+        //       'medicoId': serie.medicoId,
+        //       'tipo': serie.tipo,
+        //       'dataInicio': serie.dataInicio.toString(),
+        //       'dataFim': serie.dataFim?.toString() ?? 'null',
+        //       'ativo': serie.ativo,
+        //       'hypothesisId': 'B'
+        //     },
+        //     'sessionId': 'debug-session',
+        //     'runId': 'run1',
+        //   };
+        //   writeLogToFile(jsonEncode(logEntry));
+        // } catch (e) {}
         // #endregion
 
-        series.add(serie);
+        seriesFiltradas.add(serie);
       }
 
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'serie_service.dart:185',
-          'message': '🟢 [HYP-B] Total de séries retornadas',
-          'data': {
-            'medicoId': medicoId,
-            'totalSeries': series.length,
-            'tipos': series.map((s) => s.tipo).toList(),
-            'serieIds': series.map((s) => s.id).toList(),
-            'hypothesisId': 'B'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        writeLogToFile(jsonEncode(logEntry));
-      } catch (e) {}
+      debugPrint('✅ [RESULTADO FINAL] Total de séries após filtros: ${seriesFiltradas.length} (de ${series.length} carregadas do Firestore)');
+      
+      
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+      // try {
+      //   final logEntry = {
+      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+      //     'location': 'serie_service.dart:carregarSeries-resultado-final',
+      //     'message': '✅ Resultado final - séries carregadas e filtradas',
+      //     'data': {
+      //       'medicoId': medicoId,
+      //       'totalSeriesCarregadasFirestore': series.length,
+      //       'totalSeriesFiltradas': seriesFiltradas.length,
+      //       'usarQueryOtimizada': usarQueryOtimizada,
+      //       'reducaoPercentual': series.length > 0 ? ((series.length - seriesFiltradas.length) / series.length * 100).toStringAsFixed(1) : '0',
+      //       'hypothesisId': 'OPT-1'
+      //     },
+      //     'sessionId': 'debug-session',
+      //     'runId': 'run1',
+      //   };
+      //   writeLogToFile(jsonEncode(logEntry));
+      // } catch (e) {}
       // #endregion
 
-      // Armazenar no cache (armazenar todas as séries, não apenas as filtradas)
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+      // try {
+      //   final logEntry = {
+      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+      //     'location': 'serie_service.dart:185',
+      //     'message': '🟢 [HYP-B] Total de séries retornadas',
+      //     'data': {
+      //       'medicoId': medicoId,
+      //       'totalSeries': seriesFiltradas.length,
+      //       'tipos': seriesFiltradas.map((s) => s.tipo).toList(),
+      //       'serieIds': seriesFiltradas.map((s) => s.id).toList(),
+      //       'hypothesisId': 'B'
+      //     },
+      //     'sessionId': 'debug-session',
+      //     'runId': 'run1',
+      //   };
+      //   writeLogToFile(jsonEncode(logEntry));
+      // } catch (e) {}
+      // #endregion
+
+      // Armazenar no cache (armazenar todas as séries carregadas, não apenas as filtradas)
       // O filtro por período será feito quando necessário
       setSeriesInCache(unidadeId, medicoId, series);
 
-      // #region agent log
-      try {
-        final logEntry = {
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'location': 'serie_service.dart:carregarSeries-retornar',
-          'message': 'Séries carregadas do Firestore e retornadas',
-          'data': {
-            'medicoId': medicoId,
-            'unidadeId': unidadeId,
-            'forcarServidor': forcarServidor,
-            'totalSeries': series.length,
-            'seriesIds': series.map((s) => s.id).toList(),
-            'seriesGabineteIds': series.map((s) => s.gabineteId).toList(),
-            'hypothesisId': 'G'
-          },
-          'sessionId': 'debug-session',
-          'runId': 'run1',
-        };
-        writeLogToFile(jsonEncode(logEntry));
-      } catch (e) {}
+      // #region agent log (COMENTADO - pode ser reativado se necessário)
+      // try {
+      //   final logEntry = {
+      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
+      //     'location': 'serie_service.dart:carregarSeries-retornar',
+      //     'message': 'Séries carregadas do Firestore e retornadas',
+      //     'data': {
+      //       'medicoId': medicoId,
+      //       'unidadeId': unidadeId,
+      //       'forcarServidor': forcarServidor,
+      //       'usarQueryOtimizada': usarQueryOtimizada,
+      //       'totalSeries': seriesFiltradas.length,
+      //       'seriesIds': seriesFiltradas.map((s) => s.id).toList(),
+      //       'seriesGabineteIds': seriesFiltradas.map((s) => s.gabineteId).toList(),
+      //       'hypothesisId': 'G'
+      //     },
+      //     'sessionId': 'debug-session',
+      //     'runId': 'run1',
+      //   };
+      //   writeLogToFile(jsonEncode(logEntry));
+      // } catch (e) {}
       // #endregion
 
-      return series;
+      return seriesFiltradas;
     } catch (e) {
       debugPrint('❌ Erro ao carregar séries: $e');
       return [];

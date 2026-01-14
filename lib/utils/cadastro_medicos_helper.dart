@@ -57,6 +57,20 @@ class CadastroMedicosHelper {
     return DateTime(data.year, data.month, data.day);
   }
 
+  /// Normaliza uma string removendo acentos e convertendo para minúsculas
+  /// Usado para busca e comparação de nomes de médicos
+  /// Exemplo: "José" -> "jose", "Mário" -> "mario"
+  static String normalizarString(String s) {
+    return s
+        .toLowerCase()
+        .replaceAll(RegExp(r"[áàâã]"), 'a')
+        .replaceAll(RegExp(r"[éê]"), 'e')
+        .replaceAll(RegExp(r"[í]"), 'i')
+        .replaceAll(RegExp(r"[óôõ]"), 'o')
+        .replaceAll(RegExp(r"[ú]"), 'u')
+        .replaceAll(RegExp(r"[ç]"), 'c');
+  }
+
   /// Filtra disponibilidades únicas de um médico específico
   static List<Disponibilidade> filtrarDisponibilidadesUnicas(
     List<Disponibilidade> disponibilidades,

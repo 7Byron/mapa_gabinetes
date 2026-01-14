@@ -1,5 +1,5 @@
 // import '../database/database_helper.dart';
-import 'dart:convert';
+// import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import 'package:flutter/foundation.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
@@ -14,7 +14,7 @@ import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../utils/conflict_utils.dart';
-import '../utils/debug_log_file.dart';
+// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AlocacaoMedicosLogic {
@@ -1459,25 +1459,27 @@ class AlocacaoMedicosLogic {
               }
             }
 
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'alocacao_medicos_logic.dart:1415',
-                'message': '🔵 [HYP-E] Carregando séries para médico - ANTES',
-                'data': {
-                  'medicoId': medicoId,
-                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
-                  'dataInicioParaCarregarSeries': dataInicioParaCarregarSeries != null ? dataInicioParaCarregarSeries.toString() : 'null',
-                  'dataFimParaCarregarSeries': dataFimParaCarregarSeries.toString(),
-                  'hypothesisId': 'E'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
-            // #endregion
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//            try {
+//              final logEntry = {
+//                'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                'location': 'alocacao_medicos_logic.dart:1415',
+//                'message': '🔵 [HYP-E] Carregando séries para médico - ANTES',
+//                'data': {
+//                  'medicoId': medicoId,
+//                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
+//                  'dataInicioParaCarregarSeries': dataInicioParaCarregarSeries != null ? dataInicioParaCarregarSeries.toString() : 'null',
+//                  'dataFimParaCarregarSeries': dataFimParaCarregarSeries.toString(),
+//                  'hypothesisId': 'E'
+//                },
+//                'sessionId': 'debug-session',
+//                'runId': 'run1',
+//              };
+//              writeLogToFile(jsonEncode(logEntry));
+//            } catch (e) {}
+            
+// #endregion
 
             // CORREÇÃO CRÍTICA: Quando anoEspecifico é fornecido (ex: filtro de médicos não alocados),
             // SEMPRE forçar servidor para garantir dados completos do ano inteiro, independentemente do cache do dia atual.
@@ -1494,26 +1496,28 @@ class AlocacaoMedicosLogic {
               forcarServidor: deveForcarServidor,
             );
 
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'alocacao_medicos_logic.dart:1420',
-                'message': '🟡 [HYP-E] Séries carregadas - DEPOIS',
-                'data': {
-                  'medicoId': medicoId,
-                  'totalSeries': series.length,
-                  'seriesIds': series.map((s) => s.id).toList(),
-                  'seriesTipos': series.map((s) => s.tipo).toList(),
-                  'seriesDataInicio': series.map((s) => s.dataInicio.toString()).toList(),
-                  'hypothesisId': 'E'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
-            // #endregion
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//            try {
+//              final logEntry = {
+//                'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                'location': 'alocacao_medicos_logic.dart:1420',
+//                'message': '🟡 [HYP-E] Séries carregadas - DEPOIS',
+//                'data': {
+//                  'medicoId': medicoId,
+//                  'totalSeries': series.length,
+//                  'seriesIds': series.map((s) => s.id).toList(),
+//                  'seriesTipos': series.map((s) => s.tipo).toList(),
+//                  'seriesDataInicio': series.map((s) => s.dataInicio.toString()).toList(),
+//                  'hypothesisId': 'E'
+//                },
+//                'sessionId': 'debug-session',
+//                'runId': 'run1',
+//              };
+//              writeLogToFile(jsonEncode(logEntry));
+//            } catch (e) {}
+            
+// #endregion
 
             if (series.isEmpty) {
               return <Disponibilidade>[];
@@ -1531,105 +1535,113 @@ class AlocacaoMedicosLogic {
                 final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
                 // Série começou depois do dia selecionado - não aplicável
                 if (serieDataInicioNormalizada.isAfter(dataFiltroNormalizada)) {
-                  // #region agent log
-                  try {
-                    final logEntry = {
-                      'timestamp': DateTime.now().millisecondsSinceEpoch,
-                      'location': 'alocacao_medicos_logic.dart:1432',
-                      'message': '🔴 [HYP-E] Série filtrada - começou depois do dia',
-                      'data': {
-                        'medicoId': medicoId,
-                        'serieId': serie.id,
-                        'serieTipo': serie.tipo,
-                        'serieDataInicio': serieDataInicioNormalizada.toString(),
-                        'dataFiltro': dataFiltroNormalizada.toString(),
-                        'serieInicioNormalizada': serieDataInicioNormalizada.toString(),
-                        'filtroNormalizada': dataFiltroNormalizada.toString(),
-                        'isQuinzenal': serie.tipo == 'Quinzenal',
-                        'hypothesisId': 'E'
-                      },
-                      'sessionId': 'debug-session',
-                      'runId': 'run1',
-                    };
-                    writeLogToFile(jsonEncode(logEntry));
-                  } catch (e) {}
-                  // #endregion
+                  // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//                  try {
+//                    final logEntry = {
+//                      'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                      'location': 'alocacao_medicos_logic.dart:1432',
+//                      'message': '🔴 [HYP-E] Série filtrada - começou depois do dia',
+//                      'data': {
+//                        'medicoId': medicoId,
+//                        'serieId': serie.id,
+//                        'serieTipo': serie.tipo,
+//                        'serieDataInicio': serieDataInicioNormalizada.toString(),
+//                        'dataFiltro': dataFiltroNormalizada.toString(),
+//                        'serieInicioNormalizada': serieDataInicioNormalizada.toString(),
+//                        'filtroNormalizada': dataFiltroNormalizada.toString(),
+//                        'isQuinzenal': serie.tipo == 'Quinzenal',
+//                        'hypothesisId': 'E'
+//                      },
+//                      'sessionId': 'debug-session',
+//                      'runId': 'run1',
+//                    };
+//                    writeLogToFile(jsonEncode(logEntry));
+//                  } catch (e) {}
+                  
+// #endregion
                   return false;
                 }
                 // Série terminou antes do dia selecionado - não aplicável
                 if (serie.dataFim != null) {
                   final serieDataFimNormalizada = DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day);
                   if (serieDataFimNormalizada.isBefore(dataFiltroNormalizada)) {
-                    // #region agent log
-                    try {
-                      final logEntry = {
-                        'timestamp': DateTime.now().millisecondsSinceEpoch,
-                        'location': 'alocacao_medicos_logic.dart:1437',
-                        'message': '🔴 [HYP-E] Série filtrada - terminou antes do dia',
-                        'data': {
-                          'medicoId': medicoId,
-                          'serieId': serie.id,
-                          'serieTipo': serie.tipo,
-                          'serieDataFim': serie.dataFim.toString(),
-                          'dataFiltro': dataFiltroNormalizada.toString(),
-                          'hypothesisId': 'E'
-                        },
-                        'sessionId': 'debug-session',
-                        'runId': 'run1',
-                      };
-                      writeLogToFile(jsonEncode(logEntry));
-                    } catch (e) {}
-                    // #endregion
+                    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//                    try {
+//                      final logEntry = {
+//                        'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                        'location': 'alocacao_medicos_logic.dart:1437',
+//                        'message': '🔴 [HYP-E] Série filtrada - terminou antes do dia',
+//                        'data': {
+//                          'medicoId': medicoId,
+//                          'serieId': serie.id,
+//                          'serieTipo': serie.tipo,
+//                          'serieDataFim': serie.dataFim.toString(),
+//                          'dataFiltro': dataFiltroNormalizada.toString(),
+//                          'hypothesisId': 'E'
+//                        },
+//                        'sessionId': 'debug-session',
+//                        'runId': 'run1',
+//                      };
+//                      writeLogToFile(jsonEncode(logEntry));
+//                    } catch (e) {}
+                    
+// #endregion
                     return false;
                   }
                 }
-                // #region agent log
-                try {
-                  final logEntry = {
-                    'timestamp': DateTime.now().millisecondsSinceEpoch,
-                    'location': 'alocacao_medicos_logic.dart:1440',
-                    'message': '🟢 [HYP-E] Série relevante (passou filtros)',
-                    'data': {
-                      'medicoId': medicoId,
-                      'serieId': serie.id,
-                      'serieTipo': serie.tipo,
-                      'serieDataInicio': serieDataInicioNormalizada.toString(),
-                      'serieDataFim': serie.dataFim != null ? DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day).toString() : 'null',
-                      'dataFiltro': dataFiltroNormalizada.toString(),
-                      'serieInicioNormalizada': serieDataInicioNormalizada.toString(),
-                      'filtroNormalizada': dataFiltroNormalizada.toString(),
-                      'isQuinzenal': serie.tipo == 'Quinzenal',
-                      'hypothesisId': 'E'
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                  };
-                  writeLogToFile(jsonEncode(logEntry));
-                } catch (e) {}
-                // #endregion
+                // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//                try {
+//                  final logEntry = {
+//                    'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                    'location': 'alocacao_medicos_logic.dart:1440',
+//                    'message': '🟢 [HYP-E] Série relevante (passou filtros)',
+//                    'data': {
+//                      'medicoId': medicoId,
+//                      'serieId': serie.id,
+//                      'serieTipo': serie.tipo,
+//                      'serieDataInicio': serieDataInicioNormalizada.toString(),
+//                      'serieDataFim': serie.dataFim != null ? DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day).toString() : 'null',
+//                      'dataFiltro': dataFiltroNormalizada.toString(),
+//                      'serieInicioNormalizada': serieDataInicioNormalizada.toString(),
+//                      'filtroNormalizada': dataFiltroNormalizada.toString(),
+//                      'isQuinzenal': serie.tipo == 'Quinzenal',
+//                      'hypothesisId': 'E'
+//                    },
+//                    'sessionId': 'debug-session',
+//                    'runId': 'run1',
+//                  };
+//                  writeLogToFile(jsonEncode(logEntry));
+//                } catch (e) {}
+                
+// #endregion
                 return true;
               }).toList();
 
-              // #region agent log
-              try {
-                final logEntry = {
-                  'timestamp': DateTime.now().millisecondsSinceEpoch,
-                  'location': 'alocacao_medicos_logic.dart:1445',
-                  'message': '🟡 [HYP-E] Séries relevantes após filtro',
-                  'data': {
-                    'medicoId': medicoId,
-                    'totalSeries': series.length,
-                    'totalSeriesRelevantes': seriesRelevantes.length,
-                    'seriesRelevantesIds': seriesRelevantes.map((s) => s.id).toList(),
-                    'seriesRelevantesTipos': seriesRelevantes.map((s) => s.tipo).toList(),
-                    'hypothesisId': 'E'
-                  },
-                  'sessionId': 'debug-session',
-                  'runId': 'run1',
-                };
-                writeLogToFile(jsonEncode(logEntry));
-              } catch (e) {}
-              // #endregion
+              // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//              try {
+//                final logEntry = {
+//                  'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                  'location': 'alocacao_medicos_logic.dart:1445',
+//                  'message': '🟡 [HYP-E] Séries relevantes após filtro',
+//                  'data': {
+//                    'medicoId': medicoId,
+//                    'totalSeries': series.length,
+//                    'totalSeriesRelevantes': seriesRelevantes.length,
+//                    'seriesRelevantesIds': seriesRelevantes.map((s) => s.id).toList(),
+//                    'seriesRelevantesTipos': seriesRelevantes.map((s) => s.tipo).toList(),
+//                    'hypothesisId': 'E'
+//                  },
+//                  'sessionId': 'debug-session',
+//                  'runId': 'run1',
+//                };
+//                writeLogToFile(jsonEncode(logEntry));
+//              } catch (e) {}
+              
+// #endregion
 
               // Se nenhuma série é relevante, não precisa carregar exceções (ECONOMIZA 1 chamada ao Firestore)
               if (seriesRelevantes.isEmpty) {
@@ -1728,29 +1740,31 @@ class AlocacaoMedicosLogic {
               dataInicioGeracao = DateTime(ano, 1, 1);
               dataFimGeracao = DateTime(ano + 1, 1, 1);
             }
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'alocacao_medicos_logic.dart:1531',
-                'message': '🔵 [HYP-E] Gerando disponibilidades - ANTES',
-                'data': {
-                  'medicoId': medicoId,
-                  'totalSeriesRelevantes': seriesRelevantes.length,
-                  'seriesRelevantesIds': seriesRelevantes.map((s) => s.id).toList(),
-                  'seriesRelevantesTipos': seriesRelevantes.map((s) => s.tipo).toList(),
-                  'seriesRelevantesDataInicio': seriesRelevantes.map((s) => s.dataInicio.toString()).toList(),
-                  'dataInicioGeracao': dataInicioGeracao.toString(),
-                  'dataFimGeracao': dataFimGeracao.toString(),
-                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
-                  'hypothesisId': 'E'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
-            // #endregion
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//            try {
+//              final logEntry = {
+//                'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                'location': 'alocacao_medicos_logic.dart:1531',
+//                'message': '🔵 [HYP-E] Gerando disponibilidades - ANTES',
+//                'data': {
+//                  'medicoId': medicoId,
+//                  'totalSeriesRelevantes': seriesRelevantes.length,
+//                  'seriesRelevantesIds': seriesRelevantes.map((s) => s.id).toList(),
+//                  'seriesRelevantesTipos': seriesRelevantes.map((s) => s.tipo).toList(),
+//                  'seriesRelevantesDataInicio': seriesRelevantes.map((s) => s.dataInicio.toString()).toList(),
+//                  'dataInicioGeracao': dataInicioGeracao.toString(),
+//                  'dataFimGeracao': dataFimGeracao.toString(),
+//                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
+//                  'hypothesisId': 'E'
+//                },
+//                'sessionId': 'debug-session',
+//                'runId': 'run1',
+//              };
+//              writeLogToFile(jsonEncode(logEntry));
+//            } catch (e) {}
+            
+// #endregion
 
             final dispsGeradas = SerieGenerator.gerarDisponibilidades(
               series: seriesRelevantes,
@@ -1759,26 +1773,28 @@ class AlocacaoMedicosLogic {
               dataFim: dataFimGeracao,
             );
             
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'alocacao_medicos_logic.dart:1537',
-                'message': '🟡 [HYP-E] Disponibilidades geradas - DEPOIS',
-                'data': {
-                  'medicoId': medicoId,
-                  'totalDisponibilidadesGeradas': dispsGeradas.length,
-                  'datasGeradas': dispsGeradas.map((d) => d.data.toString()).toList(),
-                  'tiposGerados': dispsGeradas.map((d) => d.tipo).toList(),
-                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
-                  'hypothesisId': 'E'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
-            // #endregion
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//            try {
+//              final logEntry = {
+//                'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                'location': 'alocacao_medicos_logic.dart:1537',
+//                'message': '🟡 [HYP-E] Disponibilidades geradas - DEPOIS',
+//                'data': {
+//                  'medicoId': medicoId,
+//                  'totalDisponibilidadesGeradas': dispsGeradas.length,
+//                  'datasGeradas': dispsGeradas.map((d) => d.data.toString()).toList(),
+//                  'tiposGerados': dispsGeradas.map((d) => d.tipo).toList(),
+//                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
+//                  'hypothesisId': 'E'
+//                },
+//                'sessionId': 'debug-session',
+//                'runId': 'run1',
+//              };
+//              writeLogToFile(jsonEncode(logEntry));
+//            } catch (e) {}
+            
+// #endregion
             
             // Filtrar apenas disponibilidades do dia selecionado se dataFiltroDia foi fornecido
             final dispsFiltradas = dataFiltroDia != null
@@ -1787,53 +1803,57 @@ class AlocacaoMedicosLogic {
                     final filtroData = DateTime(dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
                     final corresponde = dData == filtroData;
                     
-                    // #region agent log
-                    try {
-                      if (!corresponde && d.tipo == 'Quinzenal') {
-                        final logEntry = {
-                          'timestamp': DateTime.now().millisecondsSinceEpoch,
-                          'location': 'alocacao_medicos_logic.dart:1543',
-                          'message': '🔴 [HYP-E] Disponibilidade quinzenal filtrada - data não corresponde',
-                          'data': {
-                            'medicoId': medicoId,
-                            'dispData': d.data.toString(),
-                            'filtroData': filtroData.toString(),
-                            'dispId': d.id,
-                            'hypothesisId': 'E'
-                          },
-                          'sessionId': 'debug-session',
-                          'runId': 'run1',
-                        };
-                        writeLogToFile(jsonEncode(logEntry));
-                      }
-                    } catch (e) {}
-                    // #endregion
+                    // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//                    try {
+//                      if (!corresponde && d.tipo == 'Quinzenal') {
+//                        final logEntry = {
+//                          'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                          'location': 'alocacao_medicos_logic.dart:1543',
+//                          'message': '🔴 [HYP-E] Disponibilidade quinzenal filtrada - data não corresponde',
+//                          'data': {
+//                            'medicoId': medicoId,
+//                            'dispData': d.data.toString(),
+//                            'filtroData': filtroData.toString(),
+//                            'dispId': d.id,
+//                            'hypothesisId': 'E'
+//                          },
+//                          'sessionId': 'debug-session',
+//                          'runId': 'run1',
+//                        };
+//                        writeLogToFile(jsonEncode(logEntry));
+//                      }
+//                    } catch (e) {}
+                    
+// #endregion
                     
                     return corresponde;
                   }).toList()
                 : dispsGeradas;
             
-            // #region agent log
-            try {
-              final logEntry = {
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-                'location': 'alocacao_medicos_logic.dart:1560',
-                'message': '🟢 [HYP-E] Disponibilidades após filtro de dia',
-                'data': {
-                  'medicoId': medicoId,
-                  'totalDisponibilidadesGeradas': dispsGeradas.length,
-                  'totalDisponibilidadesFiltradas': dispsFiltradas.length,
-                  'datasFiltradas': dispsFiltradas.map((d) => d.data.toString()).toList(),
-                  'tiposFiltrados': dispsFiltradas.map((d) => d.tipo).toList(),
-                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
-                  'hypothesisId': 'E'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-              };
-              writeLogToFile(jsonEncode(logEntry));
-            } catch (e) {}
-            // #endregion
+            // #region agent log (COMENTADO - pode ser reativado se necessário)
+
+//            try {
+//              final logEntry = {
+//                'timestamp': DateTime.now().millisecondsSinceEpoch,
+//                'location': 'alocacao_medicos_logic.dart:1560',
+//                'message': '🟢 [HYP-E] Disponibilidades após filtro de dia',
+//                'data': {
+//                  'medicoId': medicoId,
+//                  'totalDisponibilidadesGeradas': dispsGeradas.length,
+//                  'totalDisponibilidadesFiltradas': dispsFiltradas.length,
+//                  'datasFiltradas': dispsFiltradas.map((d) => d.data.toString()).toList(),
+//                  'tiposFiltrados': dispsFiltradas.map((d) => d.tipo).toList(),
+//                  'dataFiltroDia': dataFiltroDia != null ? dataFiltroDia.toString() : 'null',
+//                  'hypothesisId': 'E'
+//                },
+//                'sessionId': 'debug-session',
+//                'runId': 'run1',
+//              };
+//              writeLogToFile(jsonEncode(logEntry));
+//            } catch (e) {}
+            
+// #endregion
             
 
             medicosComSeries.add(medicoId);
@@ -1891,9 +1911,10 @@ class AlocacaoMedicosLogic {
   }
 
   /// Carrega alocações de uma unidade por ano específico
+  /// Se medicoIdFiltro for fornecido, carrega séries apenas desse médico (otimização)
   static Future<List<Alocacao>> _carregarAlocacoesUnidadePorAno(
       Unidade? unidade, String? anoEspecifico,
-      {DateTime? dataFiltroDia}) async {
+      {DateTime? dataFiltroDia, String? medicoIdFiltro}) async {
     final firestore = FirebaseFirestore.instance;
     final alocacoes = <Alocacao>[];
 
@@ -1990,15 +2011,23 @@ class AlocacaoMedicosLogic {
 
       final alocacoesGeradas = <Alocacao>[];
 
-      // SEMPRE carregar TODOS os médicos ativos do Firestore
-      final medicosRef = firestore
-          .collection('unidades')
-          .doc(unidade!.id)
-          .collection('ocupantes');
-      final medicosSnapshot = await medicosRef
-          .where('ativo', isEqualTo: true)
-          .get(const GetOptions(source: Source.serverAndCache));
-      final medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+      // OTIMIZAÇÃO CRÍTICA: Se medicoIdFiltro for fornecido, carregar séries apenas desse médico
+      // Isso evita carregar séries de todos os médicos quando estamos editando apenas um
+      final medicoIds = <String>[];
+      if (medicoIdFiltro != null) {
+        // Carregar apenas o médico específico
+        medicoIds.add(medicoIdFiltro);
+      } else {
+        // Carregar TODOS os médicos ativos do Firestore (comportamento original)
+        final medicosRef = firestore
+            .collection('unidades')
+            .doc(unidade!.id)
+            .collection('ocupantes');
+        final medicosSnapshot = await medicosRef
+            .where('ativo', isEqualTo: true)
+            .get(const GetOptions(source: Source.serverAndCache));
+        medicoIds.addAll(medicosSnapshot.docs.map((d) => d.id).toList());
+      }
 
       // OTIMIZAÇÃO CRÍTICA: Processar médicos em PARALELO (não sequencialmente)
       // Isso reduz drasticamente o tempo de carregamento (de ~52s para ~5-10s)
@@ -2150,10 +2179,12 @@ class AlocacaoMedicosLogic {
       if (dataFiltroDia != null) {
         try {
           // Carregar exceções canceladas diretamente do Firestore (cache removido)
-          final datasComExcecoes =
-              await AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
-                  unidade.id, dataFiltroDia);
-          datasComExcecoesCanceladas.addAll(datasComExcecoes);
+          if (unidade != null) {
+            final datasComExcecoes =
+                await AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
+                    unidade.id, dataFiltroDia);
+            datasComExcecoesCanceladas.addAll(datasComExcecoes);
+          }
         } catch (e) {}
       }
 
@@ -2292,18 +2323,22 @@ class AlocacaoMedicosLogic {
       todasAlocacoes = [];
 
       // Buscar de todos os anos que a série cruza
+      // OTIMIZAÇÃO: Passar medicoId para evitar carregar séries de todos os médicos
       for (int ano = anoInicio; ano <= anoFim; ano++) {
         final alocacoesAno = await _carregarAlocacoesUnidadePorAno(
           unidade,
           ano.toString(),
+          medicoIdFiltro: medicoId, // Passar médico específico para otimizar
         );
         todasAlocacoes.addAll(alocacoesAno);
       }
     } else {
       // Buscar apenas do ano específico ou ano atual
+      // OTIMIZAÇÃO: Passar medicoId para evitar carregar séries de todos os médicos
       todasAlocacoes = await _carregarAlocacoesUnidadePorAno(
         unidade,
         anoEspecifico?.toString(),
+        medicoIdFiltro: medicoId, // Passar médico específico para otimizar
       );
     }
 

@@ -113,11 +113,14 @@ Future<bool> atualizarUIAlocarCartaoUnico({
       debugPrint('   ✅ Nova alocação ${encontrada ? "ENCONTRADA" : "NÃO ENCONTRADA"} na lista antes do setState');
     }
     
-    // CORREÇÃO CRÍTICA: Chamar setState imediatamente para forçar rebuild
-    // Isso garante que o GabinetesSection seja reconstruído com a nova alocação
+    // CORREÇÃO CRÍTICA: Criar nova referência da lista antes de chamar setState
+    // Isso garante que widgets filhos detectem a mudança
+    // Nota: A lista já foi modificada acima, mas precisamos criar nova referência
+    // O setState deve criar nova referência: alocacoes = List<Alocacao>.from(alocacoes);
     setState();
     
-    // O setState já foi chamado acima - não precisamos de PostFrameCallback adicional
+    // Aguardar um frame para garantir que o setState foi processado
+    // Nota: O setState deve ser modificado pelo chamador para criar nova referência
     
     debugPrint('✅ [UI-ALOCAR] setState() chamado com sucesso');
 

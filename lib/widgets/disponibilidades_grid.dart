@@ -23,6 +23,7 @@ class DisponibilidadesGrid extends StatefulWidget {
   final Unidade? unidade; // Unidade para navegação
   final Function(Disponibilidade, String?)? onGabineteChanged; // Callback quando gabinete é alterado (null = desalocar)
   final List<SerieRecorrencia>? series; // Lista de séries para validação de horários
+  final Future<bool> Function()? onNavegarParaMapa; // Callback para salvar antes de navegar para o mapa
 
   const DisponibilidadesGrid({
     super.key,
@@ -36,6 +37,7 @@ class DisponibilidadesGrid extends StatefulWidget {
     this.unidade,
     this.onGabineteChanged,
     this.series,
+    this.onNavegarParaMapa,
   });
 
   @override
@@ -346,7 +348,16 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   }
 
   /// Navega para a tela de alocação no dia correspondente ao cartão
-  void _navegarParaMapa(BuildContext context, DateTime data) {
+  Future<void> _navegarParaMapa(BuildContext context, DateTime data) async {
+    // Se houver callback para salvar antes de navegar, executá-lo
+    if (widget.onNavegarParaMapa != null) {
+      final salvou = await widget.onNavegarParaMapa!();
+      if (!salvou) {
+        // Se não salvou com sucesso, não navegar
+        return;
+      }
+    }
+    
     AlocacaoCardActions.navegarParaMapa(
       context,
       data,

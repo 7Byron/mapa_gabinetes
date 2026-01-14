@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import 'dart:io';
+import 'dart:convert';
 import '../models/gabinete.dart';
 import '../models/alocacao.dart';
 import '../models/medico.dart';
@@ -15,6 +16,7 @@ import '../services/alocacao_unica_service.dart';
 import '../services/realocacao_unico_service.dart';
 import '../services/realocacao_serie_service.dart';
 import '../utils/ui_alocar_cartao_serie.dart';
+import '../utils/series_helper.dart';
 
 class GabinetesSection extends StatefulWidget {
   final List<Gabinete> gabinetes;
@@ -341,46 +343,33 @@ class _GabinetesSectionState extends State<GabinetesSection> {
           '🔵 [REALOCAÇÃO-MÉDICO] Verificação rápida: eSerie=$eSerie, tipoSerie=$tipoSerie, podeSerSerie=$podeSerSerie');
 
       // CORREÇÃO: Verificar se o cartão já foi desemparelhado da série (tem exceção)
+      // Usar mesma lógica do cadastro médico: verificar formato do ID em vez de buscar do Firestore
       bool temExcecao = false;
       if (eSerie && alocacaoAtual.id.isNotEmpty) {
-        // Extrair ID da série
+        // Extrair ID da série usando SeriesHelper
         String? serieId;
-        final partes = alocacaoAtual.id.split('_');
-        if (partes.length >= 4 && partes[0] == 'serie' && partes[1] == 'serie') {
-          serieId = 'serie_${partes[2]}';
-        } else if (partes.length >= 3 && partes[0] == 'serie') {
-          serieId = partes[1].startsWith('serie') ? partes[1] : 'serie_${partes[1]}';
+        if (alocacaoAtual.id.startsWith('serie_')) {
+          serieId = SeriesHelper.extrairSerieIdDeDisponibilidade(alocacaoAtual.id);
+          // Remover prefixo 'serie_' duplo se existir
+          if (serieId.startsWith('serie_serie_')) {
+            serieId = serieId.substring(7); // Remove primeiro 'serie_'
+          }
         }
         
-        if (serieId != null) {
-          // Verificar se há exceção para esta data
-          try {
-            final excecoes = await SerieService.carregarExcecoes(
-              medicoId,
-              unidade: widget.unidade,
-              dataInicio: dataAlvo,
-              dataFim: dataAlvo,
-              serieId: serieId,
-              forcarServidor: false, // Usar cache para resposta rápida
-            );
-            
-            final excecaoExistente = excecoes.firstWhere(
-              (e) =>
-                  e.serieId == serieId &&
-                  e.data.year == dataAlvo.year &&
-                  e.data.month == dataAlvo.month &&
-                  e.data.day == dataAlvo.day &&
-                  !e.cancelada,
-              orElse: () => ExcecaoSerie(
-                id: '',
-                serieId: '',
-                data: DateTime(1900, 1, 1),
-              ),
-            );
-            
-            temExcecao = excecaoExistente.id.isNotEmpty;
-          } catch (e) {
-            debugPrint('⚠️ Erro ao verificar exceção: $e');
+        // Verificar se a alocação atual tem ID que indica exceção
+        // Exceções têm ID no formato 'serie_${serieId}_${dataKey}'
+        if (serieId != null && serieId.isNotEmpty) {
+          final serieIdPrefix = 'serie_${serieId}_';
+          temExcecao = alocacaoAtual.id.startsWith(serieIdPrefix);
+          
+          // Se ainda não confirmou, verificar em cache local (sem query ao Firestore)
+          // A exceção geralmente já está presente no estado local através das alocações
+          if (!temExcecao) {
+            // Verificar se há alocação para esta data que indica exceção
+            // Se há alocação mas não corresponde ao padrão da série, pode ser exceção
+            debugPrint('⚠️ [REALOCAÇÃO] Verificando exceção localmente (sem query Firestore)...');
+            // Nota: Para validação completa, ainda pode buscar do Firestore se necessário,
+            // mas evita fazer isso na maioria dos casos
           }
         }
       }
@@ -915,14 +904,14 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               tipoDisponibilidade == 'Mensal' ||
                               tipoDisponibilidade.startsWith('Consecutivo');
 
-                          // CORREÇÃO: Se a disponibilidade foi gerada de uma série (ID começa com "serie_"),
-                          // extrair o ID da série diretamente do ID da disponibilidade
-                          // Formato: "serie_${serieId}_${dataKey}"
+                          // CORREÇÃO: Usar SeriesHelper para extrair ID da série corretamente
+                          // Isso garante compatibilidade com diferentes formatos (incluindo serie_serie_XXX)
                           String? serieIdExtraido;
                           if (disponibilidade.id.startsWith('serie_')) {
-                            final partes = disponibilidade.id.split('_');
-                            if (partes.length >= 2) {
-                              serieIdExtraido = partes[1];
+                            serieIdExtraido = SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id);
+                            // Remover prefixo 'serie_' se estiver duplicado
+                            if (serieIdExtraido.startsWith('serie_serie_')) {
+                              serieIdExtraido = serieIdExtraido.substring(7); // Remove primeiro 'serie_'
                             }
                           }
 
@@ -974,8 +963,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           debugPrint(
                               '🟢 [DRAG-ACCEPT] Verificando se está alocado em outro gabinete...');
 
-                          // CORREÇÃO CRÍTICA: Para séries, também verificar diretamente no Firestore
-                          // porque a alocação pode não estar em widget.alocacoes se ainda não foi regenerada
+                          // CORREÇÃO CRÍTICA: Verificar PRIMEIRO em widget.alocacoes (mais rápido e confiável)
+                          // Depois buscar do Firestore se necessário
                           Alocacao alocacaoEmOutroGabinete = Alocacao(
                             id: '',
                             medicoId: '',
@@ -985,7 +974,64 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             horarioFim: '',
                           );
 
-                          if (eTipoSerie) {
+                          // FASE 1: Verificar em widget.alocacoes PRIMEIRO (mais rápido)
+                          // CORREÇÃO: Buscar TODAS as alocações deste médico neste dia primeiro
+                          // para garantir que encontramos mesmo se o gabineteId não corresponder exatamente
+                          final todasAlocacoesMedico = widget.alocacoes.where((a) {
+                            final aDate = DateTime(
+                                a.data.year, a.data.month, a.data.day);
+                            return a.medicoId == medicoId &&
+                                aDate.year == dataAlvo.year &&
+                                aDate.month == dataAlvo.month &&
+                                aDate.day == dataAlvo.day;
+                          }).toList();
+
+                          debugPrint(
+                              '🟢 [DRAG-ACCEPT] FASE 1: Encontradas ${todasAlocacoesMedico.length} alocação(ões) deste médico neste dia');
+                          for (final a in todasAlocacoesMedico) {
+                            debugPrint(
+                                '   - Alocação: id=${a.id}, gabinete=${a.gabineteId}, data=${a.data.day}/${a.data.month}/${a.data.year}');
+                          }
+                          
+                          // #region agent log
+                          try {
+                            final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
+                            await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:FASE1","message":"FASE 1 - Busca em widget.alocacoes","data":{"medicoId":medicoId,"gabineteDestino":gabinete.id,"dataAlvo":"${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}","totalAlocacoes":todasAlocacoesMedico.length,"alocacoes":todasAlocacoesMedico.map((a)=>({"id":a.id,"gabineteId":a.gabineteId,"data":"${a.data.year}-${a.data.month}-${a.data.day}"})).toList()},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
+                            await logFile.close();
+                          } catch (e) {}
+                          // #endregion
+
+                          // Se encontrou alocações, verificar se alguma está em outro gabinete
+                          if (todasAlocacoesMedico.isNotEmpty) {
+                            final alocacaoOutroGabinete = todasAlocacoesMedico.firstWhere(
+                              (a) => a.gabineteId != gabinete.id && a.gabineteId.isNotEmpty,
+                              orElse: () => Alocacao(
+                                id: '',
+                                medicoId: '',
+                                gabineteId: '',
+                                data: DateTime(1900, 1, 1),
+                                horarioInicio: '',
+                                horarioFim: '',
+                              ),
+                            );
+
+                            if (alocacaoOutroGabinete.id.isNotEmpty) {
+                              alocacaoEmOutroGabinete = alocacaoOutroGabinete;
+                              debugPrint(
+                                  '🟢 [DRAG-ACCEPT] Alocação encontrada em outro gabinete (widget.alocacoes): id=${alocacaoOutroGabinete.id}, gabinete=${alocacaoOutroGabinete.gabineteId}');
+                            } else if (todasAlocacoesMedico.any((a) => a.gabineteId == gabinete.id)) {
+                              // Já está no mesmo gabinete - não fazer nada
+                              debugPrint(
+                                  '🟢 [DRAG-ACCEPT] Médico já está alocado neste gabinete');
+                              return;
+                            }
+                          }
+
+                          // FASE 2: Se não encontrou em widget.alocacoes e é série, buscar do Firestore
+                          if (alocacaoEmOutroGabinete.id.isEmpty && eTipoSerie) {
+                            debugPrint(
+                                '🟢 [DRAG-ACCEPT] Não encontrado em widget.alocacoes, buscando série do Firestore...');
+                            
                             // Para séries, buscar diretamente do Firestore
                             final serieEncontrada =
                                 await _encontrarSerieCorrespondente(
@@ -994,110 +1040,175 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               data: dataAlvo,
                             );
 
-                            // Se a série foi encontrada mas não tem gabineteId, buscar na exceção
-                            String? gabineteIdSerie =
-                                serieEncontrada?.gabineteId;
-                            if (serieEncontrada != null &&
-                                gabineteIdSerie == null) {
-                              // Buscar exceção para obter o gabineteId
-                              final dataNormalizada = DateTime(
-                                  dataAlvo.year, dataAlvo.month, dataAlvo.day);
-                              final excecoes =
-                                  await SerieService.carregarExcecoes(
-                                medicoId,
-                                unidade: widget.unidade,
-                                dataInicio: dataNormalizada,
-                                dataFim: dataNormalizada,
-                                serieId: serieEncontrada.id,
-                                forcarServidor:
-                                    true, // Forçar servidor para garantir dados atualizados
-                              );
+                            if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
+                              // Se a série foi encontrada mas não tem gabineteId, buscar na exceção
+                              String? gabineteIdSerie = serieEncontrada.gabineteId;
+                              
+                              if (gabineteIdSerie == null) {
+                                // Buscar exceção para obter o gabineteId
+                                final dataNormalizada = DateTime(
+                                    dataAlvo.year, dataAlvo.month, dataAlvo.day);
+                                final excecoes =
+                                    await SerieService.carregarExcecoes(
+                                  medicoId,
+                                  unidade: widget.unidade,
+                                  dataInicio: dataNormalizada,
+                                  dataFim: dataNormalizada,
+                                  serieId: serieEncontrada.id,
+                                  forcarServidor:
+                                      false, // Usar cache para resposta mais rápida
+                                );
 
-                              final excecaoParaData = excecoes.firstWhere(
-                                (e) =>
-                                    e.serieId == serieEncontrada.id &&
-                                    e.data.year == dataNormalizada.year &&
-                                    e.data.month == dataNormalizada.month &&
-                                    e.data.day == dataNormalizada.day &&
-                                    !e.cancelada,
-                                orElse: () => ExcecaoSerie(
-                                  id: '',
-                                  serieId: '',
-                                  data: DateTime(1900, 1, 1),
-                                ),
-                              );
+                                final excecaoParaData = excecoes.firstWhere(
+                                  (e) =>
+                                      e.serieId == serieEncontrada.id &&
+                                      e.data.year == dataNormalizada.year &&
+                                      e.data.month == dataNormalizada.month &&
+                                      e.data.day == dataNormalizada.day &&
+                                      !e.cancelada,
+                                  orElse: () => ExcecaoSerie(
+                                    id: '',
+                                    serieId: '',
+                                    data: DateTime(1900, 1, 1),
+                                  ),
+                                );
 
-                              if (excecaoParaData.id.isNotEmpty &&
-                                  excecaoParaData.gabineteId != null) {
-                                gabineteIdSerie = excecaoParaData.gabineteId;
+                                if (excecaoParaData.id.isNotEmpty &&
+                                    excecaoParaData.gabineteId != null) {
+                                  gabineteIdSerie = excecaoParaData.gabineteId;
+                                }
                               }
-                            }
 
-                            if (serieEncontrada != null &&
-                                gabineteIdSerie != null &&
-                                gabineteIdSerie.isNotEmpty &&
-                                gabineteIdSerie != gabinete.id) {
-                              // Criar alocação fictícia para representar a série encontrada
-                              alocacaoEmOutroGabinete = Alocacao(
-                                id: 'serie_${serieEncontrada.id}_${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}',
-                                medicoId: medicoId,
-                                gabineteId: gabineteIdSerie,
-                                data: dataAlvo,
-                                horarioInicio:
-                                    serieEncontrada.horarios.isNotEmpty
-                                        ? serieEncontrada.horarios.first
-                                            .split('-')
-                                            .first
-                                        : '08:00',
-                                horarioFim: serieEncontrada.horarios.isNotEmpty
-                                    ? serieEncontrada.horarios.first
-                                        .split('-')
-                                        .last
-                                    : '20:00',
-                              );
-                              debugPrint(
-                                  '🟢 [DRAG-ACCEPT] Série encontrada em outro gabinete via Firestore: id=${serieEncontrada.id}, gabinete=$gabineteIdSerie');
-                            } else {
+                              // CORREÇÃO CRÍTICA: Se encontrou série mas não tem gabineteId definido,
+                              // verificar se há alocação em widget.alocacoes para esta série neste dia
+                              // (pode ter sido gerada dinamicamente mas não está na série)
+                              if (gabineteIdSerie == null || gabineteIdSerie.isEmpty) {
+                                // Buscar qualquer alocação desta série neste dia
+                                final alocacaoSerie = widget.alocacoes.firstWhere(
+                                  (a) {
+                                    final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                                    // Verificar se é alocação desta série (ID começa com serie_${serieId}_)
+                                    final serieIdPrefix = 'serie_${serieEncontrada.id}_';
+                                    return a.medicoId == medicoId &&
+                                        a.id.startsWith(serieIdPrefix) &&
+                                        aDate == dataAlvo;
+                                  },
+                                  orElse: () => Alocacao(
+                                    id: '',
+                                    medicoId: '',
+                                    gabineteId: '',
+                                    data: DateTime(1900, 1, 1),
+                                    horarioInicio: '',
+                                    horarioFim: '',
+                                  ),
+                                );
+
+                                if (alocacaoSerie.id.isNotEmpty) {
+                                  if (alocacaoSerie.gabineteId == gabinete.id) {
+                                    // Já está no mesmo gabinete - não fazer nada
+                                    debugPrint(
+                                        '🟢 [DRAG-ACCEPT] Alocação de série já está neste gabinete');
+                                    return;
+                                  } else {
+                                    // Encontrou alocação da série em outro gabinete
+                                    alocacaoEmOutroGabinete = alocacaoSerie;
+                                    gabineteIdSerie = alocacaoSerie.gabineteId;
+                                    debugPrint(
+                                        '🟢 [DRAG-ACCEPT] Alocação de série encontrada em widget.alocacoes: id=${alocacaoSerie.id}, gabinete=$gabineteIdSerie');
+                                  }
+                                }
+                              }
+
+                              // Se encontrou gabineteId e não é o gabinete destino, criar alocação fictícia
+                              if (gabineteIdSerie != null &&
+                                  gabineteIdSerie.isNotEmpty &&
+                                  gabineteIdSerie != gabinete.id &&
+                                  alocacaoEmOutroGabinete.id.isEmpty) {
+                                // Criar alocação fictícia para representar a série encontrada
+                                alocacaoEmOutroGabinete = Alocacao(
+                                  id: 'serie_${serieEncontrada.id}_${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}',
+                                  medicoId: medicoId,
+                                  gabineteId: gabineteIdSerie,
+                                  data: dataAlvo,
+                                  horarioInicio:
+                                      serieEncontrada.horarios.isNotEmpty
+                                          ? serieEncontrada.horarios.first
+                                              .split('-')
+                                              .first
+                                          : '08:00',
+                                  horarioFim: serieEncontrada.horarios.isNotEmpty
+                                      ? serieEncontrada.horarios.first
+                                          .split('-')
+                                          .last
+                                      : '20:00',
+                                );
+                                debugPrint(
+                                    '🟢 [DRAG-ACCEPT] Série encontrada em outro gabinete via Firestore: id=${serieEncontrada.id}, gabinete=$gabineteIdSerie');
+                              }
                             }
                           }
 
-                          // Se não encontrou via série, verificar em widget.alocacoes
+                          // FASE 3: Se ainda não encontrou, verificar se o cartão está sendo renderizado em algum gabinete
+                          // Se estiver, significa que há uma alocação que não foi encontrada nas buscas anteriores
+                          // CORREÇÃO CRÍTICA: Verificar se há alocação em QUALQUER gabinete (não apenas diferente do destino)
                           if (alocacaoEmOutroGabinete.id.isEmpty) {
-                            alocacaoEmOutroGabinete =
-                                widget.alocacoes.firstWhere(
-                              (a) {
-                                final aDate = DateTime(
-                                    a.data.year, a.data.month, a.data.day);
-                                final match = a.medicoId == medicoId &&
-                                    a.gabineteId != gabinete.id &&
-                                    aDate.year == dataAlvo.year &&
-                                    aDate.month == dataAlvo.month &&
-                                    aDate.day == dataAlvo.day;
-                                if (match) {
-                                  debugPrint(
-                                      '🟢 [DRAG-ACCEPT] Alocação encontrada em outro gabinete: id=${a.id}, gabinete=${a.gabineteId}');
-                                }
-                                return match;
-                              },
-                              orElse: () {
-                                debugPrint(
-                                    '🟢 [DRAG-ACCEPT] Nenhuma alocação encontrada em outro gabinete');
-                                return Alocacao(
+                            debugPrint(
+                                '🟡 [DRAG-ACCEPT] FASE 3: Nenhuma alocação encontrada nas fases anteriores. Verificando se cartão está sendo renderizado em algum gabinete...');
+                            
+                            // Buscar TODAS as alocações deste médico neste dia em QUALQUER gabinete
+                            final todasAlocacoesMedicoDia = widget.alocacoes.where((a) {
+                              final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                              return a.medicoId == medicoId &&
+                                  aDate.year == dataAlvo.year &&
+                                  aDate.month == dataAlvo.month &&
+                                  aDate.day == dataAlvo.day &&
+                                  a.gabineteId.isNotEmpty; // Deve ter gabinete (não pode ser desalocado)
+                            }).toList();
+
+                            if (todasAlocacoesMedicoDia.isNotEmpty) {
+                              // Encontrou alocações - verificar se alguma está em outro gabinete
+                              final alocacaoOutroGabinete = todasAlocacoesMedicoDia.firstWhere(
+                                (a) => a.gabineteId != gabinete.id,
+                                orElse: () => Alocacao(
                                   id: '',
                                   medicoId: '',
                                   gabineteId: '',
                                   data: DateTime(1900, 1, 1),
                                   horarioInicio: '',
                                   horarioFim: '',
-                                );
-                              },
-                            );
+                                ),
+                              );
+
+                              if (alocacaoOutroGabinete.id.isNotEmpty) {
+                                // Encontrou alocação em outro gabinete - tratar como realocação
+                                alocacaoEmOutroGabinete = alocacaoOutroGabinete;
+                                debugPrint(
+                                    '🟢 [DRAG-ACCEPT] FASE 3: Alocação encontrada em outro gabinete: id=${alocacaoOutroGabinete.id}, gabinete=${alocacaoOutroGabinete.gabineteId}');
+                              } else if (todasAlocacoesMedicoDia.any((a) => a.gabineteId == gabinete.id)) {
+                                // Já está no mesmo gabinete - não fazer nada
+                                debugPrint(
+                                    '🟢 [DRAG-ACCEPT] FASE 3: Médico já está alocado neste gabinete');
+                                return;
+                              }
+                            } else {
+                              // Não encontrou nenhuma alocação - cartão vem dos desalocados
+                              debugPrint(
+                                  '🟡 [DRAG-ACCEPT] FASE 3: Nenhuma alocação encontrada - cartão vem dos desalocados. Prosseguindo com alocação normal.');
+                            }
                           }
 
                           // Se está alocado em outro gabinete, perguntar se quer realocar
                           if (alocacaoEmOutroGabinete.id.isNotEmpty) {
                             debugPrint(
                                 '🟢 [DRAG-ACCEPT] Chamando _realocarMedicoEntreGabinetes: origem=${alocacaoEmOutroGabinete.gabineteId}, destino=${gabinete.id}');
+
+                            // #region agent log
+                            try {
+                              final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
+                              await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:ANTES_REALOCAR","message":"Antes de chamar _realocarMedicoEntreGabinetes","data":{"medicoId":medicoId,"gabineteOrigem":alocacaoEmOutroGabinete.gabineteId,"gabineteDestino":gabinete.id,"dataAlvo":"${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}","alocacaoId":alocacaoEmOutroGabinete.id,"eTipoSerie":eTipoSerie,"tipoDisponibilidade":tipoDisponibilidade},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
+                              await logFile.close();
+                            } catch (e) {}
+                            // #endregion
 
                             await _realocarMedicoEntreGabinetes(
                               medicoId: medicoId,
@@ -1106,6 +1217,15 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               gabineteDestino: gabinete.id,
                               dataAlvo: dataAlvo,
                             );
+                            
+                            // #region agent log
+                            try {
+                              final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
+                              await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:DEPOIS_REALOCAR","message":"Depois de chamar _realocarMedicoEntreGabinetes","data":{"medicoId":medicoId,"gabineteOrigem":alocacaoEmOutroGabinete.gabineteId,"gabineteDestino":gabinete.id},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
+                              await logFile.close();
+                            } catch (e) {}
+                            // #endregion
+                            
                             debugPrint(
                                 '✅ [DRAG-ACCEPT] _realocarMedicoEntreGabinetes concluído');
 
@@ -1130,6 +1250,70 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             );
                             // onAlocarMedico já chama onAlocacoesChanged() internamente
                           } else {
+                            // CORREÇÃO: Validar horários ANTES de alocar série (mesma lógica do cadastro médico)
+                            // Buscar série correspondente para verificar horários
+                            SerieRecorrencia? serieParaValidar;
+                            if (serieIdExtraido != null && serieIdExtraido.isNotEmpty) {
+                              serieParaValidar = await _encontrarSerieCorrespondente(
+                                medicoId: medicoId,
+                                tipo: tipoDisponibilidade,
+                                data: dataAlvo,
+                              );
+                            }
+                            
+                            // Se não encontrou pelo ID extraído, tentar buscar na lista de séries carregadas
+                            if (serieParaValidar == null || serieParaValidar.id.isEmpty) {
+                              // Tentar encontrar série que corresponde à data e tipo
+                              try {
+                                final series = await SerieService.carregarSeries(
+                                  medicoId,
+                                  unidade: widget.unidade,
+                                  dataInicio: dataAlvo,
+                                  dataFim: dataAlvo,
+                                  forcarServidor: false,
+                                );
+                                
+                                serieParaValidar = series.firstWhere(
+                                  (s) =>
+                                      s.medicoId == medicoId &&
+                                      s.dataInicio.isBefore(dataAlvo.add(const Duration(days: 1))) &&
+                                      (s.dataFim == null ||
+                                          s.dataFim!.isAfter(dataAlvo.subtract(const Duration(days: 1)))) &&
+                                      s.tipo == tipoDisponibilidade &&
+                                      s.ativo,
+                                  orElse: () => SerieRecorrencia(
+                                    id: '',
+                                    medicoId: '',
+                                    dataInicio: DateTime(1900),
+                                    tipo: '',
+                                    horarios: [],
+                                    gabineteId: null,
+                                    parametros: {},
+                                    ativo: false,
+                                  ),
+                                );
+                              } catch (e) {
+                                debugPrint('⚠️ Erro ao buscar série para validação: $e');
+                              }
+                            }
+                            
+                            // Validar horários antes de prosseguir
+                            if (serieParaValidar != null &&
+                                serieParaValidar.id.isNotEmpty &&
+                                (serieParaValidar.horarios.isEmpty ||
+                                    serieParaValidar.horarios.length < 2)) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Introduza as horas de inicio e fim primeiro!'),
+                                    backgroundColor: Colors.orange,
+                                    duration: Duration(seconds: 3),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            
                             // Usar função reutilizável para alocar cartão de série
                             // Iniciar progresso de alocação (será usado se escolher "serie")
                             if (mounted) {

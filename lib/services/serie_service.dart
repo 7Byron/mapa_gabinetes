@@ -6,10 +6,17 @@ import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart';
+import 'cache_version_service.dart';
 
 /// Serviço para gerenciar séries de recorrência e exceções no Firestore
 class SerieService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  static void _log(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
+  }
 
   // Cache de séries por unidade e médico (chave: unidadeId_medicoId)
   // Esses dados mudam raramente, então podemos cacheá-los até serem invalidados
@@ -28,7 +35,8 @@ class SerieService {
     final key = '${unidadeId}_$medicoId';
     _cacheSeries[key] = List.from(series);
     _cacheSeriesInvalidado.remove(key);
-    debugPrint('💾 [CACHE] Cache de séries atualizado para $key: ${series.length} séries');
+    _log(
+        '💾 [CACHE] Cache de séries atualizado para $key: ${series.length} séries');
   }
 
   /// Invalida o cache de séries para um médico específico (ou todos se medicoId for null)
@@ -40,13 +48,14 @@ class SerieService {
         _cacheSeriesInvalidado.add(key);
         _cacheSeries.remove(key);
       }
-      debugPrint('🗑️ [CACHE] Cache de séries invalidado para unidade $unidadeId (todos os médicos)');
+      _log(
+          '🗑️ [CACHE] Cache de séries invalidado para unidade $unidadeId (todos os médicos)');
     } else {
       // Invalidar apenas para o médico específico
       final key = '${unidadeId}_$medicoId';
       _cacheSeriesInvalidado.add(key);
       _cacheSeries.remove(key);
-      debugPrint('🗑️ [CACHE] Cache de séries invalidado para $key');
+      _log('🗑️ [CACHE] Cache de séries invalidado para $key');
     }
   }
 
@@ -91,7 +100,11 @@ class SerieService {
       
       // Invalidar cache de séries após salvar
       invalidateCacheSeries(unidadeId, serie.medicoId);
-      debugPrint('✅ Série salva: ${serie.id}');
+      await CacheVersionService.bumpVersion(
+        unidadeId: unidadeId,
+        field: CacheVersionService.fieldSeries,
+      );
+      _log('✅ Série salva: ${serie.id}');
     } catch (e) {
       debugPrint('❌ Erro ao salvar série: $e');
       rethrow;
@@ -118,7 +131,8 @@ class SerieService {
         // Verificar cache primeiro
         final cached = getSeriesFromCache(unidadeId, medicoId);
         if (cached != null) {
-          debugPrint('💾 [CACHE] Usando cache de séries para $unidadeId médico $medicoId');
+          _log(
+              '💾 [CACHE] Usando cache de séries para $unidadeId médico $medicoId');
           // Filtrar por período se fornecido (mesmo com cache, precisamos filtrar)
           // CORREÇÃO CRÍTICA: Normalizar datas para comparação correta
           final seriesFiltradas = <SerieRecorrencia>[];
@@ -155,7 +169,8 @@ class SerieService {
           return seriesFiltradas;
         }
       } else {
-        debugPrint('🔄 [FORÇAR SERVIDOR] Buscando séries do servidor para $unidadeId médico $medicoId (cache ignorado)');
+        _log(
+            '🔄 [FORÇAR SERVIDOR] Buscando séries do servidor para $unidadeId médico $medicoId (cache ignorado)');
       }
 
       final seriesRef = _firestore
@@ -207,7 +222,8 @@ class SerieService {
         // Calcular data mínima para filtrar séries que terminaram antes do período
         final dataMinimaFiltro = dataInicio;
         
-        debugPrint('⚡ [OTIMIZAÇÃO] Tentando usar queries otimizadas para período: ${dataInicio.toString()} até ${dataFim.toString()}');
+        _log(
+            '⚡ [OTIMIZAÇÃO] Tentando usar queries otimizadas para período: ${dataInicio.toString()} até ${dataFim.toString()}');
         
         
         // #region agent log (COMENTADO - pode ser reativado se necessário)
@@ -240,7 +256,8 @@ class SerieService {
               .where('dataFim', isGreaterThanOrEqualTo: Timestamp.fromDate(dataMinimaFiltro))
               .get(GetOptions(source: source));
           
-          debugPrint('📊 [OTIMIZAÇÃO] Query 1 (com dataFim): ${snapshotComDataFim.docs.length} séries encontradas');
+          _log(
+              '📊 [OTIMIZAÇÃO] Query 1 (com dataFim): ${snapshotComDataFim.docs.length} séries encontradas');
           
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
@@ -277,7 +294,8 @@ class SerieService {
               .where('dataFim', isNull: true)
               .get(GetOptions(source: source));
           
-          debugPrint('📊 [OTIMIZAÇÃO] Query 2 (infinitas): ${snapshotInfinitas.docs.length} séries encontradas');
+          _log(
+              '📊 [OTIMIZAÇÃO] Query 2 (infinitas): ${snapshotInfinitas.docs.length} séries encontradas');
           
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
@@ -308,7 +326,8 @@ class SerieService {
           }
 
           usarQueryOtimizada = true;
-          debugPrint('✅ [OTIMIZAÇÃO] Queries otimizadas executadas com sucesso! Total: ${series.length} séries');
+          _log(
+              '✅ [OTIMIZAÇÃO] Queries otimizadas executadas com sucesso! Total: ${series.length} séries');
           
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
@@ -331,7 +350,8 @@ class SerieService {
           // #endregion
         } catch (e) {
           // Se as queries otimizadas falharem (ex: índice não existe), usar query original
-          debugPrint('⚠️ [OTIMIZAÇÃO] Queries otimizadas falharam ($e), usando query original (fallback seguro)');
+          _log(
+              '⚠️ [OTIMIZAÇÃO] Queries otimizadas falharam ($e), usando query original (fallback seguro)');
           
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
@@ -360,7 +380,7 @@ class SerieService {
       // Se não usou query otimizada (ou falhou), usar query original
       if (!usarQueryOtimizada) {
         
-        debugPrint('📊 [QUERY ORIGINAL] Buscando todas as séries ativas (sem filtro no Firestore)');
+        _log('📊 [QUERY ORIGINAL] Buscando todas as séries ativas (sem filtro no Firestore)');
         final snapshot = await seriesRef
             .where('ativo', isEqualTo: true)
             .get(GetOptions(source: source));
@@ -521,7 +541,8 @@ class SerieService {
         seriesFiltradas.add(serie);
       }
 
-      debugPrint('✅ [RESULTADO FINAL] Total de séries após filtros: ${seriesFiltradas.length} (de ${series.length} carregadas do Firestore)');
+      _log(
+          '✅ [RESULTADO FINAL] Total de séries após filtros: ${seriesFiltradas.length} (de ${series.length} carregadas do Firestore)');
       
       
       // #region agent log (COMENTADO - pode ser reativado se necessário)
@@ -619,14 +640,18 @@ class SerieService {
 
       if (permanente) {
         await serieRef.delete();
-        debugPrint('✅ Série removida permanentemente: $serieId');
+        _log('✅ Série removida permanentemente: $serieId');
       } else {
         await serieRef.update({'ativo': false});
-        debugPrint('✅ Série desativada: $serieId');
+        _log('✅ Série desativada: $serieId');
       }
       
       // Invalidar cache de séries após remover
       invalidateCacheSeries(unidadeId, medicoId);
+      await CacheVersionService.bumpVersion(
+        unidadeId: unidadeId,
+        field: CacheVersionService.fieldSeries,
+      );
     } catch (e) {
       debugPrint('❌ Erro ao remover série: $e');
       rethrow;
@@ -662,7 +687,11 @@ class SerieService {
       // (_cacheExcecoes.clear() é chamado lá)
       // NOTA: Não invalidar cache de séries aqui - exceções não mudam as séries em si
       
-      debugPrint('✅ Exceção salva: ${excecao.id}');
+      await CacheVersionService.bumpVersion(
+        unidadeId: unidadeId,
+        field: CacheVersionService.fieldSeries,
+      );
+      _log('✅ Exceção salva: ${excecao.id}');
     } catch (e) {
       debugPrint('❌ Erro ao salvar exceção: $e');
       rethrow;
@@ -767,7 +796,11 @@ class SerieService {
       AlocacaoMedicosLogic.invalidateCacheForDay(data);
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
       
-      debugPrint('✅ Exceção removida: $excecaoId');
+      await CacheVersionService.bumpVersion(
+        unidadeId: unidadeId,
+        field: CacheVersionService.fieldSeries,
+      );
+      _log('✅ Exceção removida: $excecaoId');
     } catch (e) {
       debugPrint('❌ Erro ao remover exceção: $e');
       rethrow;

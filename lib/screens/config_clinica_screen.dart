@@ -192,7 +192,7 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
 
       // Invalidar cache de horários e configurações após salvar
       if (widget.unidade != null) {
-        invalidateCacheEncerramento(widget.unidade!.id);
+        await invalidateCacheEncerramento(widget.unidade!.id);
         debugPrint('🗑️ Cache de horários invalidado após salvar alterações');
       }
 

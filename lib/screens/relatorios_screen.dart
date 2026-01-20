@@ -3,9 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../services/relatorios_service.dart';
 import '../models/gabinete.dart';
+import '../models/unidade.dart';
 
 class RelatoriosScreen extends StatefulWidget {
-  const RelatoriosScreen({super.key});
+  final Unidade? unidade;
+
+  const RelatoriosScreen({super.key, this.unidade});
 
   @override
   State<RelatoriosScreen> createState() => _RelatoriosScreenState();
@@ -49,6 +52,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     final tGeral = await RelatoriosService.taxaOcupacaoGeral(
       inicio: dataInicio,
       fim: dataFim,
+      unidadeId: widget.unidade?.id,
     );
 
     double tSetor = 0.0;
@@ -57,6 +61,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         inicio: dataInicio,
         fim: dataFim,
         setor: setorSelecionado,
+        unidadeId: widget.unidade?.id,
       );
     }
 
@@ -66,6 +71,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         inicio: dataInicio,
         fim: dataFim,
         gabineteId: gabineteSelecionado,
+        unidadeId: widget.unidade?.id,
       );
     }
 
@@ -75,6 +81,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         inicio: dataInicio,
         fim: dataFim,
         especialidadeProcurada: especialidadeSelecionada,
+        unidadeId: widget.unidade?.id,
       );
     }
 

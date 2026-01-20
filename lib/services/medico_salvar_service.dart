@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../models/disponibilidade.dart'; // Corrigido: Importação do modelo Disponibilidade para evitar erro de referência.
+import 'cache_version_service.dart';
 
 /// Busca todas as especialidades existentes dos médicos
 Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
@@ -139,6 +140,13 @@ Future<void> salvarMedicoCompleto(
   }
 
   await batch.commit();
+  await CacheVersionService.bumpVersions(
+    unidadeId: unidade?.id,
+    fields: [
+      CacheVersionService.fieldMedicos,
+      CacheVersionService.fieldDisponibilidades,
+    ],
+  );
   debugPrint(
       '✅ Diff aplicado: -${idsParaApagar.length} / +${idsParaCriar.length} / ~${idsPossiveisUpdates.length}');
 }

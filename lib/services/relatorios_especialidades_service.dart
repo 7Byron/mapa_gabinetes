@@ -2,31 +2,49 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/disponibilidade.dart';
 
 class RelatoriosEspecialidadesService {
+  static List<int> _anosNoIntervalo(DateTime inicio, DateTime fim) {
+    final anos = <int>[];
+    for (int ano = inicio.year; ano <= fim.year; ano++) {
+      anos.add(ano);
+    }
+    return anos;
+  }
+
   /// Retorna um Map: {especialidade -> totalHoras}
   /// com base nas disponibilidades dos médicos no período [inicio..fim].
   static Future<Map<String, double>> horasPorEspecialidade({
     required DateTime inicio,
     required DateTime fim,
+    String? unidadeId,
   }) async {
     final firestore = FirebaseFirestore.instance;
-    final medicosSnap = await firestore.collection('medicos').get();
+    final medicosRef = unidadeId == null
+        ? firestore.collection('medicos')
+        : firestore
+            .collection('unidades')
+            .doc(unidadeId)
+            .collection('ocupantes');
+    final medicosSnap = await medicosRef.get();
     final Map<String, String> mapMedEsp = {};
     final List<Disponibilidade> allDisp = [];
+    final anos = _anosNoIntervalo(inicio, fim);
     for (final doc in medicosSnap.docs) {
       final dados = doc.data();
-      mapMedEsp[dados['id']] = dados['especialidade'];
-      // Carrega disponibilidades da nova estrutura por ano
+      final medicoId = (dados['id'] ?? doc.id).toString();
+      mapMedEsp[medicoId] = (dados['especialidade'] ?? '').toString();
+
+      // Carrega disponibilidades apenas para os anos do intervalo
       final dispRef = doc.reference.collection('disponibilidades');
-      
-      // Para relatórios, carrega todos os anos para ter dados completos
-      final anosSnapshot = await dispRef.get();
-      for (final anoDoc in anosSnapshot.docs) {
-        final registosRef = anoDoc.reference.collection('registos');
+      for (final ano in anos) {
+        final registosRef = dispRef.doc(ano.toString()).collection('registos');
         final registosSnapshot = await registosRef.get();
         for (final dispDoc in registosSnapshot.docs) {
           final dispData = dispDoc.data();
+          final medicoIdDisp =
+              (dispData['medicoId'] ?? medicoId).toString();
           allDisp.add(Disponibilidade.fromMap({
             ...dispData,
+            'medicoId': medicoIdDisp,
             'horarios': dispData['horarios'] is List ? dispData['horarios'] : [],
           }));
         }

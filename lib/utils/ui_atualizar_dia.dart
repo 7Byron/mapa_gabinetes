@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import '../models/unidade.dart';
 import '../models/gabinete.dart';
@@ -8,113 +7,20 @@ import '../models/medico.dart';
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 import 'alocacao_medicos_logic.dart' as logic;
+import '../services/alocacao_clinica_config_service.dart';
+import '../services/cache_version_service.dart';
 
 // Cache para dados de encerramento (feriados, dias de encerramento, horários)
 // Esses dados mudam raramente, então podemos cacheá-los por unidade e ano
-class _CacheEncerramento {
-  // Cache de feriados por unidade e ano (chave: unidadeId_ano)
-  static final Map<String, List<Map<String, String>>> _cacheFeriados = {};
-  
-  // Cache de dias de encerramento por unidade e ano (chave: unidadeId_ano)
-  static final Map<String, List<Map<String, dynamic>>> _cacheDiasEncerramento = {};
-  
-  // Cache de horários e configurações por unidade (chave: unidadeId - mudam raramente)
-  static final Map<String, Map<String, dynamic>> _cacheHorarios = {};
-  
-  // Set de chaves que foram invalidadas e precisam buscar do servidor
-  static final Set<String> _cacheInvalidado = {};
-
-  /// Obtém feriados do cache ou retorna null se não estiver em cache
-  static List<Map<String, String>>? getFeriados(String unidadeId, int ano) {
-    final key = '${unidadeId}_feriados_$ano';
-    if (_cacheInvalidado.contains(key)) return null;
-    return _cacheFeriados[key];
-  }
-
-  /// Armazena feriados no cache
-  static void setFeriados(String unidadeId, int ano, List<Map<String, String>> feriados) {
-    final key = '${unidadeId}_feriados_$ano';
-    _cacheFeriados[key] = List.from(feriados);
-    _cacheInvalidado.remove(key);
-  }
-
-  /// Obtém dias de encerramento do cache ou retorna null se não estiver em cache
-  static List<Map<String, dynamic>>? getDiasEncerramento(String unidadeId, int ano) {
-    final key = '${unidadeId}_encerramentos_$ano';
-    if (_cacheInvalidado.contains(key)) return null;
-    return _cacheDiasEncerramento[key];
-  }
-
-  /// Armazena dias de encerramento no cache
-  static void setDiasEncerramento(String unidadeId, int ano, List<Map<String, dynamic>> dias) {
-    final key = '${unidadeId}_encerramentos_$ano';
-    _cacheDiasEncerramento[key] = List.from(dias);
-    _cacheInvalidado.remove(key);
-  }
-
-  /// Obtém horários e configurações do cache ou retorna null se não estiver em cache
-  static Map<String, dynamic>? getHorarios(String unidadeId) {
-    final key = '${unidadeId}_horarios';
-    if (_cacheInvalidado.contains(key)) return null;
-    return _cacheHorarios[key];
-  }
-
-  /// Armazena horários e configurações no cache
-  static void setHorarios(String unidadeId, Map<String, dynamic> horarios) {
-    final key = '${unidadeId}_horarios';
-    _cacheHorarios[key] = Map.from(horarios);
-    _cacheInvalidado.remove(key);
-  }
-
-  /// Invalida o cache para uma unidade específica (ou todos se unidadeId for null)
-  /// Se ano for fornecido, invalida apenas para aquele ano específico
-  static void invalidateCache([String? unidadeId, int? ano]) {
-    if (unidadeId == null) {
-      // Invalidar tudo
-      _cacheFeriados.clear();
-      _cacheDiasEncerramento.clear();
-      _cacheHorarios.clear();
-      _cacheInvalidado.clear();
-      debugPrint('🗑️ [CACHE] Cache de encerramento invalidado completamente');
-    } else if (ano != null) {
-      // Invalidar apenas para unidade e ano específicos
-      final keyFeriados = '${unidadeId}_feriados_$ano';
-      final keyEncerramentos = '${unidadeId}_encerramentos_$ano';
-      _cacheFeriados.remove(keyFeriados);
-      _cacheDiasEncerramento.remove(keyEncerramentos);
-      _cacheInvalidado.add(keyFeriados);
-      _cacheInvalidado.add(keyEncerramentos);
-      debugPrint('🗑️ [CACHE] Cache de encerramento invalidado para $unidadeId ano $ano');
-    } else {
-      // Invalidar todas as chaves relacionadas a esta unidade
-      final keysToInvalidate = <String>[];
-      for (final key in _cacheFeriados.keys) {
-        if (key.startsWith('${unidadeId}_feriados_')) {
-          keysToInvalidate.add(key);
-        }
-      }
-      for (final key in _cacheDiasEncerramento.keys) {
-        if (key.startsWith('${unidadeId}_encerramentos_')) {
-          keysToInvalidate.add(key);
-        }
-      }
-      keysToInvalidate.add('${unidadeId}_horarios');
-      
-      for (final key in keysToInvalidate) {
-        _cacheInvalidado.add(key);
-        _cacheFeriados.remove(key);
-        _cacheDiasEncerramento.remove(key);
-        _cacheHorarios.remove(key);
-      }
-      debugPrint('🗑️ [CACHE] Cache de encerramento invalidado para unidade $unidadeId');
-    }
-  }
-}
-
 /// Função pública para invalidar o cache de encerramento
 /// Deve ser chamada quando o administrador salva alterações em feriados, dias de encerramento ou horários
-void invalidateCacheEncerramento([String? unidadeId, int? ano]) {
-  _CacheEncerramento.invalidateCache(unidadeId, ano);
+Future<void> invalidateCacheEncerramento([String? unidadeId, int? ano]) async {
+  if (unidadeId == null || unidadeId.isEmpty) return;
+  AlocacaoClinicaConfigService.invalidateCache(unidadeId, ano);
+  await CacheVersionService.bumpVersion(
+    unidadeId: unidadeId,
+    field: CacheVersionService.fieldClinicaConfig,
+  );
 }
 
 /// Função reutilizável para atualizar os dados do dia
@@ -529,61 +435,11 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
 /// Caminho correto: unidades/{id}/feriados/{ano}/registos
 /// OTIMIZAÇÃO: Usa cache para evitar buscar do Firestore toda vez
 Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade, {required DateTime data}) async {
-  // Verificar cache primeiro
-  final ano = data.year;
-  final cached = _CacheEncerramento.getFeriados(unidade.id, ano);
-  if (cached != null) {
-    return cached;
-  }
-
   try {
-    final firestore = FirebaseFirestore.instance;
-    final feriadosRef = firestore
-        .collection('unidades')
-        .doc(unidade.id)
-        .collection('feriados');
-
-    // Carrega o ano do dia selecionado
-    final anoSelecionado = data.year.toString();
-    final anoRef = feriadosRef.doc(anoSelecionado);
-    final registosRef = anoRef.collection('registos');
-
-    try {
-      final registosSnapshot = await registosRef.get();
-
-      final result = registosSnapshot.docs.map((doc) {
-        final docData = doc.data();
-        return <String, String>{
-          'id': doc.id,
-          'data': docData['data'] as String? ?? '',
-          'descricao': docData['descricao'] as String? ?? '',
-        };
-      }).toList();
-
-      // Armazenar no cache
-      _CacheEncerramento.setFeriados(unidade.id, ano, result);
-
-      return result;
-    } catch (e) {
-      // Fallback: tenta carregar de todos os anos
-      final anosSnapshot = await feriadosRef.get();
-      final feriadosTemp = <Map<String, String>>[];
-      for (final anoDoc in anosSnapshot.docs) {
-        final registosRef = anoDoc.reference.collection('registos');
-        final registosSnapshot = await registosRef.get();
-        for (final doc in registosSnapshot.docs) {
-          final docData = doc.data();
-          feriadosTemp.add(<String, String>{
-            'id': doc.id,
-            'data': docData['data'] as String? ?? '',
-            'descricao': docData['descricao'] as String? ?? '',
-          });
-        }
-      }
-      // Armazenar no cache mesmo no fallback
-      _CacheEncerramento.setFeriados(unidade.id, ano, feriadosTemp);
-      return feriadosTemp;
-    }
+    return await AlocacaoClinicaConfigService.carregarFeriados(
+      unidadeId: unidade.id,
+      anoSelecionado: data.year,
+    );
   } catch (e) {
     debugPrint('❌ Erro ao carregar feriados: $e');
     return [];
@@ -596,63 +452,11 @@ Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade, {required D
 /// OTIMIZAÇÃO: Usa cache para evitar buscar do Firestore toda vez
 Future<List<Map<String, dynamic>>> _carregarDiasEncerramento(
     Unidade unidade, {required DateTime data}) async {
-  // Verificar cache primeiro
-  final ano = data.year;
-  final cached = _CacheEncerramento.getDiasEncerramento(unidade.id, ano);
-  if (cached != null) {
-    return cached;
-  }
-
   try {
-    final firestore = FirebaseFirestore.instance;
-    final encerramentosRef = firestore
-        .collection('unidades')
-        .doc(unidade.id)
-        .collection('encerramentos');
-
-    // Carrega apenas o ano do dia selecionado
-    final anoSelecionado = data.year.toString();
-    final anoRef = encerramentosRef.doc(anoSelecionado);
-    final registosRef = anoRef.collection('registos');
-
-    try {
-      final registosSnapshot = await registosRef.get();
-
-      final result = registosSnapshot.docs.map((doc) {
-        final docData = doc.data();
-        return <String, dynamic>{
-          'id': doc.id,
-          'data': docData['data'] as String? ?? '',
-          'descricao': docData['descricao'] as String? ?? '',
-          'motivo': docData['motivo'] as String? ?? 'Encerramento',
-        };
-      }).toList();
-
-      // Armazenar no cache
-      _CacheEncerramento.setDiasEncerramento(unidade.id, ano, result);
-
-      return result;
-    } catch (e) {
-      // Fallback: tenta carregar de todos os anos
-      final anosSnapshot = await encerramentosRef.get();
-      final diasTemp = <Map<String, dynamic>>[];
-      for (final anoDoc in anosSnapshot.docs) {
-        final registosRef = anoDoc.reference.collection('registos');
-        final registosSnapshot = await registosRef.get();
-        for (final doc in registosSnapshot.docs) {
-          final docData = doc.data();
-          diasTemp.add({
-            'id': doc.id,
-            'data': docData['data'] as String? ?? '',
-            'descricao': docData['descricao'] as String? ?? '',
-            'motivo': docData['motivo'] as String? ?? 'Encerramento',
-          });
-        }
-      }
-      // Armazenar no cache mesmo no fallback
-      _CacheEncerramento.setDiasEncerramento(unidade.id, ano, diasTemp);
-      return diasTemp;
-    }
+    return await AlocacaoClinicaConfigService.carregarDiasEncerramento(
+      unidadeId: unidade.id,
+      anoSelecionado: data.year,
+    );
   } catch (e) {
     debugPrint('❌ Erro ao carregar dias de encerramento: $e');
     return [];
@@ -665,82 +469,20 @@ Future<List<Map<String, dynamic>>> _carregarDiasEncerramento(
 /// OTIMIZAÇÃO: Usa cache para evitar buscar do Firestore toda vez (mudam raramente)
 Future<Map<String, dynamic>> _carregarHorariosEConfiguracoes(
     Unidade unidade) async {
-  // Verificar cache primeiro
-  final cached = _CacheEncerramento.getHorarios(unidade.id);
-  if (cached != null) {
-    return cached;
-  }
-
   try {
-    final firestore = FirebaseFirestore.instance;
-    final horariosRef = firestore
-        .collection('unidades')
-        .doc(unidade.id)
-        .collection('horarios_clinica');
-
-    // Carregar horários da clínica
-    final horariosSnapshot = await horariosRef.get();
-    final horariosTemp = <int, List<String>>{};
-    for (final doc in horariosSnapshot.docs) {
-      final docData = doc.data();
-      final diaSemana = docData['diaSemana'] as int? ?? 0;
-      final horaAbertura = docData['horaAbertura'] as String? ?? '';
-      final horaFecho = docData['horaFecho'] as String? ?? '';
-      if (diaSemana > 0 && horaAbertura.isNotEmpty && horaFecho.isNotEmpty) {
-        horariosTemp[diaSemana] = [horaAbertura, horaFecho];
-      }
-    }
-
-    // Carregar configurações de encerramento do documento 'config'
-    try {
-      final configDoc = await horariosRef.doc('config').get();
-
-      if (configDoc.exists && configDoc.data() != null) {
-        final configData = configDoc.data() as Map<String, dynamic>;
-        final encerraDias = <int, bool>{};
-        
-        // Carregar configurações por dia (encerraDia1, encerraDia2, etc.)
-        for (int i = 1; i <= 7; i++) {
-          encerraDias[i] = configData['encerraDia$i'] as bool? ?? false;
-        }
-        
-        final result = {
-          'horarios': horariosTemp,
-          'encerraFeriados': configData['encerraFeriados'] as bool? ?? false,
-          'nuncaEncerra': configData['nuncaEncerra'] as bool? ?? false,
-          'encerraDias': encerraDias,
-        };
-
-        // Armazenar no cache
-        _CacheEncerramento.setHorarios(unidade.id, result);
-
-        return result;
-      }
-    } catch (e) {
-      // Erro ao carregar config - usar valores padrão
-    }
-
-    final result = {
-      'horarios': horariosTemp,
-      'encerraFeriados': false,
-      'nuncaEncerra': false,
-      'encerraDias': {
-        1: false,
-        2: false,
-        3: false,
-        4: false,
-        5: false,
-        6: false,
-        7: false,
-      },
+    final config =
+        await AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
+      unidadeId: unidade.id,
+    );
+    return {
+      'horarios': config.horariosClinica,
+      'encerraFeriados': config.encerraFeriados,
+      'nuncaEncerra': config.nuncaEncerra,
+      'encerraDias': config.encerraDias,
     };
-
-    // Armazenar no cache mesmo com valores padrão
-    _CacheEncerramento.setHorarios(unidade.id, result);
-    return result;
   } catch (e) {
     debugPrint('❌ Erro ao carregar horários: $e');
-    final result = {
+    return {
       'horarios': <int, List<String>>{},
       'encerraFeriados': false,
       'nuncaEncerra': false,
@@ -754,9 +496,6 @@ Future<Map<String, dynamic>> _carregarHorariosEConfiguracoes(
         7: false,
       },
     };
-    // Armazenar no cache mesmo em caso de erro (valores padrão)
-    _CacheEncerramento.setHorarios(unidade.id, result);
-    return result;
   }
 }
 

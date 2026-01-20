@@ -16,6 +16,15 @@ class RelatoriosService {
     return lista;
   }
 
+  /// Lista os anos no intervalo [inicio..fim] (inclusivo).
+  static List<int> _anosNoIntervalo(DateTime inicio, DateTime fim) {
+    final anos = <int>[];
+    for (int ano = inicio.year; ano <= fim.year; ano++) {
+      anos.add(ano);
+    }
+    return anos;
+  }
+
   /// Converte string "HH:MM" em número de horas (ex: "08:30" -> 8.5).
   static double _strHoraParaDouble(String hhmm) {
     final parts = hhmm.split(':');
@@ -50,6 +59,21 @@ class RelatoriosService {
     return (delta > 0) ? delta : 0.0;
   }
 
+  /// Soma horas de um registo de alocação (legacy ou estrutura nova).
+  static double _somarHorasAlocacaoRegistro(Map<String, dynamic> aloc) {
+    final horarioInicio = aloc['horarioInicio'];
+    final horarioFim = aloc['horarioFim'];
+    if (horarioInicio is String && horarioFim is String) {
+      if (!horarioInicio.contains(',') && horarioFim.trim().isNotEmpty) {
+        return _calcHorasIntervalo(horarioInicio, horarioFim);
+      }
+    }
+    if (horarioInicio is String) {
+      return _somarHorasAlocacao(horarioInicio);
+    }
+    return 0.0;
+  }
+
   /// Busca horários da clínica no Firestore
   static Future<Map<int, List<String>>> _carregarHorariosMap({String? unidadeId}) async {
     final firestore = FirebaseFirestore.instance;
@@ -77,7 +101,11 @@ class RelatoriosService {
   }
 
   /// Busca feriados no Firestore (nova estrutura por ano)
-  static Future<List<Map<String, dynamic>>> _carregarFeriados({String? unidadeId}) async {
+  static Future<List<Map<String, dynamic>>> _carregarFeriados({
+    String? unidadeId,
+    required DateTime inicio,
+    required DateTime fim,
+  }) async {
     final firestore = FirebaseFirestore.instance;
     CollectionReference feriadosRef;
     
@@ -90,26 +118,47 @@ class RelatoriosService {
       feriadosRef = firestore.collection('feriados');
     }
     
-    // Para relatórios, carrega todos os anos para ter dados completos
-    final anosSnapshot = await feriadosRef.get();
     final feriados = <Map<String, dynamic>>[];
-    
-    for (final anoDoc in anosSnapshot.docs) {
-      final registosRef = anoDoc.reference.collection('registos');
+
+    // Para relatórios, carregar apenas anos no intervalo
+    for (final ano in _anosNoIntervalo(inicio, fim)) {
+      final registosRef = feriadosRef.doc(ano.toString()).collection('registos');
       final registosSnapshot = await registosRef.get();
       for (final doc in registosSnapshot.docs) {
         feriados.add(doc.data());
       }
     }
-    
+
     return feriados;
   }
 
   /// Busca alocações no Firestore
-  static Future<List<Map<String, dynamic>>> _carregarAlocacoes() async {
+  static Future<List<Map<String, dynamic>>> _carregarAlocacoes({
+    required DateTime inicio,
+    required DateTime fim,
+    String? unidadeId,
+  }) async {
     final firestore = FirebaseFirestore.instance;
-    final snap = await firestore.collection('alocacoes').get();
-    return snap.docs.map((d) => d.data()).toList();
+    if (unidadeId == null) {
+      final snap = await firestore.collection('alocacoes').get();
+      return snap.docs.map((d) => d.data()).toList();
+    }
+
+    final alocacoes = <Map<String, dynamic>>[];
+    for (final ano in _anosNoIntervalo(inicio, fim)) {
+      final registosRef = firestore
+          .collection('unidades')
+          .doc(unidadeId)
+          .collection('alocacoes')
+          .doc(ano.toString())
+          .collection('registos');
+      final snap = await registosRef.get();
+      for (final doc in snap.docs) {
+        alocacoes.add(doc.data());
+      }
+    }
+
+    return alocacoes;
   }
 
   /// Busca gabinetes no Firestore
@@ -139,10 +188,18 @@ class RelatoriosService {
     String? unidadeId,
   }) async {
     // Carrega alocações
-    final alocacoes = await _carregarAlocacoes();
+    final alocacoes = await _carregarAlocacoes(
+      inicio: inicio,
+      fim: fim,
+      unidadeId: unidadeId,
+    );
     // Carrega horários e feriados do Firestore
     final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
-    final feriados = await _carregarFeriados(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(
+      unidadeId: unidadeId,
+      inicio: inicio,
+      fim: fim,
+    );
 
     // Filtra as alocações no intervalo
     final alocFiltradas = alocacoes.where((a) {
@@ -175,7 +232,7 @@ class RelatoriosService {
           DateTime.parse(a['data']).day == dia.day);
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
+        horasOcupDia += _somarHorasAlocacaoRegistro(al);
       }
       if (horasOcupDia > horasAbertas) {
         horasOcupDia = horasAbertas;
@@ -202,9 +259,17 @@ class RelatoriosService {
         .toSet();
 
     // Carrega alocações + horários + feriados
-    final alocacoes = await _carregarAlocacoes();
+    final alocacoes = await _carregarAlocacoes(
+      inicio: inicio,
+      fim: fim,
+      unidadeId: unidadeId,
+    );
     final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
-    final feriados = await _carregarFeriados(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(
+      unidadeId: unidadeId,
+      inicio: inicio,
+      fim: fim,
+    );
 
     // Filtra alocações do período E desses gabinetes
     final alocFiltradas = alocacoes.where((a) {
@@ -238,7 +303,7 @@ class RelatoriosService {
           DateTime.parse(a['data']).day == dia.day);
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
+        horasOcupDia += _somarHorasAlocacaoRegistro(al);
       }
       if (horasOcupDia > horasAbertas) {
         horasOcupDia = horasAbertas;
@@ -258,9 +323,17 @@ class RelatoriosService {
     String? unidadeId,
   }) async {
     // Carrega alocações
-    final alocacoes = await _carregarAlocacoes();
+    final alocacoes = await _carregarAlocacoes(
+      inicio: inicio,
+      fim: fim,
+      unidadeId: unidadeId,
+    );
     final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
-    final feriados = await _carregarFeriados(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(
+      unidadeId: unidadeId,
+      inicio: inicio,
+      fim: fim,
+    );
 
     // Filtra só as do gabinete e do período
     final alocFiltradas = alocacoes.where((a) {
@@ -294,7 +367,7 @@ class RelatoriosService {
       );
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
+        horasOcupDia += _somarHorasAlocacaoRegistro(al);
       }
       if (horasOcupDia > horasAbertas) horasOcupDia = horasAbertas;
       somaHorasOcupadas += horasOcupDia;
@@ -318,9 +391,17 @@ class RelatoriosService {
         .map((g) => g['id'])
         .toSet();
 
-    final alocacoes = await _carregarAlocacoes();
+    final alocacoes = await _carregarAlocacoes(
+      inicio: inicio,
+      fim: fim,
+      unidadeId: unidadeId,
+    );
     final horariosMap = await _carregarHorariosMap(unidadeId: unidadeId);
-    final feriados = await _carregarFeriados(unidadeId: unidadeId);
+    final feriados = await _carregarFeriados(
+      unidadeId: unidadeId,
+      inicio: inicio,
+      fim: fim,
+    );
 
     final alocFiltradas = alocacoes.where((a) {
       final dataOk = !DateTime.parse(a['data']).isBefore(inicio) && !DateTime.parse(a['data']).isAfter(fim);
@@ -352,7 +433,7 @@ class RelatoriosService {
       );
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
-        horasOcupDia += _somarHorasAlocacao(al['horarioInicio']);
+        horasOcupDia += _somarHorasAlocacaoRegistro(al);
       }
       if (horasOcupDia > horasAbertas) horasOcupDia = horasAbertas;
       somaHorasOcupadas += horasOcupDia;

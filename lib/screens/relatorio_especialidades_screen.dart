@@ -5,9 +5,12 @@ import 'package:intl/intl.dart';
 
 import '../services/relatorios_especialidades_service.dart';
 import '../widgets/custom_appbar.dart';
+import '../models/unidade.dart';
 
 class RelatorioEspecialidadesScreen extends StatefulWidget {
-  const RelatorioEspecialidadesScreen({super.key});
+  final Unidade? unidade;
+
+  const RelatorioEspecialidadesScreen({super.key, this.unidade});
 
   @override
   State<RelatorioEspecialidadesScreen> createState() => _RelatorioEspecialidadesScreenState();
@@ -78,6 +81,7 @@ class _RelatorioEspecialidadesScreenState extends State<RelatorioEspecialidadesS
     final map = await RelatoriosEspecialidadesService.horasPorEspecialidade(
       inicio: dataInicio,
       fim: dataFim,
+      unidadeId: widget.unidade?.id,
     );
     setState(() {
       resultado = map;

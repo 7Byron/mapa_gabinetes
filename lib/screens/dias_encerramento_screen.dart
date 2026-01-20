@@ -267,7 +267,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
 
       // Invalidar cache de dias de encerramento após salvar
       if (widget.unidade != null) {
-        invalidateCacheEncerramento(widget.unidade!.id, int.parse(ano));
+        await invalidateCacheEncerramento(widget.unidade!.id, int.parse(ano));
         debugPrint('🗑️ Cache de dias de encerramento invalidado após adicionar dia');
       }
 
@@ -413,9 +413,11 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
 
       // Invalidar cache de dias de encerramento após editar (pode ter mudado de ano)
       if (widget.unidade != null) {
-        invalidateCacheEncerramento(widget.unidade!.id, int.parse(anoAnterior));
+        await invalidateCacheEncerramento(
+            widget.unidade!.id, int.parse(anoAnterior));
         if (anoAnterior != anoNovo) {
-          invalidateCacheEncerramento(widget.unidade!.id, int.parse(anoNovo));
+          await invalidateCacheEncerramento(
+              widget.unidade!.id, int.parse(anoNovo));
         }
         debugPrint('🗑️ Cache de dias de encerramento invalidado após editar dia');
       }
@@ -490,7 +492,7 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
 
       // Invalidar cache de dias de encerramento após remover
       if (widget.unidade != null && dataDia != null) {
-        invalidateCacheEncerramento(widget.unidade!.id, dataDia.year);
+        await invalidateCacheEncerramento(widget.unidade!.id, dataDia.year);
         debugPrint('🗑️ Cache de dias de encerramento invalidado após remover dia');
       }
 

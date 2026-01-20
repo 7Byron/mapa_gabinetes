@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'cache_version_service.dart';
 
 /// Serviço para remover alocações e disponibilidades do Firestore
 /// Extracted from cadastro_medicos.dart to reduce code duplication
@@ -133,6 +134,16 @@ class AlocacaoDisponibilidadeRemocaoService {
       }
 
       dataAtual = dataAtual.add(const Duration(days: 1));
+    }
+
+    if (alocacoesRemovidas > 0 || disponibilidadesRemovidas > 0) {
+      await CacheVersionService.bumpVersions(
+        unidadeId: unidadeId,
+        fields: [
+          CacheVersionService.fieldAlocacoes,
+          CacheVersionService.fieldDisponibilidades,
+        ],
+      );
     }
 
     return {

@@ -3,6 +3,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
+import 'firebase_init_service.dart';
 
 class UnidadeService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -10,6 +11,7 @@ class UnidadeService {
   /// Busca todas as unidades ativas
   static Future<List<Unidade>> buscarUnidades() async {
     try {
+      await FirebaseInitService.ensureInitialized();
       debugPrint('🔍 Buscando unidades no Firebase...');
 
       // Primeiro, vamos buscar todas as unidades sem filtro para debug

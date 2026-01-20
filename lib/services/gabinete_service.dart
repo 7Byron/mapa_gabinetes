@@ -3,6 +3,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
+import 'cache_version_service.dart';
 
 Future<void> salvarGabineteCompleto(Gabinete gabinete,
     {Unidade? unidade}) async {
@@ -28,6 +29,11 @@ Future<void> salvarGabineteCompleto(Gabinete gabinete,
     'nome': gabinete.nome,
     'especialidades': gabinete.especialidadesPermitidas.join(','),
   });
+
+  await CacheVersionService.bumpVersion(
+    unidadeId: unidade?.id,
+    field: CacheVersionService.fieldGabinetes,
+  );
 }
 
 Future<List<Gabinete>> buscarGabinetes({Unidade? unidade}) async {
@@ -78,4 +84,8 @@ Future<void> deletarGabinete(String gabineteId, {Unidade? unidade}) async {
   }
 
   await gabineteRef.delete();
+  await CacheVersionService.bumpVersion(
+    unidadeId: unidade?.id,
+    field: CacheVersionService.fieldGabinetes,
+  );
 }

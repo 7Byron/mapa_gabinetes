@@ -32,16 +32,19 @@ class MedicosDisponiveisContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final minHeight = MedicosDisponiveisLayoutUtils.calcularAlturaMinima(
-      context: context,
+    final hasMedicos = medicosDisponiveis.isNotEmpty;
+    final containerHeight =
+        MedicosDisponiveisLayoutUtils.calcularAlturaContainer(
       totalMedicos: medicosDisponiveis.length,
     );
 
     return Container(
-      constraints: BoxConstraints(
-        minHeight: minHeight,
-        maxHeight: 300,
-      ),
+      constraints: hasMedicos
+          ? BoxConstraints(
+              minHeight: containerHeight,
+              maxHeight: containerHeight,
+            )
+          : null,
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       decoration: BoxDecoration(
@@ -80,8 +83,8 @@ class MedicosDisponiveisContainer extends StatelessWidget {
 
                 if (estaAlocadoEmAlgumGabinete) {
                   debugPrint(
-                      '⚠️ Médico $medicoId está alocado em um gabinete - não aceitar para desalocar (deve ser realocação)');
-                  return false;
+                      '✅ Médico $medicoId está alocado em um gabinete - aceitar para desalocar');
+                  return true;
                 }
 
                 debugPrint(
@@ -98,9 +101,8 @@ class MedicosDisponiveisContainer extends StatelessWidget {
                 final isHovering = candidateData.isNotEmpty;
                 return Container(
                   decoration: BoxDecoration(
-                    color: isHovering
-                        ? Colors.blue.shade50
-                        : Colors.transparent,
+                    color:
+                        isHovering ? Colors.blue.shade50 : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     border: isHovering
                         ? Border.all(color: Colors.blue, width: 2)
@@ -176,20 +178,21 @@ class MedicosDisponiveisContainer extends StatelessWidget {
               },
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: RepaintBoundary(
-                child: MedicosDisponiveisSection(
-                  medicosDisponiveis: medicosDisponiveis,
-                  disponibilidades: disponibilidades,
-                  selectedDate: selectedDate,
-                  onDesalocarMedico: onDesalocarMedico,
-                  onEditarMedico: onEditarMedico,
+          if (hasMedicos)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: RepaintBoundary(
+                  child: MedicosDisponiveisSection(
+                    medicosDisponiveis: medicosDisponiveis,
+                    disponibilidades: disponibilidades,
+                    selectedDate: selectedDate,
+                    onDesalocarMedico: onDesalocarMedico,
+                    onEditarMedico: onEditarMedico,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

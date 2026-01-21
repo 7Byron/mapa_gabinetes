@@ -70,14 +70,23 @@ mixin AlocacaoMedicosUiMixin on AlocacaoMedicosStateBase {
                                 // Barra de progresso
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: progressoCarregamento,
-                                    backgroundColor:
-                                        Colors.white.withValues(alpha: 0.3),
-                                    valueColor:
-                                        const AlwaysStoppedAnimation<Color>(
-                                            Colors.white),
-                                    minHeight: 10,
+                                  child: TweenAnimationBuilder<double>(
+                                    duration:
+                                        const Duration(milliseconds: 300),
+                                    curve: Curves.easeOut,
+                                    tween: Tween<double>(
+                                        end: progressoCarregamento),
+                                    builder: (context, valor, child) {
+                                      return LinearProgressIndicator(
+                                        value: valor,
+                                        backgroundColor: Colors.white
+                                            .withValues(alpha: 0.3),
+                                        valueColor:
+                                            const AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
+                                        minHeight: 10,
+                                      );
+                                    },
                                   ),
                                 ),
                                 const SizedBox(height: 12),

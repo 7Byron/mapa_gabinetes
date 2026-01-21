@@ -176,7 +176,7 @@ class _CalendarioDisponibilidadesState
         return AlertDialog(
           title: const Text('Remover disponibilidade'),
           content: Text(
-            'Deseja remover a disponibilidade do dia '
+            'Deseja remover apenas este dia ou toda a série a partir de '
             '${date.day}/${date.month}/${date.year}?',
           ),
           actions: [
@@ -186,7 +186,7 @@ class _CalendarioDisponibilidadesState
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop('all'),
-              child: const Text('Toda a série'),
+              child: const Text('Toda a série a partir deste dia'),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),

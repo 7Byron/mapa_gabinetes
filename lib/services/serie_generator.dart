@@ -837,21 +837,20 @@ class SerieGenerator {
 
         // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
         // independentemente de ter gabineteId ou não (exceção de disponibilidade)
-        if (excecao?.cancelada ?? false) {
-          continue;
-        }
+        final excecaoCancelada = excecao?.cancelada ?? false;
 
         // IMPORTANTE: Se há exceção de gabinete com gabineteId null, AINDA CRIAMOS A DISPONIBILIDADE
         // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
         // Isso permite que o médico apareça em "médicos por alocar"
-
-        cartoes.add(Disponibilidade(
-          id: 'serie_${serie.id}_$dataKey',
-          medicoId: serie.medicoId,
-          data: dataNormalizada,
-          horarios: excecao?.horarios ?? serie.horarios,
-          tipo: 'Mensal',
-        ));
+        if (!excecaoCancelada) {
+          cartoes.add(Disponibilidade(
+            id: 'serie_${serie.id}_$dataKey',
+            medicoId: serie.medicoId,
+            data: dataNormalizada,
+            horarios: excecao?.horarios ?? serie.horarios,
+            tipo: 'Mensal',
+          ));
+        }
       }
 
       // Próximo mês

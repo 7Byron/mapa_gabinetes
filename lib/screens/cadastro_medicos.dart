@@ -2056,29 +2056,31 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
         // Se não encontrou pelo ID, buscar na lista de séries
         if (serieId == null || !series.any((s) => s.id == serieId)) {
-          // Buscar série que corresponde a esta data e tipo
-          final serieCorrespondente = series.firstWhere(
-            (s) =>
-                s.medicoId == _medicoAtual!.id &&
-                s.dataInicio
-                    .isBefore(dataNormalizada.add(const Duration(days: 1))) &&
-                (s.dataFim == null ||
-                    s.dataFim!.isAfter(
-                        dataNormalizada.subtract(const Duration(days: 1)))) &&
-                s.tipo == disponibilidade.tipo,
-            orElse: () => SerieRecorrencia(
-              id: '',
-              medicoId: '',
-              dataInicio: DateTime(1900),
-              tipo: '',
-              horarios: [],
-              gabineteId: null,
-              parametros: {},
-              ativo: false,
-            ),
-          );
+          // Buscar série que corresponde a esta data, tipo e padrão
+          SerieRecorrencia? serieCorrespondente;
+          for (final serie in series) {
+            if (serie.medicoId != _medicoAtual!.id ||
+                serie.tipo != disponibilidade.tipo) {
+              continue;
+            }
+            if (serie.dataInicio
+                .isAfter(dataNormalizada.add(const Duration(days: 1)))) {
+              continue;
+            }
+            if (serie.dataFim != null &&
+                serie.dataFim!.isBefore(
+                    dataNormalizada.subtract(const Duration(days: 1)))) {
+              continue;
+            }
+            if (!SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
+                dataNormalizada, serie)) {
+              continue;
+            }
+            serieCorrespondente = serie;
+            break;
+          }
 
-          if (serieCorrespondente.id.isNotEmpty) {
+          if (serieCorrespondente != null) {
             serieId = serieCorrespondente.id;
           }
         }
@@ -2545,7 +2547,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                       ),
                       TextButton(
                         onPressed: () => Navigator.of(context).pop('serie'),
-                        child: const Text('Toda a série'),
+                        child: const Text('Toda a série a partir deste dia'),
                       ),
                     ] else ...[
                       TextButton(
@@ -2635,6 +2637,29 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 novoGabineteId: novoGabineteId,
                 unidade: widget.unidade,
               );
+
+              // Fechar progress bar e mostrar feedback
+              if (mounted) {
+                setState(() {
+                  progressoAlocandoGabinete = 1.0;
+                  mensagemAlocandoGabinete = 'Concluído!';
+                });
+                await Future.delayed(const Duration(milliseconds: 300));
+                if (mounted) {
+                  setState(() {
+                    _alocandoGabinete = false;
+                    progressoAlocandoGabinete = 0.0;
+                    mensagemAlocandoGabinete = 'A alocar gabinete...';
+                  });
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Gabinete alterado neste dia com sucesso'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
             } else if (escolha == 'serie') {
               // Mudar toda a série: atualizar gabinete da série
               // Flag para indicar se foi realocação (usado depois para fechar progressbar)
@@ -3436,11 +3461,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
       ),
     );
 
+    final dataNormalizada = DateTime(date.year, date.month, date.day);
     // Se está removendo a série inteira, encontrar e remover do Firestore
+    SerieRecorrencia? serieParaRemover;
     if (removeSerie) {
       // Se a disponibilidade é de uma série, encontrar e remover a série do Firestore
-      if (disponibilidadeNaData.id.startsWith('serie_') &&
-          disponibilidadeNaData.tipo != 'Única') {
+      if (disponibilidadeNaData.tipo != 'Única') {
         final serieEncontrada =
             DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
           disponibilidadeNaData,
@@ -3448,36 +3474,72 @@ class CadastroMedicoState extends State<CadastroMedico> {
           date,
         );
 
-        if (serieEncontrada != null) {
-          final sucesso =
-              await DisponibilidadeDataGestaoService.removerSerieDoFirestore(
-            context,
-            serieEncontrada,
-            _medicoId,
-            widget.unidade,
-          );
+        if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
+          serieParaRemover = serieEncontrada;
+          final removerSeriePorCompleto =
+              !dataNormalizada.isAfter(serieEncontrada.dataInicio);
 
-          if (sucesso) {
-            setState(() {
-              series.removeWhere((s) => s.id == serieEncontrada.id);
+          if (removerSeriePorCompleto) {
+            final sucesso =
+                await DisponibilidadeDataGestaoService.removerSerieDoFirestore(
+              context,
+              serieEncontrada,
+              _medicoId,
+              widget.unidade,
+            );
 
-              // CORREÇÃO: Remover alocações locais relacionadas à série apagada
-              // As alocações de séries têm ID no formato 'serie_${serieId}_${dataKey}'
-              final serieIdPrefix = 'serie_${serieEncontrada.id}_';
-              alocacoes.removeWhere((a) => a.id.startsWith(serieIdPrefix));
-            });
+            if (sucesso) {
+              setState(() {
+                series.removeWhere((s) => s.id == serieEncontrada.id);
 
-            // CORREÇÃO: Invalidar cache e recarregar alocações após remover série
-            // Isso garante que não apareçam alocações da série apagada
-            if (_medicoAtual != null && _anoVisualizado != null) {
-              // Invalidar cache primeiro
-              AlocacaoMedicosLogic.invalidateCacheFromDate(
-                  DateTime(_anoVisualizado!, 1, 1));
-
-              // Recarregar alocações do servidor
-              await _carregarAlocacoesEGabinetes(_medicoAtual!.id,
-                  ano: _anoVisualizado);
+                // CORREÇÃO: Remover alocações locais relacionadas à série apagada
+                // As alocações de séries têm ID no formato 'serie_${serieId}_${dataKey}'
+                final serieIdPrefix = 'serie_${serieEncontrada.id}_';
+                alocacoes.removeWhere((a) => a.id.startsWith(serieIdPrefix));
+              });
             }
+          } else {
+            final dataFimEncerramento =
+                dataNormalizada.subtract(const Duration(days: 1));
+            final serieAtualizada = SerieRecorrencia(
+              id: serieEncontrada.id,
+              medicoId: serieEncontrada.medicoId,
+              dataInicio: serieEncontrada.dataInicio,
+              dataFim: dataFimEncerramento,
+              tipo: serieEncontrada.tipo,
+              horarios: serieEncontrada.horarios,
+              gabineteId: serieEncontrada.gabineteId,
+              parametros: serieEncontrada.parametros,
+              ativo: serieEncontrada.ativo,
+            );
+
+            await SerieService.salvarSerie(serieAtualizada,
+                unidade: widget.unidade);
+
+            setState(() {
+              final index =
+                  series.indexWhere((s) => s.id == serieEncontrada.id);
+              if (index != -1) {
+                series[index] = serieAtualizada;
+              }
+
+              // Remover alocações locais da série a partir da data selecionada
+              final serieIdPrefix = 'serie_${serieEncontrada.id}_';
+              alocacoes.removeWhere((a) {
+                if (!a.id.startsWith(serieIdPrefix)) return false;
+                final aDate =
+                    DateTime(a.data.year, a.data.month, a.data.day);
+                return !aDate.isBefore(dataNormalizada);
+              });
+            });
+          }
+
+          // Invalidar cache e recarregar alocações após atualizar série
+          if (_medicoAtual != null && _anoVisualizado != null) {
+            AlocacaoMedicosLogic.invalidateCacheFromDate(
+                DateTime(_anoVisualizado!, 1, 1));
+            await _carregarAlocacoesEGabinetes(_medicoAtual!.id,
+                ano: _anoVisualizado);
           }
         }
       }
@@ -3505,10 +3567,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
 
     setState(() {
+      final removerComoSerie = removeSerie && serieParaRemover != null;
       disponibilidades = removerDisponibilidade(
         disponibilidades,
-        date,
-        removeSerie: removeSerie,
+        dataNormalizada,
+        removeSerie: removerComoSerie,
+        serie: serieParaRemover,
       );
       // Re-atualiza a lista de dias
       diasSelecionados = disponibilidades.map((d) => d.data).toList();

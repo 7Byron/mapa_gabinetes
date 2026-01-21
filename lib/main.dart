@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
+import 'models/unidade.dart';
+import 'services/unidade_service.dart';
+import 'services/unidade_selecionada_service.dart';
+import 'screens/login_screen.dart';
 import 'screens/selecao_unidade_screen.dart';
 import 'utils/app_theme.dart';
 
@@ -55,7 +59,67 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Montserrat',
       ),
-      home: const SelecaoUnidadeScreen(),
+      home: const AppBootstrap(),
     );
+  }
+}
+
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
+
+  @override
+  State<AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<AppBootstrap> {
+  bool _isLoading = true;
+  Unidade? _unidadeSelecionada;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarUnidadeInicial();
+  }
+
+  Future<void> _carregarUnidadeInicial() async {
+    try {
+      final unidadeId =
+          await UnidadeSelecionadaService.carregarUnidadeSelecionada();
+      if (unidadeId != null) {
+        final unidade = await UnidadeService.buscarUnidadePorId(unidadeId);
+        if (unidade != null && unidade.ativa) {
+          setState(() {
+            _unidadeSelecionada = unidade;
+            _isLoading = false;
+          });
+          return;
+        }
+
+        await UnidadeSelecionadaService.limparUnidadeSelecionada();
+      }
+    } catch (_) {
+      await UnidadeSelecionadaService.limparUnidadeSelecionada();
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_unidadeSelecionada != null) {
+      return LoginScreen(unidade: _unidadeSelecionada!);
+    }
+
+    return const SelecaoUnidadeScreen();
   }
 }

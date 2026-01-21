@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/excecao_serie.dart';
+import '../models/medico.dart';
 
 class AlocacaoCacheStore {
   static final Map<String, List<Disponibilidade>> cacheDispPorDia = {};
@@ -9,6 +10,9 @@ class AlocacaoCacheStore {
   static final Map<String, DateTime> cacheAtualizadoEmPorDia = {};
   static final Set<String> cacheInvalidadoPorDia = {};
   static final Map<String, List<ExcecaoSerie>> cacheExcecoes = {};
+  static final Map<String, List<Alocacao>> cacheAlocSeriesPorDia = {};
+  static final Map<String, List<Medico>> cacheMedicosDisponiveisPorDia = {};
+  static final Map<String, Set<String>> cacheExcecoesCanceladasPorDia = {};
 
   static int _cacheHits = 0;
   static int _cacheMisses = 0;
@@ -57,6 +61,52 @@ class AlocacaoCacheStore {
         '💾 [CACHE] Cache atualizado para dia $key: ${disponibilidades?.length ?? 0} disps, ${alocacoes?.length ?? 0} alocs (estava invalidado: $estavaInvalidado, forçar válido: $forcarValido, agora válido: ${!cacheInvalidadoPorDia.contains(key)})');
   }
 
+  static List<Disponibilidade>? getDisponibilidades(DateTime day) {
+    final key = keyDia(day);
+    if (cacheInvalidadoPorDia.contains(key)) return null;
+    return cacheDispPorDia[key];
+  }
+
+  static List<Alocacao>? getAlocacoes(DateTime day) {
+    final key = keyDia(day);
+    if (cacheInvalidadoPorDia.contains(key)) return null;
+    return cacheAlocPorDia[key];
+  }
+
+  static List<Alocacao>? getAlocacoesComSeries(DateTime day) {
+    final key = keyDia(day);
+    if (cacheInvalidadoPorDia.contains(key)) return null;
+    return cacheAlocSeriesPorDia[key];
+  }
+
+  static void updateAlocacoesComSeries(DateTime day, List<Alocacao> alocacoes) {
+    final key = keyDia(day);
+    cacheAlocSeriesPorDia[key] = List<Alocacao>.from(alocacoes);
+  }
+
+  static List<Medico>? getMedicosDisponiveis(DateTime day) {
+    final key = keyDia(day);
+    if (cacheInvalidadoPorDia.contains(key)) return null;
+    return cacheMedicosDisponiveisPorDia[key];
+  }
+
+  static void updateMedicosDisponiveis(DateTime day, List<Medico> medicos) {
+    final key = keyDia(day);
+    cacheMedicosDisponiveisPorDia[key] = List<Medico>.from(medicos);
+  }
+
+  static Set<String>? getExcecoesCanceladasParaDia(DateTime day) {
+    final key = keyDia(day);
+    if (cacheInvalidadoPorDia.contains(key)) return null;
+    return cacheExcecoesCanceladasPorDia[key];
+  }
+
+  static void updateExcecoesCanceladasParaDia(
+      DateTime day, Set<String> excecoes) {
+    final key = keyDia(day);
+    cacheExcecoesCanceladasPorDia[key] = Set<String>.from(excecoes);
+  }
+
   static void registrarCacheHit(String key) {
     _cacheHits++;
   }
@@ -85,14 +135,32 @@ class AlocacaoCacheStore {
     cacheDispPorDia.remove(key);
     cacheAlocPorDia.remove(key);
     cacheAtualizadoEmPorDia.remove(key);
+    cacheAlocSeriesPorDia.remove(key);
+    cacheMedicosDisponiveisPorDia.remove(key);
+    cacheExcecoesCanceladasPorDia.remove(key);
     cacheInvalidadoPorDia.add(key);
     cacheExcecoes.clear();
   }
 
   static void invalidateCacheFromDate(DateTime fromDate) {
-    final keysToRemove = <String>[];
+    final keysToRemove = <String>{};
     final fromKey = keyDia(fromDate);
     for (final key in cacheDispPorDia.keys) {
+      if (key.compareTo(fromKey) >= 0) {
+        keysToRemove.add(key);
+      }
+    }
+    for (final key in cacheAlocSeriesPorDia.keys) {
+      if (key.compareTo(fromKey) >= 0) {
+        keysToRemove.add(key);
+      }
+    }
+    for (final key in cacheMedicosDisponiveisPorDia.keys) {
+      if (key.compareTo(fromKey) >= 0) {
+        keysToRemove.add(key);
+      }
+    }
+    for (final key in cacheExcecoesCanceladasPorDia.keys) {
       if (key.compareTo(fromKey) >= 0) {
         keysToRemove.add(key);
       }
@@ -101,6 +169,9 @@ class AlocacaoCacheStore {
       cacheDispPorDia.remove(key);
       cacheAlocPorDia.remove(key);
       cacheAtualizadoEmPorDia.remove(key);
+      cacheAlocSeriesPorDia.remove(key);
+      cacheMedicosDisponiveisPorDia.remove(key);
+      cacheExcecoesCanceladasPorDia.remove(key);
       cacheInvalidadoPorDia.add(key);
     }
     cacheExcecoes.clear();
@@ -112,5 +183,8 @@ class AlocacaoCacheStore {
     cacheAtualizadoEmPorDia.clear();
     cacheInvalidadoPorDia.clear();
     cacheExcecoes.clear();
+    cacheAlocSeriesPorDia.clear();
+    cacheMedicosDisponiveisPorDia.clear();
+    cacheExcecoesCanceladasPorDia.clear();
   }
 }

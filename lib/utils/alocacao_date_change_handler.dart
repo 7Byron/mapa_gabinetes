@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/gabinete.dart';
@@ -6,7 +7,7 @@ import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../services/alocacao_series_regeneracao_service.dart';
 import '../utils/alocacao_alocacoes_merge_utils.dart';
-import '../utils/alocacao_medicos_logic.dart' as logic;
+import '../utils/alocacao_cache_store.dart';
 
 class DateChangeResult {
   final bool clinicaFechada;
@@ -33,6 +34,32 @@ class DateChangeResult {
 }
 
 class AlocacaoDateChangeHandler {
+  static const Duration _cacheTtl = Duration(minutes: 5);
+  static final Map<String, _CacheDia> _cacheResultados = {};
+
+  static DateChangeResult? _getCache(DateTime data) {
+    final key = AlocacaoCacheStore.keyDia(data);
+    final cached = _cacheResultados[key];
+    if (cached == null) return null;
+    if (AlocacaoCacheStore.isCacheInvalidado(data)) {
+      _cacheResultados.remove(key);
+      return null;
+    }
+    if (DateTime.now().difference(cached.atualizadoEm) > _cacheTtl) {
+      _cacheResultados.remove(key);
+      return null;
+    }
+    return cached.resultado;
+  }
+
+  static void _setCache(DateTime data, DateChangeResult resultado) {
+    final key = AlocacaoCacheStore.keyDia(data);
+    _cacheResultados[key] = _CacheDia(
+      resultado: resultado,
+      atualizadoEm: DateTime.now(),
+    );
+  }
+
   static Future<DateChangeResult> processarMudancaData({
     required Unidade unidade,
     required DateTime data,
@@ -50,6 +77,7 @@ class AlocacaoDateChangeHandler {
       required List<Alocacao> alocacoes,
       required List<Medico> medicosDisponiveis,
       required bool recarregarMedicos,
+      bool calcularMedicosDisponiveis,
       required void Function(double, String) onProgress,
       required VoidCallback onStateUpdate,
     }) atualizarDadosDoDia,
@@ -58,9 +86,11 @@ class AlocacaoDateChangeHandler {
   }) async {
     final dataNormalizada = DateTime(data.year, data.month, data.day);
 
-    logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
-    logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
-        DateTime(data.year, 1, 1));
+    final cacheLocal = _getCache(dataNormalizada);
+    if (cacheLocal != null) {
+      onProgress(0.60, 'A usar cache local do dia...');
+      return cacheLocal;
+    }
 
     final resultado = await atualizarDadosDoDia(
       unidade: unidade,
@@ -71,18 +101,51 @@ class AlocacaoDateChangeHandler {
       alocacoes: alocacoes,
       medicosDisponiveis: medicosDisponiveis,
       recarregarMedicos: false,
+      calcularMedicosDisponiveis: false,
       onProgress: onProgress,
       onStateUpdate: onStateUpdate,
     );
 
-    onProgress(0.75, 'A regenerar alocações de séries...');
+    final cacheSeries =
+        AlocacaoCacheStore.getAlocacoesComSeries(dataNormalizada);
+    if (cacheSeries != null) {
+      onProgress(0.90, 'A usar cache de séries...');
+      final resultadoCache = DateChangeResult(
+        clinicaFechada: resultado['clinicaFechada'] ?? false,
+        mensagemClinicaFechada: resultado['mensagemClinicaFechada'] ?? '',
+        feriados: resultado['feriados'] ?? [],
+        diasEncerramento: resultado['diasEncerramento'] ?? [],
+        horariosClinica: resultado['horariosClinica'] ?? {},
+        encerraFeriados: resultado['encerraFeriados'] ?? false,
+        nuncaEncerra: resultado['nuncaEncerra'] ?? false,
+        encerraDias: resultado['encerraDias'] ?? {},
+        alocacoesAtualizadas: List<Alocacao>.from(cacheSeries),
+      );
+      _setCache(dataNormalizada, resultadoCache);
+      return resultadoCache;
+    }
+
+    var progressoSeries = 0.60;
+    const limiteSeries = 0.90;
+    Timer? timerSeries;
+    timerSeries = Timer.periodic(const Duration(milliseconds: 80), (timer) {
+      progressoSeries += (limiteSeries - progressoSeries) * 0.035;
+      if (progressoSeries >= limiteSeries - 0.001) {
+        progressoSeries = limiteSeries;
+        timer.cancel();
+      }
+      onProgress(progressoSeries, 'A regenerar alocações de séries...');
+    });
+
+    onProgress(0.90, 'A regenerar alocações de séries...');
     final alocacoesSeriesRegeneradas =
         await AlocacaoSeriesRegeneracaoService.regenerarParaDia(
       data: dataNormalizada,
       unidade: unidade,
       alocacoes: alocacoes,
     );
-    onProgress(0.80, 'A processar dados...');
+    timerSeries.cancel();
+    onProgress(0.94, 'A processar dados...');
 
     final alocacoesAtualizadas =
         AlocacaoAlocacoesMergeUtils.substituirSeriesNoDia(
@@ -91,7 +154,10 @@ class AlocacaoDateChangeHandler {
       data: dataNormalizada,
     );
 
-    return DateChangeResult(
+    AlocacaoCacheStore.updateAlocacoesComSeries(
+        dataNormalizada, alocacoesAtualizadas);
+
+    final resultadoFinal = DateChangeResult(
       clinicaFechada: resultado['clinicaFechada'] ?? false,
       mensagemClinicaFechada: resultado['mensagemClinicaFechada'] ?? '',
       feriados: resultado['feriados'] ?? [],
@@ -102,5 +168,17 @@ class AlocacaoDateChangeHandler {
       encerraDias: resultado['encerraDias'] ?? {},
       alocacoesAtualizadas: alocacoesAtualizadas,
     );
+    _setCache(dataNormalizada, resultadoFinal);
+    return resultadoFinal;
   }
+}
+
+class _CacheDia {
+  final DateChangeResult resultado;
+  final DateTime atualizadoEm;
+
+  const _CacheDia({
+    required this.resultado,
+    required this.atualizadoEm,
+  });
 }

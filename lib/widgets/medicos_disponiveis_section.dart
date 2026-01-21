@@ -49,94 +49,74 @@ class MedicosDisponiveisSection extends StatelessWidget {
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Se não há médicos, retornar container vazio mínimo para permitir drop
-          if (medicosOrdenados.isEmpty) {
-            return const SizedBox(
-              height: 0,
-            );
-          }
-          
-          // Calcular altura baseada no número de linhas necessárias
-          final larguraDisponivel = constraints.maxWidth.isFinite && constraints.maxWidth > 0
-              ? constraints.maxWidth
-              : 400.0; // Fallback
-          const larguraCartao = 180.0;
-          const spacing = 6.0;
-          final cartoesPorLinha = (larguraDisponivel / (larguraCartao + spacing)).floor();
-          final numLinhas = (medicosOrdenados.length / (cartoesPorLinha > 0 ? cartoesPorLinha : 1)).ceil();
-          
-          // Altura do cartão (~100px) + runSpacing (6px) por linha
-          const alturaCartao = 100.0;
-          final alturaNecessaria = (alturaCartao * numLinhas) + (6 * (numLinhas - 1));
-          
-          // Se tem 2 ou mais linhas, garantir altura mínima para 2 linhas
-          final minHeight = numLinhas >= 2 
-              ? (alturaCartao * 2) + 6 
-              : alturaNecessaria;
-          
-          // Remover SingleChildScrollView para permitir que DragTarget capture gestos
-          // Usar apenas Wrap com ConstrainedBox
-          return ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: minHeight,
-            ),
-            child: Wrap(
-                spacing: 6, // Espaçamento horizontal reduzido
-                runSpacing: 6, // Espaçamento vertical reduzido
-                children: medicosOrdenados.map((medico) {
-          final dispDoMedico = disponibilidades.where((d) {
-            final dd = DateTime(d.data.year, d.data.month, d.data.day);
-            return d.medicoId == medico.id &&
-                dd ==
-                    DateTime(selectedDate.year, selectedDate.month,
-                        selectedDate.day);
-          }).toList();
+      child: medicosOrdenados.isEmpty
+          ? const SizedBox.shrink()
+          : Scrollbar(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                physics: const ClampingScrollPhysics(),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: medicosOrdenados.map((medico) {
+                      final dispDoMedico = disponibilidades.where((d) {
+                        final dd = DateTime(d.data.year, d.data.month, d.data.day);
+                        return d.medicoId == medico.id &&
+                            dd ==
+                                DateTime(selectedDate.year, selectedDate.month,
+                                    selectedDate.day);
+                      }).toList();
 
-          // Formatar horários no formato "12:00 - 17:00" em vez de "12:00, 17:00"
-          final horariosList = dispDoMedico.expand((d) => d.horarios).toList();
-          final horariosStr = horariosList.length >= 2
-              ? "${horariosList[0]} - ${horariosList[1]}"
-              : horariosList.join(', ');
+                      // Formatar horários no formato "12:00 - 17:00" em vez de "12:00, 17:00"
+                      final horariosList =
+                          dispDoMedico.expand((d) => d.horarios).toList();
+                      final horariosStr = horariosList.length >= 2
+                          ? "${horariosList[0]} - ${horariosList[1]}"
+                          : horariosList.join(', ');
 
-          final isValido = dispDoMedico.any((d) => _validarDisponibilidade(d));
+                      final isValido =
+                          dispDoMedico.any((d) => _validarDisponibilidade(d));
 
-          return MouseRegion(
-            cursor: SystemMouseCursors.grab,
-            child: Card(
-              elevation: 0,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: Colors.grey.shade200,
-                  width: 1,
+                      return MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
+                            ),
+                          ),
+                          child: GestureDetector(
+                            // Clique único para editar (só aciona se não houver drag)
+                            onTap: () {
+                              if (onEditarMedico != null) {
+                                onEditarMedico!(medico);
+                              }
+                            },
+                            child: Draggable<String>(
+                              data: medico.id,
+                              feedback:
+                                  MedicoCard.dragFeedback(medico, horariosStr),
+                              childWhenDragging: Opacity(
+                                opacity: 0.5,
+                                child: _buildMedicoCardContent(
+                                    medico, horariosStr, isValido),
+                              ),
+                              child: _buildMedicoCardContent(
+                                  medico, horariosStr, isValido),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
-            ),
-            child: GestureDetector(
-              // Clique único para editar (só aciona se não houver drag)
-              onTap: () {
-                if (onEditarMedico != null) {
-                  onEditarMedico!(medico);
-                }
-              },
-              child: Draggable<String>(
-                data: medico.id,
-                feedback: MedicoCard.dragFeedback(medico, horariosStr),
-                childWhenDragging: Opacity(
-                  opacity: 0.5,
-                  child: _buildMedicoCardContent(medico, horariosStr, isValido),
-                ),
-                child: _buildMedicoCardContent(medico, horariosStr, isValido),
               ),
             ),
-            ),
-          );
-        }).toList(),
-            ),
-          );
-        },
-      ),
     );
   }
 

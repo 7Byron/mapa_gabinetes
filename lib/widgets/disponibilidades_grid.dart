@@ -10,6 +10,7 @@ import '../utils/alocacao_card_actions.dart';
 import '../utils/alocacao_card_handlers.dart';
 import '../utils/series_helper.dart';
 import '../services/disponibilidade_data_gestao_service.dart';
+import '../services/disponibilidade_serie_service.dart';
 // import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 class DisponibilidadesGrid extends StatefulWidget {
@@ -226,11 +227,11 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Não'),
+                      child: const Text('Apenas este dia'),
                     ),
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Sim'),
+                      child: const Text('Toda a série'),
                     ),
                   ],
                 );
@@ -266,9 +267,20 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
               
               // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
               // para atualizar apenas as disponibilidades da MESMA série específica
-              final serieIdDaDisponibilidade = disponibilidade.id.startsWith('serie_')
-                  ? SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id)
+              // Tentar identificar a série correta mesmo quando o ID da disponibilidade
+              // não tem o prefixo "serie_" (caso típico logo após criar a série).
+              final serieEncontrada = widget.series != null
+                  ? DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+                      disponibilidade,
+                      widget.series!,
+                      disponibilidade.data,
+                    )
                   : null;
+              final serieIdDaDisponibilidade = disponibilidade.id.startsWith('serie_')
+                  ? SeriesHelper.extrairSerieIdDeDisponibilidade(
+                      disponibilidade.id,
+                    )
+                  : serieEncontrada?.id;
 
               // Atualizar todos os cartões locais da mesma série ESPECÍFICA
               setState(() {
@@ -280,9 +292,25 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                     // Se ambas são séries, comparar os IDs das séries
                     final serieIdDaDisp = SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
                     pertenceMesmaSerie = serieIdDaDisp == serieIdDaDisponibilidade;
-                  } else if (serieIdDaDisponibilidade == null && !disp.id.startsWith('serie_')) {
-                    // Se nenhuma é série (ambas são "Única"), verificar apenas o tipo
-                    pertenceMesmaSerie = disp.tipo == disponibilidade.tipo;
+                  } else if (serieEncontrada != null && !disp.id.startsWith('serie_')) {
+                    // Se o cartão ainda não tem ID de série, validar pelo padrão da série
+                    final dataDisp = DateTime(
+                      disp.data.year,
+                      disp.data.month,
+                      disp.data.day,
+                    );
+                    final dentroPeriodo =
+                        !dataDisp.isBefore(serieEncontrada.dataInicio) &&
+                        (serieEncontrada.dataFim == null ||
+                            !dataDisp.isAfter(serieEncontrada.dataFim!));
+                    if (disp.tipo == serieEncontrada.tipo &&
+                        dentroPeriodo &&
+                        SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
+                          dataDisp,
+                          serieEncontrada,
+                        )) {
+                      pertenceMesmaSerie = true;
+                    }
                   }
                   
                   if (pertenceMesmaSerie) {
@@ -297,6 +325,40 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
               }
               
               // notificar alterações em série
+              widget.onChanged?.call();
+            } else if (aplicarEmTodos == false) {
+              // Salvar exceção de horários apenas para este dia
+              final horariosParaSalvar =
+                  List<String>.from(disponibilidade.horarios);
+              if (horariosParaSalvar.length >= 2 &&
+                  horariosParaSalvar[0].trim().isNotEmpty &&
+                  horariosParaSalvar[1].trim().isNotEmpty) {
+                final serieEncontrada = widget.series != null
+                    ? DisponibilidadeDataGestaoService
+                        .encontrarSeriePorDisponibilidade(
+                        disponibilidade,
+                        widget.series!,
+                        disponibilidade.data,
+                      )
+                    : null;
+                final serieId = serieEncontrada?.id ??
+                    (disponibilidade.id.startsWith('serie_')
+                        ? SeriesHelper.extrairSerieIdDeDisponibilidade(
+                            disponibilidade.id,
+                          )
+                        : null);
+
+                if (serieId != null && serieId.isNotEmpty) {
+                  await DisponibilidadeSerieService.modificarHorariosDataSerie(
+                    serieId: serieId,
+                    medicoId: disponibilidade.medicoId,
+                    data: disponibilidade.data,
+                    horarios: horariosParaSalvar,
+                    unidade: widget.unidade,
+                  );
+                }
+              }
+              // notificar alterações para o dia específico
               widget.onChanged?.call();
             }
           });

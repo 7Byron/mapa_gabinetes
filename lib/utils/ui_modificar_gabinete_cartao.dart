@@ -312,26 +312,30 @@ Future<bool> _modificarGabineteCartaoSerie({
 
   // Se não encontrou pelo ID, buscar na lista de séries local
   if (serieId == null || !series.any((s) => s.id == serieId)) {
-    final serieCorrespondente = series.firstWhere(
-      (s) =>
-          s.medicoId == medicoId &&
-          s.dataInicio.isBefore(dataNormalizada.add(const Duration(days: 1))) &&
-          (s.dataFim == null ||
-              s.dataFim!.isAfter(dataNormalizada.subtract(const Duration(days: 1)))) &&
-          s.tipo == disponibilidade.tipo,
-      orElse: () => SerieRecorrencia(
-        id: '',
-        medicoId: '',
-        dataInicio: DateTime(1900),
-        tipo: '',
-        horarios: [],
-        gabineteId: null,
-        parametros: {},
-        ativo: false,
-      ),
-    );
+    SerieRecorrencia? serieCorrespondente;
+    for (final serie in series) {
+      if (serie.medicoId != medicoId ||
+          serie.tipo != disponibilidade.tipo) {
+        continue;
+      }
+      if (serie.dataInicio
+          .isAfter(dataNormalizada.add(const Duration(days: 1)))) {
+        continue;
+      }
+      if (serie.dataFim != null &&
+          serie.dataFim!
+              .isBefore(dataNormalizada.subtract(const Duration(days: 1)))) {
+        continue;
+      }
+      if (!SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
+          dataNormalizada, serie)) {
+        continue;
+      }
+      serieCorrespondente = serie;
+      break;
+    }
 
-    if (serieCorrespondente.id.isNotEmpty) {
+    if (serieCorrespondente != null) {
       serieId = serieCorrespondente.id;
     }
   }
@@ -351,26 +355,30 @@ Future<bool> _modificarGabineteCartaoSerie({
       );
 
       // Tentar encontrar série correspondente
-      final serieCorrespondente = seriesDoFirestore.firstWhere(
-        (s) =>
-            s.medicoId == medicoId &&
-            s.dataInicio.isBefore(dataNormalizada.add(const Duration(days: 1))) &&
-            (s.dataFim == null ||
-                s.dataFim!.isAfter(dataNormalizada.subtract(const Duration(days: 1)))) &&
-            s.tipo == disponibilidade.tipo,
-        orElse: () => SerieRecorrencia(
-          id: '',
-          medicoId: '',
-          dataInicio: DateTime(1900),
-          tipo: '',
-          horarios: [],
-          gabineteId: null,
-          parametros: {},
-          ativo: false,
-        ),
-      );
+      SerieRecorrencia? serieCorrespondente;
+      for (final serie in seriesDoFirestore) {
+        if (serie.medicoId != medicoId ||
+            serie.tipo != disponibilidade.tipo) {
+          continue;
+        }
+        if (serie.dataInicio
+            .isAfter(dataNormalizada.add(const Duration(days: 1)))) {
+          continue;
+        }
+        if (serie.dataFim != null &&
+            serie.dataFim!.isBefore(
+                dataNormalizada.subtract(const Duration(days: 1)))) {
+          continue;
+        }
+        if (!SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
+            dataNormalizada, serie)) {
+          continue;
+        }
+        serieCorrespondente = serie;
+        break;
+      }
 
-      if (serieCorrespondente.id.isNotEmpty) {
+      if (serieCorrespondente != null) {
         serieId = serieCorrespondente.id;
         debugPrint('✅ Série encontrada no Firestore: $serieId');
         // Adicionar à lista local para futuras referências
@@ -682,7 +690,7 @@ Future<bool> _alocarOuRealocarSerie({
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop('serie'),
-              child: const Text('Toda a série'),
+              child: const Text('Toda a série a partir deste dia'),
             ),
           ] else ...[
             TextButton(

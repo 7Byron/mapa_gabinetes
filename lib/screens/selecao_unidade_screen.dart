@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/unidade.dart';
 import '../services/unidade_service.dart';
 import '../services/password_service.dart';
+import '../services/unidade_selecionada_service.dart';
 import 'cadastro_unidade_screen.dart';
 import 'login_screen.dart';
 
@@ -59,6 +60,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
   }
 
   void _selecionarUnidade(Unidade unidade) {
+    UnidadeSelecionadaService.salvarUnidadeSelecionada(unidade.id);
     Navigator.push(
       context,
       MaterialPageRoute(

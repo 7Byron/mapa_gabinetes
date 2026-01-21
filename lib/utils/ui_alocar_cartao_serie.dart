@@ -42,7 +42,7 @@ Future<bool> alocarCartaoSerie({
     DateTime? dataEspecifica,
     List<String>? horarios,
   }) onAlocarMedico,
-  required VoidCallback onAtualizarEstado,
+  required Future<void> Function() onAtualizarEstado,
   void Function(String medicoId, String gabineteId, DateTime data)? onAlocacaoSerieOtimista,
   required void Function(double progresso, String mensagem) onProgresso,
   required Unidade? unidade,
@@ -70,7 +70,7 @@ Future<bool> alocarCartaoSerie({
             ),
             TextButton(
               onPressed: () => Navigator.of(ctxDialog).pop('serie'),
-              child: const Text('Toda a série'),
+              child: const Text('Toda a série a partir deste dia'),
             ),
             TextButton(
               onPressed: () => Navigator.of(ctxDialog).pop(null),
@@ -88,6 +88,7 @@ Future<bool> alocarCartaoSerie({
 
     if (escolha == '1dia') {
       // Alocar apenas este dia usando AlocacaoUnicaService
+      onProgresso(0.15, 'A preparar alocação...');
 
       final sucesso = await AlocacaoUnicaService.alocar(
         medicoId: medicoId,
@@ -100,6 +101,13 @@ Future<bool> alocarCartaoSerie({
         serieIdExtraido: serieIdExtraido,
       );
 
+      if (sucesso) {
+        onProgresso(0.70, 'A atualizar dados...');
+        await onAtualizarEstado();
+        onProgresso(1.0, 'Concluído!');
+      } else {
+        onProgresso(1.0, 'Falha ao alocar');
+      }
       return sucesso;
     } else if (escolha == 'serie') {
       // Alocar toda a série usando AlocacaoSerieService
@@ -114,7 +122,9 @@ Future<bool> alocarCartaoSerie({
         unidade: unidade,
         context: context,
         onAlocacaoSerieOtimista: onAlocacaoSerieOtimista,
-        onAtualizarEstado: onAtualizarEstado,
+        onAtualizarEstado: () async {
+          await onAtualizarEstado();
+        },
         onProgresso: onProgresso,
         serieIdExtraido: serieIdExtraido,
       );

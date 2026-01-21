@@ -9,6 +9,7 @@ import '../models/alocacao.dart';
 import 'alocacao_medicos_logic.dart' as logic;
 import '../services/alocacao_clinica_config_service.dart';
 import '../services/cache_version_service.dart';
+import 'alocacao_cache_store.dart';
 
 // Cache para dados de encerramento (feriados, dias de encerramento, horários)
 // Esses dados mudam raramente, então podemos cacheá-los por unidade e ano
@@ -35,6 +36,7 @@ Future<void> invalidateCacheEncerramento([String? unidadeId, int? ano]) async {
 /// - [alocacoes]: Lista de alocações (será atualizada)
 /// - [medicosDisponiveis]: Lista de médicos disponíveis (será atualizada)
 /// - [recarregarMedicos]: Se true, recarrega gabinetes e médicos do servidor
+/// - [calcularMedicosDisponiveis]: Se false, adia cálculo para outra fase
 /// - [onProgress]: Callback opcional para atualizar o progresso (progresso de 0.0 a 1.0, mensagem)
 /// - [onStateUpdate]: Callback opcional para atualizar o estado (chamado quando necessário)
 ///
@@ -58,6 +60,7 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
   required List<Alocacao> alocacoes,
   required List<Medico> medicosDisponiveis,
   bool recarregarMedicos = false,
+  bool calcularMedicosDisponiveis = true,
   Function(double progresso, String mensagem)? onProgress,
   Function()? onStateUpdate,
 }) async {
@@ -222,171 +225,196 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       debugPrint('⏱️ [PERF] Exceções: ${tempoExcecoes}ms');
     }
 
-    // FASE 2: Carregar dados essenciais (gabinetes, médicos, disponibilidades e alocações)
-    onProgress?.call(0.15, 'A carregar dados...');
-    final inicioDados = DateTime.now();
+    final cacheDisp = AlocacaoCacheStore.getDisponibilidades(dataNormalizada);
+    final cacheAloc = AlocacaoCacheStore.getAlocacoes(dataNormalizada);
+    final podeUsarCache =
+        !recarregarMedicos &&
+        cacheDisp != null &&
+        cacheAloc != null &&
+        gabinetes.isNotEmpty &&
+        medicos.isNotEmpty;
 
-    // Timer para atualizar progresso continuamente durante carregamento (15% -> 70%)
-    Timer? timerProgressoContinuo;
-    double progressoAtual = 0.15;
-    bool carregamentoCompleto = false; // Flag para controlar quando o carregamento termina
-    
-    timerProgressoContinuo = Timer.periodic(const Duration(milliseconds: 80), (timer) {
-      // CORREÇÃO: Cancelar timer imediatamente se carregamento completo ou progresso atingido
-      if (carregamentoCompleto || progressoAtual >= 0.70) {
-        timer.cancel();
+    if (podeUsarCache) {
+      onProgress?.call(0.60, 'A usar cache do dia...');
+      disponibilidades
+        ..clear()
+        ..addAll(cacheDisp);
+      alocacoes
+        ..clear()
+        ..addAll(cacheAloc);
+    } else {
+      // FASE 2: Carregar dados essenciais (gabinetes, médicos, disponibilidades e alocações)
+      onProgress?.call(0.15, 'A carregar dados...');
+      final inicioDados = DateTime.now();
+
+      // Timer para atualizar progresso continuamente durante carregamento (15% -> 70%)
+      Timer? timerProgressoContinuo;
+      double progressoAtual = 0.15;
+      bool carregamentoCompleto = false; // Flag para controlar quando o carregamento termina
+
+      const limiteProgresso = 0.85;
+      timerProgressoContinuo =
+          Timer.periodic(const Duration(milliseconds: 80), (timer) {
+        // CORREÇÃO: Cancelar timer imediatamente se carregamento completo ou progresso atingido
+        if (carregamentoCompleto || progressoAtual >= limiteProgresso) {
+          timer.cancel();
+          timerProgressoContinuo = null;
+          return;
+        }
+        progressoAtual =
+            progressoAtual + (limiteProgresso - progressoAtual) * 0.03;
+        progressoAtual = progressoAtual.clamp(0.15, limiteProgresso);
+        onProgress?.call(progressoAtual, 'A carregar dados...');
+      });
+
+      try {
+        // Carregar dados usando a lógica existente
+        await logic.AlocacaoMedicosLogic.carregarDadosIniciais(
+        gabinetes: gabinetes,
+        medicos: medicos,
+        disponibilidades: disponibilidades,
+        alocacoes: alocacoes,
+        onGabinetes: (g) {
+          if (!recarregarMedicos && g.isEmpty && gabinetes.isNotEmpty) {
+            return;
+          }
+          gabinetes.clear();
+          gabinetes.addAll(g);
+        },
+        onMedicos: (m) {
+          if (!recarregarMedicos && m.isEmpty && medicos.isNotEmpty) {
+            return;
+          }
+          medicos.clear();
+          medicos.addAll(m);
+        },
+        onDisponibilidades: (d) {
+          disponibilidades.clear();
+          disponibilidades.addAll(d);
+        },
+        onAlocacoes: (a) {
+          // Preservar alocações otimistas durante recarregamento
+          final alocacoesMap = <String, Alocacao>{};
+
+          // Primeiro, adicionar alocações do servidor
+          for (final aloc in a) {
+            final chave =
+                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+            alocacoesMap[chave] = aloc;
+          }
+
+          // Verificar se a alocação é do dia selecionado antes de preservar
+          final dataNormalized = DateTime(data.year, data.month, data.day);
+
+          // Preservar alocações otimistas do dia selecionado
+          for (final aloc in alocacoes) {
+            final alocDateNormalized = DateTime(
+              aloc.data.year,
+              aloc.data.month,
+              aloc.data.day,
+            );
+            if (alocDateNormalized != dataNormalized) {
+              continue;
+            }
+
+            if (aloc.id.startsWith('otimista_')) {
+              final chave =
+                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+
+              if (!alocacoesMap.containsKey(chave)) {
+                alocacoesMap[chave] = aloc;
+              }
+            } else if (aloc.id.startsWith('serie_')) {
+              final chave =
+                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+              if (!alocacoesMap.containsKey(chave)) {
+                alocacoesMap[chave] = aloc;
+              }
+            }
+          }
+
+          alocacoes.clear();
+          alocacoes.addAll(alocacoesMap.values);
+        },
+        unidade: unidade,
+        dataFiltroDia: data,
+        reloadStatic: recarregarMedicos,
+        excecoesCanceladas: datasComExcecoesCanceladas,
+      );
+
+        // CORREÇÃO: Marcar carregamento como completo e cancelar timer imediatamente
+        carregamentoCompleto = true;
+        timerProgressoContinuo?.cancel();
         timerProgressoContinuo = null;
-        return;
+
+        final tempoDados = DateTime.now().difference(inicioDados).inMilliseconds;
+        // Reduzir logs desnecessários - apenas mostrar se demorar muito
+        if (tempoDados > 1000) {
+          debugPrint('⏱️ [PERF] Dados Firestore: ${tempoDados}ms');
+        }
+      } finally {
+        // CORREÇÃO CRÍTICA: Garantir que timer seja sempre cancelado, mesmo em caso de erro
+        carregamentoCompleto = true;
+        timerProgressoContinuo?.cancel();
+        timerProgressoContinuo = null;
       }
-      progressoAtual = (progressoAtual + 0.008).clamp(0.15, 0.70);
-      onProgress?.call(progressoAtual, 'A carregar dados...');
-    });
-
-    try {
-      // Carregar dados usando a lógica existente
-      await logic.AlocacaoMedicosLogic.carregarDadosIniciais(
-      gabinetes: gabinetes,
-      medicos: medicos,
-      disponibilidades: disponibilidades,
-      alocacoes: alocacoes,
-      onGabinetes: (g) {
-        if (!recarregarMedicos && g.isEmpty && gabinetes.isNotEmpty) {
-          return;
-        }
-        gabinetes.clear();
-        gabinetes.addAll(g);
-      },
-      onMedicos: (m) {
-        if (!recarregarMedicos && m.isEmpty && medicos.isNotEmpty) {
-          return;
-        }
-        medicos.clear();
-        medicos.addAll(m);
-      },
-      onDisponibilidades: (d) {
-        disponibilidades.clear();
-        disponibilidades.addAll(d);
-      },
-      onAlocacoes: (a) {
-        // Preservar alocações otimistas durante recarregamento
-        final alocacoesMap = <String, Alocacao>{};
-
-        // Primeiro, adicionar alocações do servidor
-        for (final aloc in a) {
-          final chave =
-              '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-          alocacoesMap[chave] = aloc;
-        }
-
-        // Verificar se a alocação é do dia selecionado antes de preservar
-        final dataNormalized = DateTime(data.year, data.month, data.day);
-
-        // Preservar alocações otimistas do dia selecionado
-        for (final aloc in alocacoes) {
-          final alocDateNormalized = DateTime(
-            aloc.data.year,
-            aloc.data.month,
-            aloc.data.day,
-          );
-          if (alocDateNormalized != dataNormalized) {
-            continue;
-          }
-
-          if (aloc.id.startsWith('otimista_')) {
-            final chave =
-                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-
-            if (!alocacoesMap.containsKey(chave)) {
-              alocacoesMap[chave] = aloc;
-            }
-          } else if (aloc.id.startsWith('serie_')) {
-            final chave =
-                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-            if (!alocacoesMap.containsKey(chave)) {
-              alocacoesMap[chave] = aloc;
-            }
-          }
-        }
-
-        alocacoes.clear();
-        alocacoes.addAll(alocacoesMap.values);
-      },
-      unidade: unidade,
-      dataFiltroDia: data,
-      reloadStatic: recarregarMedicos,
-      excecoesCanceladas: datasComExcecoesCanceladas,
-    );
-
-      // CORREÇÃO: Marcar carregamento como completo e cancelar timer imediatamente
-      carregamentoCompleto = true;
-      timerProgressoContinuo?.cancel();
-      timerProgressoContinuo = null;
-      
-      final tempoDados = DateTime.now().difference(inicioDados).inMilliseconds;
-      // Reduzir logs desnecessários - apenas mostrar se demorar muito
-      if (tempoDados > 1000) {
-        debugPrint('⏱️ [PERF] Dados Firestore: ${tempoDados}ms');
-      }
-    } finally {
-      // CORREÇÃO CRÍTICA: Garantir que timer seja sempre cancelado, mesmo em caso de erro
-      carregamentoCompleto = true;
-      timerProgressoContinuo?.cancel();
-      timerProgressoContinuo = null;
     }
     
-    // Garantir que o progresso esteja em 70% após carregar dados
-    onProgress?.call(0.75, 'A processar médicos disponíveis...');
+    if (calcularMedicosDisponiveis) {
+      // Garantir que o progresso esteja em 70% após carregar dados
+      onProgress?.call(0.75, 'A processar médicos disponíveis...');
 
-    // FASE 3: Calcular médicos disponíveis
-    // Isso garante que os médicos disponíveis sejam sempre calculados após carregar os dados
-    // dataNormalizada já foi definida acima
-    
-    // Identificar médicos alocados no dia
-    final medicosAlocados = alocacoes
-        .where((a) {
-          final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-          return aDate == dataNormalizada;
-        })
-        .map((a) => a.medicoId)
-        .toSet();
+      // FASE 3: Calcular médicos disponíveis
+      // Isso garante que os médicos disponíveis sejam sempre calculados após carregar os dados
+      // dataNormalizada já foi definida acima
 
-    // Criar Set de médicos com disponibilidade para o dia
-    final medicosComDisponibilidade = <String>{};
-    for (final d in disponibilidades) {
-      final dDate = DateTime(d.data.year, d.data.month, d.data.day);
-      if (dDate == dataNormalizada) {
-        // Verificar se esta disponibilidade não tem exceção cancelada
+      // Identificar médicos alocados no dia
+      final medicosAlocados = alocacoes
+          .where((a) {
+            final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+            return aDate == dataNormalizada;
+          })
+          .map((a) => a.medicoId)
+          .toSet();
+
+      // Criar Set de médicos com disponibilidade para o dia
+      final medicosComDisponibilidade = <String>{};
+      for (final d in disponibilidades) {
+        final dDate = DateTime(d.data.year, d.data.month, d.data.day);
+        if (dDate == dataNormalizada) {
+          // Verificar se esta disponibilidade não tem exceção cancelada
+          final dataKey =
+              '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
+          if (!datasComExcecoesCanceladas.contains(dataKey)) {
+            medicosComDisponibilidade.add(d.medicoId);
+          }
+        }
+      }
+
+      // Calcular médicos disponíveis
+      medicosDisponiveis.clear();
+      medicosDisponiveis.addAll(medicos.where((m) {
+        // Filtrar: Não mostrar médicos inativos
+        if (!m.ativo) {
+          return false;
+        }
+
+        // Verifica se não está alocado
+        if (medicosAlocados.contains(m.id)) {
+          return false;
+        }
+
+        // Verifica se tem exceção cancelada para esse dia
         final dataKey =
-            '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
-        if (!datasComExcecoesCanceladas.contains(dataKey)) {
-          medicosComDisponibilidade.add(d.medicoId);
+            '${m.id}_${data.year}-${data.month}-${data.day}';
+        if (datasComExcecoesCanceladas.contains(dataKey)) {
+          return false; // Não mostrar se tem exceção cancelada
         }
-      }
+
+        // Verificar se o médico está no Set de médicos com disponibilidade
+        return medicosComDisponibilidade.contains(m.id);
+      }).toList());
     }
-
-    // Calcular médicos disponíveis
-    medicosDisponiveis.clear();
-    medicosDisponiveis.addAll(medicos.where((m) {
-      // Filtrar: Não mostrar médicos inativos
-      if (!m.ativo) {
-        return false;
-      }
-
-      // Verifica se não está alocado
-      if (medicosAlocados.contains(m.id)) {
-        return false;
-      }
-
-      // Verifica se tem exceção cancelada para esse dia
-      final dataKey =
-          '${m.id}_${data.year}-${data.month}-${data.day}';
-      if (datasComExcecoesCanceladas.contains(dataKey)) {
-        return false; // Não mostrar se tem exceção cancelada
-      }
-
-      // Verificar se o médico está no Set de médicos com disponibilidade
-      return medicosComDisponibilidade.contains(m.id);
-    }).toList());
 
     final tempoTotal = DateTime.now().difference(inicioTotal).inMilliseconds;
     // CORREÇÃO: Reduzir logs - apenas mostrar se demorar muito (> 2000ms)
@@ -394,7 +422,7 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       debugPrint('⏱️ [PERF] Total: ${tempoTotal}ms');
     }
     
-    onProgress?.call(1.0, 'Concluído!');
+    onProgress?.call(0.85, 'A preparar alocações de séries...');
 
     // Converter encerraDias para Map normal para evitar problemas de serialização
     final encerraDiasNormal = Map<int, bool>.from(encerraDias);

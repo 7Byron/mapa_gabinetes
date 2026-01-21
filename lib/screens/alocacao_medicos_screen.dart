@@ -115,6 +115,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   String _mensagemDesalocacao = 'A iniciar...';
   Timer? _debounceTimer;
   Timer? _timerProgresso; // Timer para atualizar progresso gradualmente
+  Timer? _timerProgressoSimulado;
   DateTime?
       _ultimaAtualizacaoMedicos; // Última vez que médicos disponíveis foram atualizados
   Timer?
@@ -746,7 +747,13 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
   void _atualizarProgressoSeMontado(double progresso, String mensagem) {
     _executarSeMontado(() {
-      _atualizarProgressoGradual(progresso, mensagem);
+      final progressoClamped = progresso.clamp(0.0, 1.0);
+      _setStateSeMontado(() {
+        mensagemProgresso = mensagem;
+        if (progressoClamped >= progressoCarregamento) {
+          progressoCarregamento = progressoClamped;
+        }
+      });
     });
   }
 
@@ -849,13 +856,42 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           dataNormalizada; // Atualizar também a data visualizada
 
       isCarregando = true;
+      progressoCarregamento = 0.0;
+      mensagemProgresso = 'A iniciar...';
       // Limpar dados do dia anterior antes de carregar novos dados
       _limparDadosAlocacoes();
     });
+
+    _iniciarProgressoSimulado();
+  }
+
+  void _iniciarProgressoSimulado() {
+    _timerProgressoSimulado?.cancel();
+    _timerProgressoSimulado =
+        Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted || !isCarregando) {
+        timer.cancel();
+        return;
+      }
+      const limite = 0.90;
+      if (progressoCarregamento >= limite) {
+        timer.cancel();
+        return;
+      }
+      _setStateSeMontado(() {
+        progressoCarregamento =
+            (progressoCarregamento + 0.01).clamp(0.0, limite);
+      });
+    });
+  }
+
+  void _pararProgressoSimulado() {
+    _timerProgressoSimulado?.cancel();
   }
 
   Future<void> _finalizarMudancaDataComSucesso(
       DateChangeResult resultado) async {
+    _pararProgressoSimulado();
     _setStateSeMontado(() {
       clinicaFechada = resultado.clinicaFechada;
       mensagemClinicaFechada = resultado.mensagemClinicaFechada;
@@ -872,8 +908,39 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     // NOTA: Os médicos disponíveis já foram calculados em atualizarDadosDoDia,
     // mas precisamos atualizar novamente após regenerar as séries para garantir
     // que médicos com alocações de séries não apareçam como disponíveis
-    _atualizarProgressoGradual(0.90, 'A processar médicos disponíveis...');
-    await _atualizarMedicosDisponiveis();
+    Timer? timerFinal;
+    timerFinal = Timer.periodic(const Duration(milliseconds: 80), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final alvo = 0.98;
+      if (progressoCarregamento >= alvo) {
+        timer.cancel();
+        return;
+      }
+      _setStateSeMontado(() {
+        progressoCarregamento =
+            (progressoCarregamento + (alvo - progressoCarregamento) * 0.06)
+                .clamp(0.0, alvo);
+      });
+    });
+
+    final cacheDisponiveis =
+        AlocacaoCacheStore.getMedicosDisponiveis(selectedDate);
+    if (cacheDisponiveis != null) {
+      _atualizarProgressoGradual(
+          0.96, 'A usar cache de médicos disponíveis...');
+      _setStateSeMontado(() {
+        medicosDisponiveis = List<Medico>.from(cacheDisponiveis);
+      });
+    } else {
+      _atualizarProgressoGradual(0.96, 'A processar médicos disponíveis...');
+      await _atualizarMedicosDisponiveis();
+      AlocacaoCacheStore.updateMedicosDisponiveis(
+          selectedDate, medicosDisponiveis);
+    }
+    timerFinal.cancel();
 
     // Atualizar para 100% apenas no final, sem mensagens intermediárias
     _setStateSeMontado(() {
@@ -892,6 +959,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   }
 
   void _finalizarMudancaDataComErro(Object erro) {
+    _pararProgressoSimulado();
     _logDebug('❌ Erro ao atualizar dados do dia: $erro');
     _setStateSeMontado(() {
       isCarregando = false;
@@ -1321,7 +1389,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, 'serie'),
-            child: const Text('Toda a série'),
+            child: const Text('Toda a série a partir deste dia'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, null),
@@ -1667,6 +1735,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     WidgetsBinding.instance.removeObserver(this);
     _debounceTimer?.cancel();
     _timerProgresso?.cancel();
+    _timerProgressoSimulado?.cancel();
     _timeoutFlagsTransicao?.cancel();
     _progressaoDadosController.parar();
     _transformationController.dispose();

@@ -11,6 +11,7 @@ import '../screens/dias_encerramento_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
 import '../screens/lista_alocacoes_screen.dart';
 import '../screens/scripts_screen.dart';
+import '../services/unidade_selecionada_service.dart';
 
 /// Drawer personalizado com menu de navegação
 /// Inclui opções separadas para configurar horários e dias de encerramento
@@ -223,6 +224,7 @@ class CustomDrawer extends StatelessWidget {
               style: TextStyle(color: Colors.red),
             ),
             onTap: () {
+              UnidadeSelecionadaService.limparUnidadeSelecionada();
               Navigator.pop(context);
               Navigator.pushAndRemoveUntil(
                 context,

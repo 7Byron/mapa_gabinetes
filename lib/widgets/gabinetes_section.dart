@@ -288,6 +288,14 @@ class _GabinetesSectionState extends State<GabinetesSection> {
       final bool eSerie = alocacaoAtual.id.startsWith('serie_');
       String tipoSerie = disponibilidade.tipo;
       bool podeSerSerie = eSerie || (tipoSerie != 'Única' && tipoSerie != '');
+      String? serieIdEncontrado;
+      if (eSerie && alocacaoAtual.id.isNotEmpty) {
+        serieIdEncontrado =
+            SeriesHelper.extrairSerieIdDeDisponibilidade(alocacaoAtual.id);
+        if (serieIdEncontrado.startsWith('serie_serie_')) {
+          serieIdEncontrado = serieIdEncontrado.substring(7);
+        }
+      }
 
       // CORREÇÃO CRÍTICA: Se não encontrou alocação em widget.alocacoes,
       // buscar série diretamente do Firestore para verificar se é série
@@ -329,6 +337,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                 '✅ [REALOCAÇÃO-MÉDICO] Série encontrada no Firestore: ${serieEncontrada.id}, tipo: ${serieEncontrada.tipo}');
             podeSerSerie = true;
             tipoSerie = serieEncontrada.tipo;
+            serieIdEncontrado ??= serieEncontrada.id;
           } else {
 
             debugPrint(
@@ -339,43 +348,143 @@ class _GabinetesSectionState extends State<GabinetesSection> {
         }
       }
 
+      // CORREÇÃO: Se é série mas não temos o tipo (tipoSerie vazio/Única),
+      // tentar encontrar a série pelo ID extraído da alocação
+      if (eSerie && (tipoSerie.isEmpty || tipoSerie == 'Única')) {
+        try {
+          String? serieId;
+          if (alocacaoAtual.id.startsWith('serie_')) {
+            serieId =
+                SeriesHelper.extrairSerieIdDeDisponibilidade(alocacaoAtual.id);
+            if (serieId.startsWith('serie_serie_')) {
+              serieId = serieId.substring(7);
+            }
+          }
+
+          if (serieId != null && serieId.isNotEmpty) {
+            final series = await SerieService.carregarSeries(
+              medicoId,
+              unidade: widget.unidade,
+            );
+            final serieEncontrada = series.firstWhere(
+              (s) => s.id == serieId,
+              orElse: () => SerieRecorrencia(
+                id: '',
+                medicoId: '',
+                dataInicio: DateTime(1900),
+                tipo: '',
+                horarios: [],
+                gabineteId: null,
+                parametros: {},
+                ativo: false,
+              ),
+            );
+
+            if (serieEncontrada.id.isNotEmpty) {
+              tipoSerie = serieEncontrada.tipo;
+              podeSerSerie = true;
+              serieIdEncontrado ??= serieEncontrada.id;
+              debugPrint(
+                  '✅ [REALOCAÇÃO-MÉDICO] Tipo de série encontrado pelo ID: ${serieEncontrada.tipo}');
+            }
+          }
+        } catch (e) {
+          debugPrint(
+              '❌ [REALOCAÇÃO-MÉDICO] Erro ao buscar série pelo ID: $e');
+        }
+      }
+
+      // CORREÇÃO: Se ainda não sabemos o tipo da série, tentar localizar pela data
+      if (tipoSerie.isEmpty || tipoSerie == 'Única') {
+        try {
+          SerieRecorrencia? serieEncontrada;
+
+          // Tentar com o tipo conhecido primeiro (se houver)
+          if (tipoSerie.isNotEmpty && tipoSerie != 'Única') {
+            serieEncontrada = await _encontrarSerieCorrespondente(
+              medicoId: medicoId,
+              tipo: tipoSerie,
+              data: dataAlvo,
+            );
+          }
+
+          // Se não encontrou, tentar todos os tipos possíveis
+          if (serieEncontrada == null || serieEncontrada.id.isEmpty) {
+            final tiposPossiveis = [
+              'Semanal',
+              'Quinzenal',
+              'Mensal',
+              'Consecutivo'
+            ];
+            for (final tipo in tiposPossiveis) {
+              serieEncontrada = await _encontrarSerieCorrespondente(
+                medicoId: medicoId,
+                tipo: tipo,
+                data: dataAlvo,
+              );
+              if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
+                break;
+              }
+            }
+          }
+
+          if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
+            tipoSerie = serieEncontrada.tipo;
+            podeSerSerie = true;
+            serieIdEncontrado ??= serieEncontrada.id;
+            debugPrint(
+                '✅ [REALOCAÇÃO-MÉDICO] Série localizada para determinar tipo: ${serieEncontrada.tipo}');
+          }
+        } catch (e) {
+          debugPrint(
+              '❌ [REALOCAÇÃO-MÉDICO] Erro ao localizar tipo de série: $e');
+        }
+      }
+
       debugPrint(
           '🔵 [REALOCAÇÃO-MÉDICO] Verificação rápida: eSerie=$eSerie, tipoSerie=$tipoSerie, podeSerSerie=$podeSerSerie');
 
-      // CORREÇÃO: Verificar se o cartão já foi desemparelhado da série (tem exceção)
-      // Usar mesma lógica do cadastro médico: verificar formato do ID em vez de buscar do Firestore
+      // Verificar se o cartão já foi desemparelhado da série (tem exceção)
+      // Usar a mesma lógica do cadastro médico: buscar exceções no Firestore
       bool temExcecao = false;
-      if (eSerie && alocacaoAtual.id.isNotEmpty) {
-        // Extrair ID da série usando SeriesHelper
-        String? serieId;
-        if (alocacaoAtual.id.startsWith('serie_')) {
-          serieId = SeriesHelper.extrairSerieIdDeDisponibilidade(alocacaoAtual.id);
-          // Remover prefixo 'serie_' duplo se existir
-          if (serieId.startsWith('serie_serie_')) {
-            serieId = serieId.substring(7); // Remove primeiro 'serie_'
-          }
-        }
-        
-        // Verificar se a alocação atual tem ID que indica exceção
-        // Exceções têm ID no formato 'serie_${serieId}_${dataKey}'
-        if (serieId != null && serieId.isNotEmpty) {
-          final serieIdPrefix = 'serie_${serieId}_';
-          temExcecao = alocacaoAtual.id.startsWith(serieIdPrefix);
-          
-          // Se ainda não confirmou, verificar em cache local (sem query ao Firestore)
-          // A exceção geralmente já está presente no estado local através das alocações
-          if (!temExcecao) {
-            // Verificar se há alocação para esta data que indica exceção
-            // Se há alocação mas não corresponde ao padrão da série, pode ser exceção
-            debugPrint('⚠️ [REALOCAÇÃO] Verificando exceção localmente (sem query Firestore)...');
-            // Nota: Para validação completa, ainda pode buscar do Firestore se necessário,
-            // mas evita fazer isso na maioria dos casos
-          }
+      if (serieIdEncontrado != null && serieIdEncontrado.isNotEmpty) {
+        try {
+          final dataNormalizada =
+              DateTime(dataAlvo.year, dataAlvo.month, dataAlvo.day);
+          final excecoes = await SerieService.carregarExcecoes(
+            medicoId,
+            unidade: widget.unidade,
+            dataInicio: dataNormalizada,
+            dataFim: dataNormalizada,
+            serieId: serieIdEncontrado,
+            forcarServidor: false,
+          );
+
+          final excecaoExistente = excecoes.firstWhere(
+            (e) =>
+                e.serieId == serieIdEncontrado &&
+                e.data.year == dataNormalizada.year &&
+                e.data.month == dataNormalizada.month &&
+                e.data.day == dataNormalizada.day &&
+                !e.cancelada,
+            orElse: () => ExcecaoSerie(
+              id: '',
+              serieId: '',
+              data: DateTime(1900, 1, 1),
+            ),
+          );
+
+          temExcecao = excecaoExistente.id.isNotEmpty;
+        } catch (e) {
+          debugPrint('⚠️ [REALOCAÇÃO] Erro ao verificar exceção: $e');
         }
       }
 
       // MOSTRAR DIÁLOGO IMEDIATAMENTE se pode ser série
-      if (podeSerSerie && tipoSerie != 'Única') {
+      if (podeSerSerie && (tipoSerie != 'Única' || eSerie)) {
+        final tipoSerieParaDialogo =
+            (tipoSerie.isEmpty || tipoSerie == 'Única') ? 'Série' : tipoSerie;
+        final permiteOpcaoSerie = tipoSerie != 'Única';
 
         final escolha = await showDialog<String>(
           context: context,
@@ -386,9 +495,13 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                 temExcecao
                     ? 'Este cartão da série já foi alocado desemparelhado da série.\n\n'
                         'Deseja realocar apenas este cartão para o novo gabinete?'
-                    : 'Esta alocação faz parte de uma série "$tipoSerie".\n\n'
-                        'Deseja realocar apenas este dia (${dataAlvo.day}/${dataAlvo.month}) '
-                        'ou toda a série a partir deste dia para o novo gabinete?',
+                    : permiteOpcaoSerie
+                        ? 'Esta alocação faz parte de uma série "$tipoSerieParaDialogo".\n\n'
+                            'Deseja realocar apenas este dia (${dataAlvo.day}/${dataAlvo.month}) '
+                            'ou toda a série a partir deste dia para o novo gabinete?'
+                        : 'Esta alocação faz parte de uma série.\n\n'
+                            'Deseja realocar apenas este dia (${dataAlvo.day}/${dataAlvo.month}) '
+                            'para o novo gabinete?',
               ),
               actions: [
                 if (!temExcecao) ...[
@@ -396,10 +509,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                     onPressed: () => Navigator.of(ctxDialog).pop('1dia'),
                     child: const Text('Apenas este dia'),
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.of(ctxDialog).pop('serie'),
-                    child: const Text('Toda a série'),
-                  ),
+                  if (permiteOpcaoSerie)
+                    TextButton(
+                      onPressed: () => Navigator.of(ctxDialog).pop('serie'),
+                      child: const Text('Toda a série a partir deste dia'),
+                    ),
                 ] else ...[
                   TextButton(
                     onPressed: () => Navigator.of(ctxDialog).pop('1dia'),
@@ -888,16 +1002,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               tipo: '',
                             ),
                           );
-
-                          if (disponibilidade.medicoId.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      'Disponibilidade inválida para o médico.')),
-                            );
-                            return;
-                          }
-
+                          final temDisponibilidade =
+                              disponibilidade.medicoId.isNotEmpty;
                           final tipoDisponibilidade = disponibilidade.tipo;
                           final eTipoSerie = tipoDisponibilidade == 'Semanal' ||
                               tipoDisponibilidade == 'Quinzenal' ||
@@ -915,44 +1021,60 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             }
                           }
 
-                          // CORREÇÃO: Para séries, verificar se a série já está alocada no gabinete
-                          // Para únicas, verificar apenas o dia
-                          bool jaEstaAlocadoNoMesmoGabinete = false;
+                          // CORREÇÃO: Se há exceção ativa com gabineteId null, tratar como desalocado
+                          // Isso evita realocação de série quando o cartão foi desemparelhado
+                          bool excecaoSemGabinete = false;
+                          if (eTipoSerie &&
+                              serieIdExtraido != null &&
+                              serieIdExtraido.isNotEmpty) {
+                            try {
+                              final dataNormalizada = DateTime(
+                                  dataAlvo.year, dataAlvo.month, dataAlvo.day);
+                              final excecoes = await SerieService.carregarExcecoes(
+                                medicoId,
+                                unidade: widget.unidade,
+                                dataInicio: dataNormalizada,
+                                dataFim: dataNormalizada,
+                                serieId: serieIdExtraido,
+                                forcarServidor: false,
+                              );
 
-                          if (eTipoSerie) {
-                            // Para séries: verificar se a série está alocada no gabinete
-                            final serieEncontrada =
-                                await _encontrarSerieCorrespondente(
-                              medicoId: medicoId,
-                              tipo: tipoDisponibilidade,
-                              data: dataAlvo,
-                            );
+                              final excecaoExistente = excecoes.firstWhere(
+                                (e) =>
+                                    e.serieId == serieIdExtraido &&
+                                    e.data.year == dataNormalizada.year &&
+                                    e.data.month == dataNormalizada.month &&
+                                    e.data.day == dataNormalizada.day &&
+                                    !e.cancelada,
+                                orElse: () => ExcecaoSerie(
+                                  id: '',
+                                  serieId: '',
+                                  data: DateTime(1900, 1, 1),
+                                ),
+                              );
 
-                            if (serieEncontrada != null) {
-                              jaEstaAlocadoNoMesmoGabinete =
-                                  serieEncontrada.gabineteId == gabinete.id;
-                            } else {
-                              // Se não encontrou série, verificar apenas o dia (fallback)
-                              jaEstaAlocadoNoMesmoGabinete =
-                                  widget.alocacoes.any((a) {
-                                final aDate = DateTime(
-                                    a.data.year, a.data.month, a.data.day);
-                                return a.medicoId == medicoId &&
-                                    a.gabineteId == gabinete.id &&
-                                    aDate == dataAlvo;
-                              });
+                              if (excecaoExistente.id.isNotEmpty &&
+                                  excecaoExistente.gabineteId == null) {
+                                excecaoSemGabinete = true;
+                                debugPrint(
+                                    '🟡 [DRAG-ACCEPT] Exceção sem gabinete ativa - tratar como desalocado');
+                              }
+                            } catch (e) {
+                              debugPrint(
+                                  '⚠️ [DRAG-ACCEPT] Erro ao verificar exceção sem gabinete: $e');
                             }
-                          } else {
-                            // Para únicas: verificar apenas o dia
-                            jaEstaAlocadoNoMesmoGabinete =
-                                widget.alocacoes.any((a) {
-                              final aDate = DateTime(
-                                  a.data.year, a.data.month, a.data.day);
-                              return a.medicoId == medicoId &&
-                                  a.gabineteId == gabinete.id &&
-                                  aDate == dataAlvo;
-                            });
                           }
+
+                          // CORREÇÃO: Verificar apenas o dia/alocação real no estado local
+                          // Isso evita "memória" quando o cartão foi desemparelhado (exceção sem gabinete)
+                          final jaEstaAlocadoNoMesmoGabinete =
+                              widget.alocacoes.any((a) {
+                            final aDate =
+                                DateTime(a.data.year, a.data.month, a.data.day);
+                            return a.medicoId == medicoId &&
+                                a.gabineteId == gabinete.id &&
+                                aDate == dataAlvo;
+                          });
                           // Se já está alocado no mesmo gabinete, desalocar (com pergunta)
                           if (jaEstaAlocadoNoMesmoGabinete) {
                             await widget.onDesalocarMedicoComPergunta(medicoId);
@@ -1027,8 +1149,23 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             }
                           }
 
+                          // Se há exceção sem gabinete, ignorar qualquer realocação detectada
+                          if (excecaoSemGabinete) {
+                            alocacaoEmOutroGabinete = Alocacao(
+                              id: '',
+                              medicoId: '',
+                              gabineteId: '',
+                              data: DateTime(1900, 1, 1),
+                              horarioInicio: '',
+                              horarioFim: '',
+                            );
+                          }
+
                           // FASE 2: Se não encontrou em widget.alocacoes e é série, buscar do Firestore
-                          if (alocacaoEmOutroGabinete.id.isEmpty && eTipoSerie) {
+                          if (alocacaoEmOutroGabinete.id.isEmpty &&
+                              eTipoSerie &&
+                              !excecaoSemGabinete &&
+                              todasAlocacoesMedico.isNotEmpty) {
                             debugPrint(
                                 '🟢 [DRAG-ACCEPT] Não encontrado em widget.alocacoes, buscando série do Firestore...');
                             
@@ -1229,6 +1366,18 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             debugPrint(
                                 '✅ [DRAG-ACCEPT] _realocarMedicoEntreGabinetes concluído');
 
+                            return;
+                          }
+
+                          if (!temDisponibilidade) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Disponibilidade inválida para o médico.'),
+                                ),
+                              );
+                            }
                             return;
                           }
 

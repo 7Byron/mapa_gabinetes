@@ -308,11 +308,17 @@ class AlocacaoMedicosLogic {
   /// OTIMIZAÇÃO: Usa cache de exceções quando disponível para evitar chamadas redundantes
   static Future<Set<String>> extrairExcecoesCanceladasParaDia(
       String unidadeId, DateTime data) async {
+    final cachePorDia =
+        AlocacaoCacheStore.getExcecoesCanceladasParaDia(data);
+    if (cachePorDia != null) {
+      return Set<String>.from(cachePorDia);
+    }
+
     final datasComExcecoesCanceladas = <String>{};
+    final dataNormalizada = DateTime(data.year, data.month, data.day);
     try {
       final firestore = FirebaseFirestore.instance;
       final ano = data.year;
-      final dataNormalizada = DateTime(data.year, data.month, data.day);
 
       // OTIMIZAÇÃO: Tentar usar cache de exceções primeiro
       // Percorrer cache para médicos que têm exceções para este dia
@@ -409,6 +415,8 @@ class AlocacaoMedicosLogic {
       return <String>{};
     }
 
+    AlocacaoCacheStore.updateExcecoesCanceladasParaDia(
+        dataNormalizada, datasComExcecoesCanceladas);
     return datasComExcecoesCanceladas;
   }
 
@@ -434,7 +442,7 @@ class AlocacaoMedicosLogic {
       // Sempre consultar a versão no momento da consulta (sem listeners)
       final sync = await AlocacaoCacheSync.sincronizarVersoes(
         unidade: unidade,
-        forcar: true,
+        forcar: reloadStatic,
       );
       final deveRecarregarStatic = reloadStatic || sync.recarregarStatic;
 

@@ -24,7 +24,7 @@ class AlocacaoCardHandlers {
           return AlertDialog(
             title: const Text('Remover disponibilidade'),
             content: Text(
-              'Remover apenas este dia ou toda a série desde este dia em diante (${disponibilidade.tipo})?',
+              'Remover apenas este dia ou toda a série a partir deste dia (${disponibilidade.tipo})?',
             ),
             actions: [
               TextButton(
@@ -33,7 +33,7 @@ class AlocacaoCardHandlers {
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop('all'),
-                child: const Text('Toda a série'),
+                child: const Text('Toda a série a partir deste dia'),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(null),

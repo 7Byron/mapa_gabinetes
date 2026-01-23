@@ -48,7 +48,7 @@ firebase deploy --only hosting
 git status
 git add .
 git status
-git commit -m "23 jan"
+git commit -m "23.2 jan"
 git push origin master
 
 

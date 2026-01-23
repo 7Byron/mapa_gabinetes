@@ -3,18 +3,31 @@
 import '../models/alocacao.dart';
 import 'time_utils.dart';
 
+class _IntervaloAlocacao {
+  final String medicoId;
+  final int inicio;
+  final int fim;
+
+  const _IntervaloAlocacao({
+    required this.medicoId,
+    required this.inicio,
+    required this.fim,
+  });
+}
+
 class ConflictUtils {
   /// Verifica se há conflito entre quaisquer alocações em um gabinete
   static bool temConflitoGabinete(List<Alocacao> alocs) {
     if (alocs.length < 2) return false;
 
     // Converte todas as alocações para intervalos em minutos
-    final intervals = alocs.map((a) {
-      return {
-        'inicio': TimeUtils.parseTimeToMinutes(a.horarioInicio),
-        'fim': TimeUtils.parseTimeToMinutes(a.horarioFim),
-      };
-    }).toList();
+    final intervals = alocs
+        .map((a) => _IntervaloAlocacao(
+              medicoId: a.medicoId,
+              inicio: TimeUtils.parseTimeToMinutes(a.horarioInicio),
+              fim: TimeUtils.parseTimeToMinutes(a.horarioFim),
+            ))
+        .toList();
 
     // Compara todos os pares de alocações
     for (int i = 0; i < intervals.length; i++) {
@@ -22,11 +35,16 @@ class ConflictUtils {
         final a = intervals[i];
         final b = intervals[j];
 
+        // Não considerar sobreposição do mesmo médico como conflito de gabinete
+        if (a.medicoId == b.medicoId) {
+          continue;
+        }
+
         if (TimeUtils.intervalsSeSobrepoem(
-          a['inicio']!,
-          a['fim']!,
-          b['inicio']!,
-          b['fim']!,
+          a.inicio,
+          a.fim,
+          b.inicio,
+          b.fim,
         )) {
           return true;
         }

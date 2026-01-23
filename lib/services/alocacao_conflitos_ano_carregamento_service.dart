@@ -3,6 +3,8 @@ import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../services/alocacao_ano_alocacoes_service.dart';
 import '../services/alocacao_conflitos_ano_service.dart';
+import '../services/alocacao_clinica_config_service.dart';
+import '../services/alocacao_clinica_status_service.dart';
 
 class AlocacaoConflitosAnoCarregamentoService {
   static Future<List<Map<String, dynamic>>> carregar({
@@ -19,9 +21,64 @@ class AlocacaoConflitosAnoCarregamentoService {
       medicos: medicos,
     );
 
+    var alocacoesFiltradas = todasAlocacoes;
+    try {
+      final feriados = await AlocacaoClinicaConfigService.carregarFeriados(
+        unidadeId: unidade.id,
+        anoSelecionado: ano,
+      );
+      final diasEncerramento =
+          await AlocacaoClinicaConfigService.carregarDiasEncerramento(
+        unidadeId: unidade.id,
+        anoSelecionado: ano,
+      );
+      final config =
+          await AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
+        unidadeId: unidade.id,
+      );
+
+      final datasUnicas = <String, DateTime>{};
+      for (final aloc in todasAlocacoes) {
+        if (aloc.data.year != ano) continue;
+        final dataNormalizada =
+            DateTime(aloc.data.year, aloc.data.month, aloc.data.day);
+        final chaveData =
+            '${dataNormalizada.year}-${dataNormalizada.month}-${dataNormalizada.day}';
+        datasUnicas.putIfAbsent(chaveData, () => dataNormalizada);
+      }
+
+      final diasFechados = <String>{};
+      for (final entry in datasUnicas.entries) {
+        final resultado = AlocacaoClinicaStatusService.verificar(
+          data: entry.value,
+          nuncaEncerra: config.nuncaEncerra,
+          encerraFeriados: config.encerraFeriados,
+          encerraDias: config.encerraDias,
+          horariosClinica: config.horariosClinica,
+          diasEncerramento: diasEncerramento,
+          feriados: feriados,
+        );
+        if (resultado.fechada) {
+          diasFechados.add(entry.key);
+        }
+      }
+
+      if (diasFechados.isNotEmpty) {
+        alocacoesFiltradas = todasAlocacoes.where((aloc) {
+          final dataNormalizada =
+              DateTime(aloc.data.year, aloc.data.month, aloc.data.day);
+          final chaveData =
+              '${dataNormalizada.year}-${dataNormalizada.month}-${dataNormalizada.day}';
+          return !diasFechados.contains(chaveData);
+        }).toList();
+      }
+    } catch (_) {
+      alocacoesFiltradas = todasAlocacoes;
+    }
+
     onProgresso?.call(0.50);
     final conflitos = AlocacaoConflitosAnoService.calcular(
-      alocacoes: todasAlocacoes,
+      alocacoes: alocacoesFiltradas,
       gabinetes: gabinetes,
       medicos: medicos,
       ano: ano,

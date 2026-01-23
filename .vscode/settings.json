@@ -16,14 +16,23 @@
     "**/android/**",
     "**/build/**",
     "**/.gradle/**",
-    "**/.dart_tool/**"
+    "**/.dart_tool/**",
+    "**/.pub-cache/**",
+    "**/flutter/**"
   ],
   "java.project.import.exclusions": [
     "**/burnout/**",
     "**/android/**",
     "**/build/**",
     "**/.gradle/**",
-    "**/.dart_tool/**"
-  ]
+    "**/.dart_tool/**",
+    "**/.pub-cache/**",
+    "**/flutter/**"
+  ],
+  "java.import.gradle.enabled": false,
+  "java.import.maven.enabled": false,
+  "java.project.import.onFirstTimeStartup": "disabled",
+  "java.enabled": false,
+  "java.jdt.ls.enabled": false
 }
 

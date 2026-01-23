@@ -114,16 +114,11 @@ class _RelatorioOcupacaoDetalheScreenState
       });
 
       String? selecionado = _gabineteSelecionadoId;
-      if (selecionado == null) {
-        if (widget.gabineteIds.isNotEmpty) {
-          for (final id in widget.gabineteIds) {
-            if (gabinetes.any((g) => g.id == id)) {
-              selecionado = id;
-              break;
-            }
-          }
+      if (selecionado == null && widget.gabineteIds.length == 1) {
+        final id = widget.gabineteIds.first;
+        if (gabinetes.any((g) => g.id == id)) {
+          selecionado = id;
         }
-        selecionado ??= gabinetes.isNotEmpty ? gabinetes.first.id : null;
       }
 
       if (!mounted) return;
@@ -131,7 +126,15 @@ class _RelatorioOcupacaoDetalheScreenState
         _gabinetes = gabinetes;
         _gabineteSelecionadoId = selecionado;
       });
-      await _carregarRelatorio();
+      if (selecionado == null) {
+        setState(() {
+          _dias = [];
+          _percentualGeral = 0.0;
+          _carregando = false;
+        });
+      } else {
+        await _carregarRelatorio();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -148,16 +151,15 @@ class _RelatorioOcupacaoDetalheScreenState
     });
 
     try {
-      final ids = _gabineteSelecionadoId != null
-          ? [_gabineteSelecionadoId!]
-          : widget.gabineteIds;
-      if (ids.isEmpty) {
+      if (_gabineteSelecionadoId == null) {
         setState(() {
-          _erro = 'Nenhum gabinete selecionado.';
+          _dias = [];
+          _percentualGeral = 0.0;
           _carregando = false;
         });
         return;
       }
+      final ids = [_gabineteSelecionadoId!];
       final dias = await RelatoriosService.ocupacaoPorGabinetesPorDia(
         inicio: _inicioRelatorio,
         fim: _fimRelatorio,
@@ -350,6 +352,7 @@ class _RelatorioOcupacaoDetalheScreenState
     List<RelatorioOcupacaoDia> dias,
   ) {
     return dias.where((dia) {
+      if (dia.fechado) return false;
       return _matchFiltroDia(dia.data);
     }).toList();
   }
@@ -427,7 +430,7 @@ class _RelatorioOcupacaoDetalheScreenState
       fontWeight: FontWeight.bold,
       color: Colors.white,
     );
-    if (_gabinetes.isEmpty || _gabineteSelecionadoId == null) {
+    if (_gabinetes.isEmpty) {
       return Text(widget.titulo, style: textoStyle);
     }
     return FittedBox(
@@ -442,6 +445,14 @@ class _RelatorioOcupacaoDetalheScreenState
               iconEnabledColor: Colors.white,
               dropdownColor: Colors.blue.shade700,
               style: textoStyle,
+              hint: const Text(
+                'Selecionar gabinete',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                ),
+              ),
               items: _gabinetes.map((gabinete) {
                 return DropdownMenuItem(
                   value: gabinete.id,

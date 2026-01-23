@@ -45,12 +45,12 @@ Future<void> invalidateCacheEncerramento([String? unidadeId, int? ano]) async {
 ///   - 'success': bool - se o carregamento foi bem-sucedido
 ///   - 'clinicaFechada': bool - se a clínica está encerrada
 ///   - 'mensagemClinicaFechada': String - mensagem se a clínica estiver fechada
-///   - 'feriados': List<Map<String, String>> - lista de feriados
-///   - 'diasEncerramento': List<Map<String, dynamic>> - lista de dias de encerramento
-///   - 'horariosClinica': Map<int, List<String>> - horários da clínica
+///   - 'feriados': `List<Map<String, String>>` - lista de feriados
+///   - 'diasEncerramento': `List<Map<String, dynamic>>` - lista de dias de encerramento
+///   - 'horariosClinica': `Map<int, List<String>>` - horários da clínica
 ///   - 'encerraFeriados': bool - se encerra em feriados
 ///   - 'nuncaEncerra': bool - se nunca encerra
-///   - 'encerraDias': Map<int, bool> - dias da semana que encerra
+///   - 'encerraDias': `Map<int, bool>` - dias da semana que encerra
 Future<Map<String, dynamic>> atualizarDadosDoDia({
   required Unidade unidade,
   required DateTime data,

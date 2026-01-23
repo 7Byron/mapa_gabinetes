@@ -107,32 +107,6 @@ class RealocacaoUnicoService {
         if (serieId != null) {
           onProgresso(0.3, 'A criar/atualizar exceção...');
 
-          // CORREÇÃO CRÍTICA: Verificar se já existe uma exceção para esta data
-          // Se existir, atualizar; se não, criar nova
-          final excecoesExistentes = await SerieService.carregarExcecoes(
-            medicoId,
-            unidade: unidade,
-            dataInicio: dataNormalizada,
-            dataFim: dataNormalizada,
-            serieId: serieId,
-            forcarServidor:
-                true, // Forçar servidor para garantir dados atualizados
-          );
-
-          final excecaoExistente = excecoesExistentes.firstWhere(
-            (e) =>
-                e.serieId == serieId &&
-                e.data.year == dataNormalizada.year &&
-                e.data.month == dataNormalizada.month &&
-                e.data.day == dataNormalizada.day &&
-                !e.cancelada,
-            orElse: () => ExcecaoSerie(
-              id: '',
-              serieId: '',
-              data: DateTime(1900, 1, 1),
-            ),
-          );
-
           // Criar ou atualizar exceção para modificar o gabinete deste dia específico
           await DisponibilidadeSerieService.modificarGabineteDataSerie(
             serieId: serieId,

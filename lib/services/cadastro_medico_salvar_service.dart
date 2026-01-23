@@ -100,7 +100,7 @@ class CadastroMedicoSalvarService {
           debugPrint('❌ Erro ao salvar disponibilidade única ${disp.id}: $e');
           debugPrint('   Stack trace: $stackTrace');
 
-          if (mostrarMensagensErro) {
+          if (mostrarMensagensErro && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
@@ -139,7 +139,7 @@ class CadastroMedicoSalvarService {
       }
 
       // Mostrar avisos se houver erros
-      if (unicasErros > 0 && mostrarMensagensErro) {
+      if (unicasErros > 0 && mostrarMensagensErro && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -156,7 +156,7 @@ class CadastroMedicoSalvarService {
         'unicasErros': unicasErros,
       };
     } catch (e) {
-      if (mostrarMensagensErro) {
+      if (mostrarMensagensErro && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erro ao salvar registo: $e')),
         );

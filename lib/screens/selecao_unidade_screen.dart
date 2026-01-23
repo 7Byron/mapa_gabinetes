@@ -123,6 +123,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
     }
 
     // Password correta ou sem passwords configuradas, abrir tela de edição
+    if (!mounted) return;
     final resultado = await Navigator.push(
       context,
       MaterialPageRoute(

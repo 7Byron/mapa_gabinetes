@@ -81,6 +81,7 @@ class _CalendarioDisponibilidadesState
         );
       },
     );
+    if (!context.mounted) return;
 
     if (tipoMarcacao != null) {
       if (tipoMarcacao == 'Consecutivo') {

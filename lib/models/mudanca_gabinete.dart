@@ -20,10 +20,13 @@ class MudancaGabinete {
   }
 
   static MudancaGabinete fromMap(Map<String, dynamic> map) {
+    final dataRaw = map['dataInicio'] != null
+        ? DateTime.parse(map['dataInicio'].toString())
+        : DateTime.now();
+    final dataNormalizada =
+        DateTime(dataRaw.year, dataRaw.month, dataRaw.day);
     return MudancaGabinete(
-      dataInicio: map['dataInicio'] != null
-          ? DateTime.parse(map['dataInicio'].toString())
-          : DateTime.now(),
+      dataInicio: dataNormalizada,
       gabineteId: map['gabineteId']?.toString() ?? '',
     );
   }

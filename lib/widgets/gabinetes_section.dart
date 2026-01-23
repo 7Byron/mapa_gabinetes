@@ -459,6 +459,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             serieId: serieIdEncontrado,
             forcarServidor: false,
           );
+          if (!mounted) return;
 
           final excecaoExistente = excecoes.firstWhere(
             (e) =>
@@ -486,6 +487,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             (tipoSerie.isEmpty || tipoSerie == 'Única') ? 'Série' : tipoSerie;
         final permiteOpcaoSerie = tipoSerie != 'Única';
 
+        if (!mounted) return;
         final escolha = await showDialog<String>(
           context: context,
           builder: (ctxDialog) {
@@ -528,6 +530,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             );
           },
         );
+        if (!mounted) return;
 
         if (escolha == null) {
           // CORREÇÃO: Resetar progressbar se usuário cancelou
@@ -567,6 +570,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
           // Realocar toda a série usando o serviço
           try {
+          if (!mounted) return;
             final sucesso = await RealocacaoSerieService.realocar(
               medicoId: medicoId,
               gabineteOrigem: gabineteOrigem,
@@ -632,6 +636,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
       // A atualização otimista já move o cartão rapidamente, então o progress bar é desnecessário
 
       // Usar serviço de realocação único
+      if (!mounted) return;
       final sucesso = await RealocacaoUnicoService.realocar(
         medicoId: medicoId,
         gabineteOrigem: gabineteOrigem,
@@ -1120,7 +1125,9 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
                             await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:FASE1","message":"FASE 1 - Busca em widget.alocacoes","data":{"medicoId":medicoId,"gabineteDestino":gabinete.id,"dataAlvo":"${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}","totalAlocacoes":todasAlocacoesMedico.length,"alocacoes":todasAlocacoesMedico.map((a)=>({"id":a.id,"gabineteId":a.gabineteId,"data":"${a.data.year}-${a.data.month}-${a.data.day}"})).toList()},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
                             await logFile.close();
-                          } catch (e) {}
+                          } catch (e) {
+                            debugPrint('⚠️ Erro ao gravar debug log (FASE 1): $e');
+                          }
                           // #endregion
 
                           // Se encontrou alocações, verificar se alguma está em outro gabinete
@@ -1344,7 +1351,9 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
                               await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:ANTES_REALOCAR","message":"Antes de chamar _realocarMedicoEntreGabinetes","data":{"medicoId":medicoId,"gabineteOrigem":alocacaoEmOutroGabinete.gabineteId,"gabineteDestino":gabinete.id,"dataAlvo":"${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}","alocacaoId":alocacaoEmOutroGabinete.id,"eTipoSerie":eTipoSerie,"tipoDisponibilidade":tipoDisponibilidade},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
                               await logFile.close();
-                            } catch (e) {}
+                            } catch (e) {
+                              debugPrint('⚠️ Erro ao gravar debug log (ANTES_REALOCAR): $e');
+                            }
                             // #endregion
 
                             await _realocarMedicoEntreGabinetes(
@@ -1360,7 +1369,9 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
                               await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:DEPOIS_REALOCAR","message":"Depois de chamar _realocarMedicoEntreGabinetes","data":{"medicoId":medicoId,"gabineteOrigem":alocacaoEmOutroGabinete.gabineteId,"gabineteDestino":gabinete.id},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
                               await logFile.close();
-                            } catch (e) {}
+                            } catch (e) {
+                              debugPrint('⚠️ Erro ao gravar debug log (DEPOIS_REALOCAR): $e');
+                            }
                             // #endregion
                             
                             debugPrint(
@@ -1370,14 +1381,13 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           }
 
                           if (!temDisponibilidade) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Disponibilidade inválida para o médico.'),
-                                ),
-                              );
-                            }
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Disponibilidade inválida para o médico.'),
+                              ),
+                            );
                             return;
                           }
 
@@ -1388,6 +1398,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                           if (tipoDisponibilidade == 'Única') {
                             // Usar serviço de alocação única
+                            if (!context.mounted) return;
                             await AlocacaoUnicaService.alocar(
                               medicoId: medicoId,
                               gabineteId: gabinete.id,
@@ -1408,6 +1419,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 tipo: tipoDisponibilidade,
                                 data: dataAlvo,
                               );
+                              if (!context.mounted) return;
                             }
                             
                             // Se não encontrou pelo ID extraído, tentar buscar na lista de séries carregadas
@@ -1421,6 +1433,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                   dataFim: dataAlvo,
                                   forcarServidor: false,
                                 );
+                                if (!context.mounted) return;
                                 
                                 serieParaValidar = series.firstWhere(
                                   (s) =>
@@ -1451,27 +1464,25 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 serieParaValidar.id.isNotEmpty &&
                                 (serieParaValidar.horarios.isEmpty ||
                                     serieParaValidar.horarios.length < 2)) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Introduza as horas de inicio e fim primeiro!'),
-                                    backgroundColor: Colors.orange,
-                                    duration: Duration(seconds: 3),
-                                  ),
-                                );
-                              }
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Introduza as horas de inicio e fim primeiro!'),
+                                  backgroundColor: Colors.orange,
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
                               return;
                             }
                             
                             // Usar função reutilizável para alocar cartão de série
                             // Iniciar progresso de alocação (será usado se escolher "serie")
-                            if (mounted) {
-                              setState(() {
-                                _isAlocandoSerie = true;
-                                _progressoAlocacao = 0.0;
-                                _mensagemAlocacao = 'A iniciar...';
-                              });
-                            }
+                            if (!context.mounted) return;
+                            setState(() {
+                              _isAlocandoSerie = true;
+                              _progressoAlocacao = 0.0;
+                              _mensagemAlocacao = 'A iniciar...';
+                            });
 
                             await alocarCartaoSerie(
                               context: context,
@@ -1581,8 +1592,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           final larguraBordaHover = isHovering ? 3.0 : 2.0;
                           final corFundoHover = isHovering
                               ? (corFundo == MyAppTheme.gabineteLivre
-                                  ? MyAppTheme.azulClaro.withOpacity(0.3)
-                                  : corFundo.withOpacity(0.9))
+                                  ? MyAppTheme.azulClaro.withValues(alpha: 0.3)
+                                  : corFundo.withValues(alpha: 0.9))
                               : corFundo;
                           final sombraHover = isHovering
                               ? MyAppTheme.shadowCardHover

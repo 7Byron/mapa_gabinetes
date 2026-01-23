@@ -84,46 +84,46 @@ class _DialogoExcecaoSerieState extends State<DialogoExcecaoSerie> {
               ),
             ),
             const SizedBox(height: 8),
-            RadioListTile<TipoExcecao>(
-              title: const Text('Cancelar um único dia'),
-              value: TipoExcecao.diaUnico,
+            RadioGroup<TipoExcecao>(
               groupValue: _tipoExcecao,
               onChanged: (value) {
+                if (value == null) return;
                 setState(() {
-                  _tipoExcecao = value!;
-                  _dataFim = null; // Limpar data fim quando não for período
-                });
-              },
-              dense: true,
-            ),
-            RadioListTile<TipoExcecao>(
-              title: const Text('Cancelar período (ex: férias, interrupção)'),
-              value: TipoExcecao.periodo,
-              groupValue: _tipoExcecao,
-              onChanged: (value) {
-                setState(() {
-                  _tipoExcecao = value!;
-                  if (_dataFim == null && _dataInicio != null) {
-                    _dataFim = _dataInicio;
+                  _tipoExcecao = value;
+                  if (_tipoExcecao == TipoExcecao.periodo) {
+                    if (_dataFim == null && _dataInicio != null) {
+                      _dataFim = _dataInicio;
+                    }
+                  } else {
+                    _dataFim = null; // Limpar data fim quando não for período
                   }
                 });
               },
-              dense: true,
-            ),
-            if (widget.serie.dataFim == null) // Só mostrar se a série for infinita
-              RadioListTile<TipoExcecao>(
-                title: const Text('Cancelar série a partir de data'),
-                subtitle: const Text('Encerra a série a partir da data selecionada'),
-                value: TipoExcecao.cancelarSerie,
-                groupValue: _tipoExcecao,
-                onChanged: (value) {
-                  setState(() {
-                    _tipoExcecao = value!;
-                    _dataFim = null; // Limpar data fim
-                  });
-                },
-                dense: true,
+              child: Column(
+                children: [
+                  RadioListTile<TipoExcecao>(
+                    title: const Text('Cancelar um único dia'),
+                    value: TipoExcecao.diaUnico,
+                    dense: true,
+                  ),
+                  RadioListTile<TipoExcecao>(
+                    title:
+                        const Text('Cancelar período (ex: férias, interrupção)'),
+                    value: TipoExcecao.periodo,
+                    dense: true,
+                  ),
+                  if (widget.serie.dataFim ==
+                      null) // Só mostrar se a série for infinita
+                    RadioListTile<TipoExcecao>(
+                      title: const Text('Cancelar série a partir de data'),
+                      subtitle:
+                          const Text('Encerra a série a partir da data selecionada'),
+                      value: TipoExcecao.cancelarSerie,
+                      dense: true,
+                    ),
+                ],
               ),
+            ),
             const SizedBox(height: 16),
             if (_tipoExcecao == TipoExcecao.cancelarSerie)
               ListTile(

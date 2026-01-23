@@ -12,9 +12,9 @@ import '../utils/cadastro_medicos_helper.dart';
 class DisponibilidadeCarregamentoService {
   /// Carrega todas as disponibilidades para um médico e ano específicos
   /// Retorna um mapa com:
-  /// - 'disponibilidades': List<Disponibilidade>
-  /// - 'series': List<SerieRecorrencia>
-  /// - 'excecoes': List<ExcecaoSerie>
+  /// - 'disponibilidades': `List<Disponibilidade>`
+  /// - 'series': `List<SerieRecorrencia>`
+  /// - 'excecoes': `List<ExcecaoSerie>`
   static Future<Map<String, dynamic>> carregarDisponibilidadesCompletas(
     String medicoId,
     int anoParaCarregar,

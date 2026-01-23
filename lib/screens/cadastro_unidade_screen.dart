@@ -31,7 +31,6 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
   bool _isLoading = false;
   bool _showProjectPassword = false;
   bool _showAdminPassword = false;
-  List<String> _tiposExistentes = [];
 
   @override
   void initState() {
@@ -42,17 +41,6 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     if (widget.unidade == null) {
       _nomeOcupantesController.text = 'Médicos';
       _nomeAlocacaoController.text = 'Gabinete';
-    }
-  }
-
-  Future<void> _carregarTiposExistentes() async {
-    try {
-      final tipos = await UnidadeService.listarTiposUnidades();
-      setState(() {
-        _tiposExistentes = tipos;
-      });
-    } catch (e) {
-      debugPrint('Erro ao carregar tipos existentes: $e');
     }
   }
 

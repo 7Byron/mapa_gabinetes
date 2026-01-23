@@ -10,6 +10,20 @@
   "dart.flutterRunAdditionalArgs": [
     "--web-renderer=html"
   ],
-  "dart.flutterHotReloadOnSave": "always"
+  "dart.flutterHotReloadOnSave": "always",
+  "java.import.exclusions": [
+    "**/burnout/**",
+    "**/android/**",
+    "**/build/**",
+    "**/.gradle/**",
+    "**/.dart_tool/**"
+  ],
+  "java.project.import.exclusions": [
+    "**/burnout/**",
+    "**/android/**",
+    "**/build/**",
+    "**/.gradle/**",
+    "**/.dart_tool/**"
+  ]
 }
 

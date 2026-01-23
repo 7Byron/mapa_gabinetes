@@ -20,9 +20,6 @@ class WebAdWidget extends StatefulWidget {
 }
 
 class _WebAdWidgetState extends State<WebAdWidget> {
-  String? _viewId;
-  final bool _isAdLoaded = false;
-
   @override
   void initState() {
     super.initState();
@@ -32,8 +29,6 @@ class _WebAdWidgetState extends State<WebAdWidget> {
   }
 
   void _createAdElement() {
-    _viewId = 'ad-${DateTime.now().millisecondsSinceEpoch}';
-
     // Registrar o elemento HTML usando js interop
     if (kIsWeb) {
       // Usar JavaScript para criar o elemento de anúncio

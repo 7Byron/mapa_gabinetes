@@ -86,6 +86,8 @@ Future<bool> alocarCartaoSerie({
       return true;
     }
 
+    if (!context.mounted) return false;
+
     if (escolha == '1dia') {
       // Alocar apenas este dia usando AlocacaoUnicaService
       onProgresso(0.15, 'A preparar alocação...');

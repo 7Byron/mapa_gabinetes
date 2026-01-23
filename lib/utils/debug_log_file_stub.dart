@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 // Stub para plataformas que não suportam dart:io (web)
 import 'package:flutter/foundation.dart';
 import 'dart:html' as html;
@@ -16,9 +17,9 @@ void writeLogToFile(String logEntry) {
         // Se falhar, tentar usar console.log como fallback
         try {
           final logData = jsonDecode(logEntry);
-          print('🔍 [DEBUG] ${logData['location']}: ${logData['message']} | ${logData['data']}');
+          debugPrint('🔍 [DEBUG] ${logData['location']}: ${logData['message']} | ${logData['data']}');
         } catch (e2) {
-          print('🔍 [DEBUG] $logEntry');
+          debugPrint('🔍 [DEBUG] $logEntry');
         }
         return Future<html.HttpRequest>.error(e);
       });
@@ -26,17 +27,17 @@ void writeLogToFile(String logEntry) {
       // Também fazer log no console para debug imediato
       try {
         final logData = jsonDecode(logEntry);
-        print('🔍 [DEBUG] ${logData['location']}: ${logData['message']} | ${logData['data']}');
+        debugPrint('🔍 [DEBUG] ${logData['location']}: ${logData['message']} | ${logData['data']}');
       } catch (e) {
-        print('🔍 [DEBUG] $logEntry');
+        debugPrint('🔍 [DEBUG] $logEntry');
       }
     } catch (e) {
       // Fallback para console se tudo falhar
       try {
         final logData = jsonDecode(logEntry);
-        print('🔍 [DEBUG] ${logData['location']}: ${logData['message']} | ${logData['data']}');
+        debugPrint('🔍 [DEBUG] ${logData['location']}: ${logData['message']} | ${logData['data']}');
       } catch (e2) {
-        print('🔍 [DEBUG] $logEntry');
+        debugPrint('🔍 [DEBUG] $logEntry');
       }
     }
   }

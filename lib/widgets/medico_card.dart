@@ -114,13 +114,13 @@ class MedicoCard {
           gradient: LinearGradient(
             colors: [
               MyAppTheme.azulEscuro,
-              MyAppTheme.azulEscuro.withOpacity(0.9),
+              MyAppTheme.azulEscuro.withValues(alpha: 0.9),
             ],
           ),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),

@@ -34,7 +34,6 @@ class AlocacaoMedicosLogic {
     AlocacaoCacheStore.log(message);
   }
 
-
   /// Atualiza o cache do dia.
   /// Se `forcarValido` for true, marca o cache como válido mesmo se estava invalidado.
   /// Se false (padrão), preserva o estado de invalidação para evitar que dados antigos sejam marcados como válidos.
@@ -456,6 +455,7 @@ class AlocacaoMedicosLogic {
         gabs = gabinetes;
         meds = medicos;
       }
+
 
       // Usar cache quando disponível
       List<Disponibilidade> disps;
@@ -1251,7 +1251,9 @@ class AlocacaoMedicosLogic {
           if (totalParaDeletar > 0) {
             await batch.commit();
           }
-        } catch (e) {}
+        } catch (e) {
+          debugPrint('⚠️ Erro ao desalocar série (batch): $e');
+        }
 
       // Cache já foi invalidado acima após desalocar a série
     }
@@ -1329,7 +1331,9 @@ class AlocacaoMedicosLogic {
             .map((doc) => Disponibilidade.fromMap(doc.data()))
             .where((d) => d.tipo == 'Única')
             .toList();
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('⚠️ Erro ao carregar disponibilidades únicas: $e');
+      }
     }
 
     // Mesclar séries e únicas
@@ -1744,10 +1748,12 @@ class AlocacaoMedicosLogic {
               // para garantir que séries que começaram em meses anteriores sejam capturadas
               // Exemplo: série começa em 9/2, navegamos para 15/3
               // Precisamos de período que inclua pelo menos 9/2 para calcular quinzenas válidas
-              dataInicioGeracao = dataInicioGeracao.subtract(const Duration(days: 28));
+              dataInicioGeracao = DateTime(
+                  dataInicioGeracao.year,
+                  dataInicioGeracao.month,
+                  dataInicioGeracao.day - 28);
               dataFimGeracao = DateTime(
-                      dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day)
-                  .add(const Duration(days: 1));
+                  dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day + 1);
             } else {
               final ano = anoEspecifico != null
                   ? int.tryParse(anoEspecifico) ?? DateTime.now().year
@@ -1787,7 +1793,7 @@ class AlocacaoMedicosLogic {
               dataInicio: dataInicioGeracao,
               dataFim: dataFimGeracao,
             );
-            
+
             // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //            try {
@@ -2172,10 +2178,12 @@ class AlocacaoMedicosLogic {
             // para garantir que séries que começaram em meses anteriores sejam capturadas
             // Exemplo: série começa em 9/2, navegamos para 15/3
             // Precisamos de período que inclua pelo menos 9/2 para calcular quinzenas válidas
-            dataInicioAlocacoes = dataInicioAlocacoes.subtract(const Duration(days: 28));
+            dataInicioAlocacoes = DateTime(
+                dataInicioAlocacoes.year,
+                dataInicioAlocacoes.month,
+                dataInicioAlocacoes.day - 28);
             dataFimAlocacoes = DateTime(
-                    dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day)
-                .add(const Duration(days: 1));
+                dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day + 1);
           } else {
             final ano = anoEspecifico != null
                 ? int.tryParse(anoEspecifico) ?? DateTime.now().year
@@ -2212,7 +2220,9 @@ class AlocacaoMedicosLogic {
                     unidade.id, dataFiltroDia);
             datasComExcecoesCanceladas.addAll(datasComExcecoes);
           }
-        } catch (e) {}
+        } catch (e) {
+          debugPrint('⚠️ Erro ao carregar exceções canceladas: $e');
+        }
       }
 
       // CORREÇÃO: Simplificar mesclagem de alocações

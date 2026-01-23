@@ -44,12 +44,18 @@ class DisponibilidadeSerieService {
       tipo = 'Consecutivo';
     }
 
+    final dataInicialNormalizada =
+        DateTime(dataInicial.year, dataInicial.month, dataInicial.day);
+    final dataFimNormalizada = dataFim == null
+        ? null
+        : DateTime(dataFim.year, dataFim.month, dataFim.day);
+
     // Criar série
     final serie = SerieRecorrencia(
       id: serieId,
       medicoId: medicoId,
-      dataInicio: dataInicial,
-      dataFim: dataFim,
+      dataInicio: dataInicialNormalizada,
+      dataFim: dataFimNormalizada,
       tipo: tipo,
       horarios: horarios,
       gabineteId: gabineteId,

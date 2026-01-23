@@ -201,6 +201,9 @@ class DisponibilidadeDataGestaoService {
         if (ocorrencia == 5 && _verificarOcorrencia5PodeFaltar(date)) {
           final preferencia =
               await _perguntarPreferenciaOcorrencia5(context, date);
+          if (!context.mounted) {
+            return {'sucesso': false, 'erro': 'Contexto indisponível'};
+          }
           if (preferencia == null) {
             // Utilizador cancelou
             return {'sucesso': false, 'erro': 'Cancelado pelo utilizador'};
@@ -212,6 +215,9 @@ class DisponibilidadeDataGestaoService {
         if (ocorrencia == 4 && _verificarOcorrencia4PodeTer5(date)) {
           final preferencia =
               await _perguntarPreferenciaOcorrencia4(context, date);
+          if (!context.mounted) {
+            return {'sucesso': false, 'erro': 'Contexto indisponível'};
+          }
           if (preferencia == null) {
             // Utilizador cancelou
             return {'sucesso': false, 'erro': 'Cancelado pelo utilizador'};

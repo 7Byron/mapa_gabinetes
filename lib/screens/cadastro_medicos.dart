@@ -2644,22 +2644,21 @@ class CadastroMedicoState extends State<CadastroMedico> {
                   progressoAlocandoGabinete = 1.0;
                   mensagemAlocandoGabinete = 'Concluído!';
                 });
-                await Future.delayed(const Duration(milliseconds: 300));
-                if (mounted) {
-                  setState(() {
-                    _alocandoGabinete = false;
-                    progressoAlocandoGabinete = 0.0;
-                    mensagemAlocandoGabinete = 'A alocar gabinete...';
-                  });
-                }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Gabinete alterado neste dia com sucesso'),
-                    backgroundColor: Colors.green,
-                    duration: Duration(seconds: 2),
-                  ),
-                );
               }
+              await Future.delayed(const Duration(milliseconds: 300));
+              if (!mounted) return;
+              setState(() {
+                _alocandoGabinete = false;
+                progressoAlocandoGabinete = 0.0;
+                mensagemAlocandoGabinete = 'A alocar gabinete...';
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Gabinete alterado neste dia com sucesso'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
             } else if (escolha == 'serie') {
               // Mudar toda a série: atualizar gabinete da série
               // Flag para indicar se foi realocação (usado depois para fechar progressbar)
@@ -2784,6 +2783,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 }
 
                 // Agora chamar realocar para sincronizar com o servidor
+                if (!mounted) return;
                 await RealocacaoSerieService.realocar(
                   medicoId: _medicoAtual!.id,
                   gabineteOrigem: gabineteOrigem,
@@ -3199,24 +3199,25 @@ class CadastroMedicoState extends State<CadastroMedico> {
               progressoAlocandoGabinete = 1.0;
               mensagemAlocandoGabinete = 'Concluído!';
             });
-
-            // Aguardar um pouco para mostrar 100% antes de esconder
-            await Future.delayed(const Duration(milliseconds: 300));
-
-            setState(() {
-              _alocandoGabinete = false;
-              progressoAlocandoGabinete = 0.0;
-              mensagemAlocandoGabinete = 'A alocar gabinete...';
-            });
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Gabinete removido com sucesso'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
-              ),
-            );
           }
+
+          // Aguardar um pouco para mostrar 100% antes de esconder
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (!mounted) return;
+
+          setState(() {
+            _alocandoGabinete = false;
+            progressoAlocandoGabinete = 0.0;
+            mensagemAlocandoGabinete = 'A alocar gabinete...';
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Gabinete removido com sucesso'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
         } else {
           // Alocar: criar alocação única
           if (mounted) {
@@ -3260,24 +3261,25 @@ class CadastroMedicoState extends State<CadastroMedico> {
               progressoAlocandoGabinete = 1.0;
               mensagemAlocandoGabinete = 'Concluído!';
             });
-
-            // Aguardar um pouco para mostrar 100% antes de esconder
-            await Future.delayed(const Duration(milliseconds: 300));
-
-            setState(() {
-              _alocandoGabinete = false;
-              progressoAlocandoGabinete = 0.0;
-              mensagemAlocandoGabinete = 'A alocar gabinete...';
-            });
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Gabinete alocado com sucesso'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
-              ),
-            );
           }
+
+          // Aguardar um pouco para mostrar 100% antes de esconder
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (!mounted) return;
+
+          setState(() {
+            _alocandoGabinete = false;
+            progressoAlocandoGabinete = 0.0;
+            mensagemAlocandoGabinete = 'A alocar gabinete...';
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Gabinete alocado com sucesso'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -5563,6 +5565,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                           ),
                                                         ),
                                                       );
+                                                      if (!context.mounted) {
+                                                        return;
+                                                      }
 
                                                       if (tipoExcecao ==
                                                           'periodo') {
@@ -5589,6 +5594,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                             },
                                                           ),
                                                         );
+                                                        if (!context.mounted) {
+                                                          return;
+                                                        }
                                                       } else if (tipoExcecao ==
                                                           'serie') {
                                                         // Comportamento original: criar exceção para uma série específica
@@ -5709,6 +5717,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                               ),
                                                             ),
                                                           );
+                                                          if (!context.mounted) {
+                                                            return;
+                                                          }
                                                           if (serieEscolhida !=
                                                               null) {
                                                             await showDialog(

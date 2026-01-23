@@ -17,10 +17,6 @@ class NetworkUtils {
     _isInitialized = true;
   }
 
-  /// Verifica conectividade de rede
-  // Mantido para futura extensão; atualmente não utilizado de propósito
-  static Future<void> _checkNetworkConnectivity() async {}
-
   /// Verifica se o Firebase está acessível
   static Future<bool> isFirebaseAccessible() async => true;
 

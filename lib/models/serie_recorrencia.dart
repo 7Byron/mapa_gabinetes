@@ -1,6 +1,7 @@
 // lib/models/serie_recorrencia.dart
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'mudanca_gabinete.dart';
 
 /// Representa uma regra de recorrência (série) de disponibilidades/alocações
@@ -82,15 +83,38 @@ class SerieRecorrencia {
       }
     }
 
+    final dataInicioRaw = map['dataInicio'] != null
+        ? DateTime.parse(map['dataInicio'].toString())
+        : DateTime.now();
+    if (kDebugMode &&
+        (dataInicioRaw.hour != 0 ||
+            dataInicioRaw.minute != 0 ||
+            dataInicioRaw.second != 0 ||
+            dataInicioRaw.millisecond != 0)) {
+      debugPrint(
+          '⚠️ [DIAGNOSTICO] Serie com hora nao normalizada: '
+          'id=${map['id']}, medico=${map['medicoId']}, dataInicio=$dataInicioRaw');
+    }
+    final dataInicioNormalizada = DateTime(
+      dataInicioRaw.year,
+      dataInicioRaw.month,
+      dataInicioRaw.day,
+    );
+    DateTime? dataFimNormalizada;
+    if (map['dataFim'] != null) {
+      final dataFimRaw = DateTime.parse(map['dataFim'].toString());
+      dataFimNormalizada = DateTime(
+        dataFimRaw.year,
+        dataFimRaw.month,
+        dataFimRaw.day,
+      );
+    }
+
     return SerieRecorrencia(
       id: map['id']?.toString() ?? '',
       medicoId: map['medicoId']?.toString() ?? '',
-      dataInicio: map['dataInicio'] != null
-          ? DateTime.parse(map['dataInicio'].toString())
-          : DateTime.now(),
-      dataFim: map['dataFim'] != null
-          ? DateTime.parse(map['dataFim'].toString())
-          : null,
+      dataInicio: dataInicioNormalizada,
+      dataFim: dataFimNormalizada,
       tipo: map['tipo']?.toString() ?? 'Semanal',
       horarios: horarios,
       gabineteId: map['gabineteId']?.toString(),

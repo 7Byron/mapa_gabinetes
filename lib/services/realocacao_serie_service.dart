@@ -224,8 +224,8 @@ class RealocacaoSerieService {
       
       // Log para Chrome (console.log)
       if (kIsWeb) {
-        print('🔄 [MUDANCA-GABINETE] Série ${serie.id}: mudança criada a partir de ${dataRefNormalizada.toIso8601String()} para gabinete $gabineteDestino');
-        print('📊 [MUDANCA-GABINETE] Total de mudanças na série: ${serie.mudancasGabinete.length}');
+        debugPrint('🔄 [MUDANCA-GABINETE] Série ${serie.id}: mudança criada a partir de ${dataRefNormalizada.toIso8601String()} para gabinete $gabineteDestino');
+        debugPrint('📊 [MUDANCA-GABINETE] Total de mudanças na série: ${serie.mudancasGabinete.length}');
       }
       
       onProgresso(0.45, 'A atualizar série com mudança de gabinete...');
@@ -236,8 +236,8 @@ class RealocacaoSerieService {
       
       // Log para Chrome
       if (kIsWeb) {
-        print('✅ [MUDANCA-GABINETE] Série ${serie.id} atualizada no Firestore com ${serie.mudancasGabinete.length} mudança(s) de gabinete');
-        print('📊 [MUDANCA-GABINETE] Mudanças: ${serie.mudancasGabinete.map((m) => '${m.dataInicio.day}/${m.dataInicio.month} → ${m.gabineteId}').join(', ')}');
+        debugPrint('✅ [MUDANCA-GABINETE] Série ${serie.id} atualizada no Firestore com ${serie.mudancasGabinete.length} mudança(s) de gabinete');
+        debugPrint('📊 [MUDANCA-GABINETE] Mudanças: ${serie.mudancasGabinete.map((m) => '${m.dataInicio.day}/${m.dataInicio.month} → ${m.gabineteId}').join(', ')}');
       }
       
       onProgresso(0.65, 'A invalidar cache...');

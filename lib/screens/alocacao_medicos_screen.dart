@@ -233,7 +233,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     try {
       // Carrega as passwords do Firebase para cache local
       await PasswordService.loadPasswordsFromFirebase(widget.unidade.id);
-    } catch (e) {}
+    } catch (e) {
+      debugPrint('⚠️ Erro ao carregar passwords: $e');
+    }
   }
 
   bool _isCarregandoDadosIniciais =

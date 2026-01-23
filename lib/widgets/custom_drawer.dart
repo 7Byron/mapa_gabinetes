@@ -9,8 +9,8 @@ import '../screens/lista_gabinetes.dart';
 import '../screens/config_clinica_screen.dart';
 import '../screens/dias_encerramento_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
-import '../screens/lista_alocacoes_screen.dart';
 import '../screens/scripts_screen.dart';
+import '../screens/relatorio_ocupacao_detalhe_screen.dart';
 import '../services/unidade_selecionada_service.dart';
 
 /// Drawer personalizado com menu de navegação
@@ -28,6 +28,35 @@ class CustomDrawer extends StatelessWidget {
     this.unidade,
     this.isAdmin = false, // Por defeito é utilizador normal
   });
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey[700],
+            letterSpacing: 0.4,
+          ),
+        ),
+      ),
+    );
+  }
+
+  TextStyle _itemTextStyle() => const TextStyle(fontSize: 14);
+
+  Widget _buildSectionDivider() {
+    return const Divider(
+      height: 24,
+      thickness: 1,
+      indent: 16,
+      endIndent: 16,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,9 +108,13 @@ class CustomDrawer extends StatelessWidget {
           ),
 
           // Opções do menu
+          _buildSectionTitle('Médicos e Gabinete'),
           ListTile(
             leading: const Icon(Icons.medical_services),
-            title: Text('Gerir ${unidade?.nomeOcupantes ?? 'Ocupantes'}'),
+            title: Text(
+              'Gerir ${unidade?.nomeOcupantes ?? 'Ocupantes'}',
+              style: _itemTextStyle(),
+            ),
             enabled: isAdmin, // Só administradores podem gerir
             onTap: isAdmin
                 ? () {
@@ -100,7 +133,10 @@ class CustomDrawer extends StatelessWidget {
 
           ListTile(
             leading: const Icon(Icons.business),
-            title: Text('Gerir ${unidade?.nomeAlocacao ?? 'Alocações'}'),
+            title: Text(
+              'Gerir ${unidade?.nomeAlocacao ?? 'Alocações'}',
+              style: _itemTextStyle(),
+            ),
             enabled: isAdmin, // Só administradores podem gerir
             onTap: isAdmin
                 ? () {
@@ -115,9 +151,45 @@ class CustomDrawer extends StatelessWidget {
                 : null,
           ),
 
+          _buildSectionDivider(),
+          _buildSectionTitle('Relatórios'),
+          ListTile(
+            leading: const Icon(Icons.bar_chart),
+            title: const Text('Ocupação de Gabinetes',
+                style: TextStyle(fontSize: 14)),
+            onTap: () {
+              Navigator.pop(context);
+              if (unidade == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Unidade não definida.'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => RelatorioOcupacaoDetalheScreen(
+                    unidade: unidade!,
+                    titulo: 'Ocupação de Gabinetes',
+                    periodoLabel: 'esta semana',
+                    inicio: DateTime.now(),
+                    fim: DateTime.now(),
+                    gabineteIds: const [],
+                  ),
+                ),
+              );
+            },
+          ),
+
+          _buildSectionDivider(),
+          _buildSectionTitle('Configurações'),
           ListTile(
             leading: const Icon(Icons.schedule),
-            title: const Text('Configurar Horários'),
+            title: const Text('Configurar Horários',
+                style: TextStyle(fontSize: 14)),
             enabled: isAdmin, // Só administradores podem configurar
             onTap: isAdmin
                 ? () {
@@ -134,7 +206,8 @@ class CustomDrawer extends StatelessWidget {
 
           ListTile(
             leading: const Icon(Icons.event_busy),
-            title: const Text('Dias de Encerramento'),
+            title: const Text('Dias de Encerramento',
+                style: TextStyle(fontSize: 14)),
             enabled: isAdmin, // Só administradores podem configurar
             onTap: isAdmin
                 ? () {
@@ -149,59 +222,13 @@ class CustomDrawer extends StatelessWidget {
                 : null,
           ),
 
-          ListTile(
-            leading: const Icon(Icons.list_alt),
-            title: const Text('Cartões de disponibilidade'),
-            enabled: isAdmin,
-            onTap: isAdmin
-                ? () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            ListaAlocacoesScreen(unidade: unidade),
-                      ),
-                    ).then((_) => onRefresh());
-                  }
-                : null,
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.bar_chart),
-            title: const Text('Relatórios de Ocupação'),
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Em construção'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.analytics),
-            title: const Text('Relatório Especialidades'),
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Em construção'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-          ),
-
-          // Item de Scripts (apenas em modo debug)
-          if (kDebugMode)
+          if (kDebugMode) ...[
+            _buildSectionDivider(),
             ListTile(
               leading: const Icon(Icons.code, color: Colors.orange),
               title: const Text(
                 'Scripts...',
-                style: TextStyle(color: Colors.orange),
+                style: TextStyle(color: Colors.orange, fontSize: 14),
               ),
               onTap: () {
                 Navigator.pop(context);
@@ -213,6 +240,7 @@ class CustomDrawer extends StatelessWidget {
                 );
               },
             ),
+          ],
 
           const Spacer(), // Empurra o botão de sair para baixo
 

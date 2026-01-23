@@ -115,7 +115,7 @@ class MedicosDisponiveisContainer extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: MyAppTheme.azulEscuro.withOpacity(0.1),
+                          color: MyAppTheme.azulEscuro.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
@@ -141,7 +141,7 @@ class MedicosDisponiveisContainer extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: MyAppTheme.azulEscuro.withOpacity(0.1),
+                              color: MyAppTheme.azulEscuro.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(
@@ -161,7 +161,7 @@ class MedicosDisponiveisContainer extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: Colors.red.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(

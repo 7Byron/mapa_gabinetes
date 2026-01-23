@@ -354,9 +354,8 @@ class SerieGenerator {
         break;
       default:
         // Única - criar apenas se estiver no período
-        if (serie.dataInicio
-                .isAfter(inicio.subtract(const Duration(days: 1))) &&
-            serie.dataInicio.isBefore(fim.add(const Duration(days: 1)))) {
+        if (serie.dataInicio.isAfter(_addDias(inicio, -1)) &&
+            serie.dataInicio.isBefore(_addDias(fim, 1))) {
           final dataKey = _dataKey(serie.dataInicio);
           final chave = '${serie.id}_$dataKey';
           final excecao = excecoesMap[chave];
@@ -396,7 +395,7 @@ class SerieGenerator {
     while (dataAtual.weekday != weekday &&
         dataAtual.isBefore(fim) &&
         tentativas < maxTentativas) {
-      dataAtual = dataAtual.add(const Duration(days: 1));
+      dataAtual = _addDias(dataAtual, 1);
       tentativas++;
     }
 
@@ -409,13 +408,13 @@ class SerieGenerator {
     if (dataAtual.isBefore(serie.dataInicio)) {
       final semanas =
           (serie.dataInicio.difference(dataAtual).inDays / 7).ceil();
-      dataAtual = dataAtual.add(Duration(days: semanas * 7));
+      dataAtual = _addDias(dataAtual, semanas * 7);
     }
 
     // Gerar cartões semanais com limite de iterações
     int iteracoes = 0;
     const maxIteracoes = 1000; // Máximo 1000 semanas (~19 anos)
-    while (dataAtual.isBefore(fim.add(const Duration(days: 1))) &&
+    while (dataAtual.isBefore(_addDias(fim, 1)) &&
         iteracoes < maxIteracoes) {
       iteracoes++;
       // Normalizar a data para garantir correspondência exata
@@ -433,7 +432,7 @@ class SerieGenerator {
       final excecaoCancelada = excecao?.cancelada ?? false;
 
       if (excecaoCancelada) {
-        dataAtual = dataAtual.add(const Duration(days: 7));
+        dataAtual = _addDias(dataAtual, 7);
         continue;
       }
 
@@ -449,7 +448,7 @@ class SerieGenerator {
         tipo: 'Semanal',
       ));
 
-      dataAtual = dataAtual.add(const Duration(days: 7));
+      dataAtual = _addDias(dataAtual, 7);
     }
 
     return cartoes;
@@ -516,13 +515,13 @@ class SerieGenerator {
         } else {
           // Inicio é múltiplo de 14 dias, mas weekday errado - avançar para próxima quinzena
           final quinzenasParaAvancar = (diffInicio / 14).ceil() + 1;
-          dataAtual = base.add(Duration(days: quinzenasParaAvancar * 14));
+          dataAtual = _addDias(base, quinzenasParaAvancar * 14);
         }
       } else {
         // Inicio não é uma quinzena válida - calcular a próxima quinzena >= inicio
         // Usar ceil para arredondar para cima e garantir que estamos >= inicio
         final quinzenasParaAvancar = (diffInicio / 14).ceil();
-        dataAtual = base.add(Duration(days: quinzenasParaAvancar * 14));
+        dataAtual = _addDias(base, quinzenasParaAvancar * 14);
         
         // CORREÇÃO CRÍTICA: Se dataAtual calculada é menor que inicio, garantir que seja >= inicio
         // Isso pode acontecer quando diffInicio é negativo mas arredondado para 0
@@ -533,7 +532,7 @@ class SerieGenerator {
           if (diffDesdeBase % 14 != 0 || dataAtual.weekday != weekday) {
             // Avançar para a próxima quinzena válida
             final quinzenasAteInicio = (diffInicio / 14).floor();
-            dataAtual = base.add(Duration(days: (quinzenasAteInicio + 1) * 14));
+            dataAtual = _addDias(base, (quinzenasAteInicio + 1) * 14);
           }
         }
       }
@@ -548,7 +547,7 @@ class SerieGenerator {
                                     (baseNormalizado.year == inicioNormalizado.year &&
                                      baseNormalizado.month == inicioNormalizado.month &&
                                      baseNormalizado.day == inicioNormalizado.day)) &&
-                                   (baseNormalizado.isBefore(fimNormalizado.add(const Duration(days: 1))) ||
+                                   (baseNormalizado.isBefore(_addDias(fimNormalizado, 1)) ||
                                     (baseNormalizado.year == fimNormalizado.year &&
                                      baseNormalizado.month == fimNormalizado.month &&
                                      baseNormalizado.day == fimNormalizado.day));
@@ -644,12 +643,13 @@ class SerieGenerator {
 
   // CORREÇÃO: Simplificar o loop - avançar sempre de 14 em 14 dias
   // e verificar apenas se está no período e se é uma quinzena válida
-  while (dataAtual.isBefore(fimNormalizado.add(const Duration(days: 1))) &&
+  while (dataAtual.isBefore(_addDias(fimNormalizado, 1)) &&
       iteracoes < maxIteracoes) {
     iteracoes++;
 
     // Verificar se está no período solicitado
-    if (!dataAtual.isBefore(inicioNormalizado) && dataAtual.isBefore(fimNormalizado.add(const Duration(days: 1)))) {
+    if (!dataAtual.isBefore(inicioNormalizado) &&
+        dataAtual.isBefore(_addDias(fimNormalizado, 1))) {
         final diff = dataAtual.difference(base).inDays;
         
         // Verificar se é múltiplo de 14 dias e tem o weekday correto
@@ -667,7 +667,7 @@ class SerieGenerator {
           // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
           // independentemente de ter gabineteId ou não (exceção de disponibilidade)
           if (excecao?.cancelada ?? false) {
-            dataAtual = dataAtual.add(const Duration(days: 14));
+            dataAtual = _addDias(dataAtual, 14);
             continue;
           }
 
@@ -718,7 +718,7 @@ class SerieGenerator {
       }
       
       // Avançar sempre para a próxima quinzena (14 dias)
-      dataAtual = dataAtual.add(const Duration(days: 14));
+      dataAtual = _addDias(dataAtual, 14);
     }
     
     // #region agent log (COMENTADO - pode ser reativado se necessário)
@@ -791,7 +791,7 @@ class SerieGenerator {
       fimLimite = fim.isBefore(serie.dataFim!) ? fim : serie.dataFim!;
     } else {
       // Se a série é infinita, limitar a 10 anos a partir do início para evitar loops infinitos
-      final fimMaximo = inicio.add(const Duration(days: 365 * 10));
+      final fimMaximo = _addDias(inicio, 365 * 10);
       fimLimite = fim.isBefore(fimMaximo) ? fim : fimMaximo;
     }
 
@@ -810,7 +810,7 @@ class SerieGenerator {
     const maxIteracoesMensal = 1000; // Máximo de ~83 anos
     
     // CORREÇÃO: Usar fimLimite em vez de fim para comparação
-    while (mesAtual.isBefore(fimLimite.add(const Duration(days: 1))) &&
+    while (mesAtual.isBefore(_addDias(fimLimite, 1)) &&
         iteracoesMensal < maxIteracoesMensal) {
       iteracoesMensal++;
       
@@ -820,8 +820,8 @@ class SerieGenerator {
           usarUltimoQuandoExiste5: usarUltimoQuandoExiste5);
 
       if (data != null &&
-          data.isAfter(inicio.subtract(const Duration(days: 1))) &&
-          data.isBefore(fimLimite.add(const Duration(days: 1)))) {
+          data.isAfter(_addDias(inicio, -1)) &&
+          data.isBefore(_addDias(fimLimite, 1))) {
         // Normalizar a data para garantir correspondência exata
         final dataNormalizada = DateTime(data.year, data.month, data.day);
         final dataKey = _dataKey(dataNormalizada);
@@ -899,7 +899,7 @@ class SerieGenerator {
     int iteracoes = 0;
     const maxIteracoes = 1000;
 
-    while (dataAtual.isBefore(fimReal.add(const Duration(days: 1))) &&
+    while (dataAtual.isBefore(_addDias(fimReal, 1)) &&
         iteracoes < maxIteracoes) {
       iteracoes++;
 
@@ -920,7 +920,7 @@ class SerieGenerator {
       // CORREÇÃO CRÍTICA: Se exceção está cancelada, SEMPRE pular o cartão
       // independentemente de ter gabineteId ou não (exceção de disponibilidade)
       if (excecao?.cancelada ?? false) {
-        dataAtual = dataAtual.add(const Duration(days: 1));
+        dataAtual = _addDias(dataAtual, 1);
         continue;
       }
 
@@ -936,7 +936,7 @@ class SerieGenerator {
         tipo: 'Consecutivo',
       ));
 
-      dataAtual = dataAtual.add(const Duration(days: 1));
+      dataAtual = _addDias(dataAtual, 1);
     }
 
     // #region agent log (COMENTADO - pode ser reativado se necessário)
@@ -1033,5 +1033,10 @@ class SerieGenerator {
   /// Gera chave de data no formato yyyy-MM-dd
   static String _dataKey(DateTime data) {
     return '${data.year}-${data.month.toString().padLeft(2, '0')}-${data.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Soma dias preservando o dia local (evita drift por DST).
+  static DateTime _addDias(DateTime data, int dias) {
+    return DateTime(data.year, data.month, data.day + dias);
   }
 }

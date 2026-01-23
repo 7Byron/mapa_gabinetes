@@ -243,11 +243,11 @@ class _ImportarAnoAnteriorScreenState extends State<ImportarAnoAnteriorScreen> {
       // Calcular estatísticas
       totalDisponibilidades = medicosParaImportar.fold(
         0,
-        (sum, m) => sum + m.disponibilidades.length,
+        (total, m) => total + m.disponibilidades.length,
       );
       totalAlocacoes = medicosParaImportar.fold(
         0,
-        (sum, m) => sum + m.alocacoes.length,
+        (total, m) => total + m.alocacoes.length,
       );
       
     } catch (e) {
@@ -356,6 +356,7 @@ class _ImportarAnoAnteriorScreenState extends State<ImportarAnoAnteriorScreen> {
     );
     
     if (confirmar != true) return;
+    if (!mounted) return;
     
     final firestore = FirebaseFirestore.instance;
     int disponibilidadesCriadas = 0;

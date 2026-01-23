@@ -53,7 +53,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   Key? _gridUniqueKey;
   // Hash e contador das alocações para detectar mudanças drasticas
   int? _lastAlocacoesHashCode;
-  int? _lastNumAlocacoes;
 
   @override
   void didUpdateWidget(DisponibilidadesGrid oldWidget) {
@@ -122,7 +121,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           if (desalocacaoSignificativa || hashChanged) {
             _gridUniqueKey = UniqueKey();
             _lastAlocacoesHashCode = null; // Resetar para forçar recálculo no build()
-            _lastNumAlocacoes = null;
           }
           // Forçar rebuild
           if (mounted) {
@@ -135,7 +133,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
     
     // Atualizar contadores
-    _lastNumAlocacoes = numAlocacoesAtual;
   }
 
   @override
@@ -414,6 +411,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     // Se houver callback para salvar antes de navegar, executá-lo
     if (widget.onNavegarParaMapa != null) {
       final salvou = await widget.onNavegarParaMapa!();
+      if (!context.mounted) return;
       if (!salvou) {
         // Se não salvou com sucesso, não navegar
         return;
@@ -471,7 +469,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     // Atualizar hash apenas se for diferente (para evitar criar UniqueKey desnecessariamente)
     if (_lastAlocacoesHashCode != alocacoesHashCode) {
       _lastAlocacoesHashCode = alocacoesHashCode;
-      _lastNumAlocacoes = numAlocacoes;
     }
     
     return LayoutBuilder(

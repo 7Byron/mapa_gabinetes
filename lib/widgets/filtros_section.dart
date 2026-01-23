@@ -41,7 +41,7 @@ class FiltrosSection extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
-                  color: MyAppTheme.azulEscuro.withOpacity(0.1),
+                  color: MyAppTheme.azulEscuro.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(

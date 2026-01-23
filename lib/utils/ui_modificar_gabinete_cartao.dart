@@ -449,6 +449,10 @@ Future<bool> _modificarGabineteCartaoSerie({
     temExcecao = alocacaoAtual.id.startsWith(serieIdPrefix);
   }
 
+  if (!context.mounted) {
+    return false;
+  }
+
   if (novoGabineteId == null) {
     // DESALOCAR série
     return await _desalocarSerie(
@@ -784,6 +788,7 @@ Future<bool> _alocarOuRealocarSerie({
         }
       }
 
+      if (!context.mounted) return false;
       await RealocacaoSerieService.realocar(
         medicoId: medicoId,
         gabineteOrigem: gabineteOrigem,
@@ -807,6 +812,7 @@ Future<bool> _alocarOuRealocarSerie({
 
       logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
 
+      if (!context.mounted) return false;
       await AlocacaoSerieService.alocar(
         medicoId: medicoId,
         gabineteId: novoGabineteId,

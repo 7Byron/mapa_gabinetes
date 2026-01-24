@@ -132,6 +132,9 @@ class AlocacaoCacheStore {
 
   static void invalidateCacheForDay(DateTime day) {
     final key = keyDia(day);
+    final tinhaCache =
+        cacheDispPorDia.containsKey(key) || cacheAlocPorDia.containsKey(key);
+    final jaInvalidado = cacheInvalidadoPorDia.contains(key);
     cacheDispPorDia.remove(key);
     cacheAlocPorDia.remove(key);
     cacheAtualizadoEmPorDia.remove(key);
@@ -140,6 +143,16 @@ class AlocacaoCacheStore {
     cacheExcecoesCanceladasPorDia.remove(key);
     cacheInvalidadoPorDia.add(key);
     cacheExcecoes.clear();
+    if (kDebugMode && tinhaCache) {
+      final trace = StackTrace.current
+          .toString()
+          .split('\n')
+          .skip(1)
+          .take(5)
+          .join('\n');
+      log(
+          '🧹 [CACHE] invalidateCacheForDay $key (jaInvalidado=$jaInvalidado)\n$trace');
+    }
   }
 
   static void invalidateCacheFromDate(DateTime fromDate) {
@@ -175,6 +188,17 @@ class AlocacaoCacheStore {
       cacheInvalidadoPorDia.add(key);
     }
     cacheExcecoes.clear();
+    if (kDebugMode && keysToRemove.isNotEmpty) {
+      final sample = keysToRemove.take(3).join(', ');
+      final trace = StackTrace.current
+          .toString()
+          .split('\n')
+          .skip(1)
+          .take(5)
+          .join('\n');
+      log(
+          '🧹 [CACHE] invalidateCacheFromDate $fromKey (total=${keysToRemove.length}, sample=$sample)\n$trace');
+    }
   }
 
   static void clearAll() {

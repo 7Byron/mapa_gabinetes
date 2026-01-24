@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/gabinete.dart';
 import '../utils/app_theme.dart';
-import '../utils/alocacao_medicos_logic.dart' as logic;
 import '../widgets/calendario_disponibilidades.dart';
 import '../widgets/filtros_section.dart';
 import '../widgets/pesquisa_section.dart';
@@ -65,8 +64,6 @@ class ColunaEsquerdaAlocacao extends StatelessWidget {
             dataCalendario: selectedDate,
             modoApenasSelecao: true,
             onDateSelected: (date) {
-              final dataNormalizada = DateTime(date.year, date.month, date.day);
-              logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
               onDateSelected(date);
             },
             onViewChanged: onViewChanged,

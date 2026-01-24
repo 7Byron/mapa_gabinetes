@@ -7,31 +7,31 @@ import '../models/unidade.dart';
 import '../models/disponibilidade.dart'; // Corrigido: Importação do modelo Disponibilidade para evitar erro de referência.
 import 'cache_version_service.dart';
 
+final Map<String, List<Medico>> _cacheMedicosPorUnidade = {};
+
+String _cacheKeyMedicos(Unidade? unidade) {
+  final id = unidade?.id;
+  return (id == null || id.isEmpty) ? '_global' : id;
+}
+
+void limparCacheMedicos({Unidade? unidade}) {
+  if (unidade == null) {
+    _cacheMedicosPorUnidade.clear();
+    return;
+  }
+  _cacheMedicosPorUnidade.remove(_cacheKeyMedicos(unidade));
+}
+
 /// Busca todas as especialidades existentes dos médicos
 Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
-  final firestore = FirebaseFirestore.instance;
   final List<String> especialidades = [];
 
   try {
-    CollectionReference medicosRef;
-    if (unidade != null) {
-      // Busca médicos da unidade específica
-      medicosRef = firestore
-          .collection('unidades')
-          .doc(unidade.id)
-          .collection('ocupantes');
-    } else {
-      // Busca da coleção antiga (fallback)
-      medicosRef = firestore.collection('medicos');
-    }
-
-    final snapshot = await medicosRef.get();
-
-    for (final doc in snapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final especialidade = data['especialidade'] as String?;
-      if (especialidade != null && especialidade.trim().isNotEmpty) {
-        especialidades.add(especialidade.trim());
+    final medicos = await buscarMedicos(unidade: unidade);
+    for (final medico in medicos) {
+      final especialidade = medico.especialidade.trim();
+      if (especialidade.isNotEmpty) {
+        especialidades.add(especialidade);
       }
     }
 
@@ -147,13 +147,26 @@ Future<void> salvarMedicoCompleto(
       CacheVersionService.fieldDisponibilidades,
     ],
   );
+  limparCacheMedicos(unidade: unidade);
   debugPrint(
       '✅ Diff aplicado: -${idsParaApagar.length} / +${idsParaCriar.length} / ~${idsPossiveisUpdates.length}');
 }
 
-Future<List<Medico>> buscarMedicos({Unidade? unidade}) async {
+Future<List<Medico>> buscarMedicos({
+  Unidade? unidade,
+  bool usarCache = true,
+  bool forcarAtualizacao = false,
+}) async {
   final firestore = FirebaseFirestore.instance;
   CollectionReference medicosRef;
+  final cacheKey = _cacheKeyMedicos(unidade);
+
+  if (usarCache && !forcarAtualizacao) {
+    final cached = _cacheMedicosPorUnidade[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return List<Medico>.from(cached);
+    }
+  }
 
   if (unidade != null) {
     // Busca médicos da unidade específica
@@ -183,6 +196,9 @@ Future<List<Medico>> buscarMedicos({Unidade? unidade}) async {
       disponibilidades: const [],
       ativo: ativo,
     ));
+  }
+  if (medicos.isNotEmpty) {
+    _cacheMedicosPorUnidade[cacheKey] = List<Medico>.from(medicos);
   }
   return medicos;
 }

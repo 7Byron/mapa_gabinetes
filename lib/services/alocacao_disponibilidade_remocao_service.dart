@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'cache_version_service.dart';
+import '../utils/alocacao_medicos_logic.dart';
 
 /// Serviço para remover alocações e disponibilidades do Firestore
 /// Extracted from cadastro_medicos.dart to reduce code duplication
@@ -20,6 +21,7 @@ class AlocacaoDisponibilidadeRemocaoService {
     while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
       final ano = dataAtual.year.toString();
       final inicio = DateTime(dataAtual.year, dataAtual.month, dataAtual.day);
+      bool houveRemocaoNoDia = false;
 
       try {
         // 1. Remover alocações
@@ -50,6 +52,7 @@ class AlocacaoDisponibilidadeRemocaoService {
         for (final doc in alocacoesParaRemover) {
           await doc.reference.delete();
           alocacoesRemovidas++;
+          houveRemocaoNoDia = true;
         }
 
         // 2. Remover disponibilidades únicas da coleção de ocupantes
@@ -89,6 +92,7 @@ class AlocacaoDisponibilidadeRemocaoService {
         for (final doc in disponibilidadesParaRemover) {
           await doc.reference.delete();
           disponibilidadesRemovidas++;
+          houveRemocaoNoDia = true;
         }
 
         // 3. Remover da vista diária (dias/{dayKey}/disponibilidades)
@@ -124,11 +128,12 @@ class AlocacaoDisponibilidadeRemocaoService {
 
         for (final doc in disponibilidadesDiasParaRemover) {
           await doc.reference.delete();
+          houveRemocaoNoDia = true;
         }
 
-        // Invalidar cache para esta data específica
-        // Cache removido - não precisa invalidar
-        // AlocacaoMedicosLogic.invalidateCacheFromDate(inicio);
+        if (houveRemocaoNoDia) {
+          AlocacaoMedicosLogic.invalidateCacheForDay(inicio);
+        }
       } catch (e) {
         // Erro ao remover - continuar para próxima data
       }

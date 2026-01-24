@@ -11,6 +11,8 @@ class CacheVersionService {
   static const String fieldMedicos = 'medicosVersion';
   static const String fieldGabinetes = 'gabinetesVersion';
   static const String fieldClinicaConfig = 'clinicaConfigVersion';
+  static const String _globalKey = '_global';
+  static final Map<String, Map<String, int>> _lastVersionsByKey = {};
 
   static DocumentReference<Map<String, dynamic>> _docRef(String? unidadeId) {
     final firestore = FirebaseFirestore.instance;
@@ -24,45 +26,71 @@ class CacheVersionService {
         .doc(_docId);
   }
 
+  static String _cacheKey(String? unidadeId) {
+    if (unidadeId == null || unidadeId.isEmpty) {
+      return _globalKey;
+    }
+    return unidadeId;
+  }
+
+  static Map<String, int> _buildZeroVersions() {
+    return {
+      fieldSeries: 0,
+      fieldAlocacoes: 0,
+      fieldDisponibilidades: 0,
+      fieldMedicos: 0,
+      fieldGabinetes: 0,
+      fieldClinicaConfig: 0,
+    };
+  }
+
+  static Map<String, int> _parseSnapshot(
+      DocumentSnapshot<Map<String, dynamic>> snapshot) {
+    if (!snapshot.exists) {
+      return _buildZeroVersions();
+    }
+    final data = snapshot.data();
+    int asInt(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return 0;
+    }
+    return {
+      fieldSeries: asInt(data?[fieldSeries]),
+      fieldAlocacoes: asInt(data?[fieldAlocacoes]),
+      fieldDisponibilidades: asInt(data?[fieldDisponibilidades]),
+      fieldMedicos: asInt(data?[fieldMedicos]),
+      fieldGabinetes: asInt(data?[fieldGabinetes]),
+      fieldClinicaConfig: asInt(data?[fieldClinicaConfig]),
+    };
+  }
+
+  static void _cacheVersions(String key, Map<String, int> versions) {
+    _lastVersionsByKey[key] = Map<String, int>.from(versions);
+  }
+
   static Future<Map<String, int>> fetchVersions({String? unidadeId}) async {
+    final key = _cacheKey(unidadeId);
     try {
       await FirebaseInitService.ensureInitialized();
       final snapshot = await _docRef(unidadeId)
           .get(const GetOptions(source: Source.server));
-      if (!snapshot.exists) {
-        return {
-          fieldSeries: 0,
-          fieldAlocacoes: 0,
-          fieldDisponibilidades: 0,
-          fieldMedicos: 0,
-          fieldGabinetes: 0,
-          fieldClinicaConfig: 0,
-        };
-      }
-      final data = snapshot.data();
-      int asInt(dynamic value) {
-        if (value is int) return value;
-        if (value is num) return value.toInt();
-        return 0;
-      }
-
-      return {
-        fieldSeries: asInt(data?[fieldSeries]),
-        fieldAlocacoes: asInt(data?[fieldAlocacoes]),
-        fieldDisponibilidades: asInt(data?[fieldDisponibilidades]),
-        fieldMedicos: asInt(data?[fieldMedicos]),
-        fieldGabinetes: asInt(data?[fieldGabinetes]),
-        fieldClinicaConfig: asInt(data?[fieldClinicaConfig]),
-      };
+      final versions = _parseSnapshot(snapshot);
+      _cacheVersions(key, versions);
+      return versions;
     } catch (_) {
-      return {
-        fieldSeries: 0,
-        fieldAlocacoes: 0,
-        fieldDisponibilidades: 0,
-        fieldMedicos: 0,
-        fieldGabinetes: 0,
-        fieldClinicaConfig: 0,
-      };
+      try {
+        final snapshot = await _docRef(unidadeId)
+            .get(const GetOptions(source: Source.cache));
+        final versions = _parseSnapshot(snapshot);
+        _cacheVersions(key, versions);
+        return versions;
+      } catch (_) {}
+      final cached = _lastVersionsByKey[key];
+      if (cached != null) {
+        return Map<String, int>.from(cached);
+      }
+      return _buildZeroVersions();
     }
   }
 

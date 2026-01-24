@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
+import '../services/medico_salvar_service.dart';
 import 'cadastro_medicos.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -541,6 +542,7 @@ class ListaMedicosState extends State<ListaMedicos> {
       // Recarrega a lista completa para garantir sincronização
       // Aguarda um pequeno delay para garantir que o Firebase processou a atualização
       await Future.delayed(const Duration(milliseconds: 300));
+      limparCacheMedicos(unidade: widget.unidade);
       if (mounted) {
         await _carregarMedicos(refresh: true);
       }

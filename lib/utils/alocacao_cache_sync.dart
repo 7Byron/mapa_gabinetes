@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../models/unidade.dart';
 import '../services/cache_version_service.dart';
 import '../services/serie_service.dart';
@@ -26,15 +27,19 @@ class CacheSyncResult {
 
 class AlocacaoCacheSync {
   static const String _unidadeFallbackId = 'fyEj6kOXvCuL65sMfCaR';
-  static const Duration _intervaloVerificacaoVersao = Duration(seconds: 60);
 
   static final Map<String, int> _versaoSeriesPorUnidade = {};
   static final Map<String, int> _versaoAlocacoesPorUnidade = {};
   static final Map<String, int> _versaoDisponibilidadesPorUnidade = {};
   static final Map<String, int> _versaoMedicosPorUnidade = {};
   static final Map<String, int> _versaoGabinetesPorUnidade = {};
-  static final Map<String, DateTime> _ultimaVerificacaoVersao = {};
   static final Map<String, bool> _forcarServidorSeriesPorUnidade = {};
+
+  static void _log(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
+  }
 
   static String _unidadeKey(Unidade? unidade) =>
       unidade?.id ?? _unidadeFallbackId;
@@ -64,47 +69,48 @@ class AlocacaoCacheSync {
     bool forcar = false,
   }) async {
     final unidadeKey = _unidadeKey(unidade);
-    final ultima = _ultimaVerificacaoVersao[unidadeKey];
-    if (!forcar &&
-        ultima != null &&
-        DateTime.now().difference(ultima) < _intervaloVerificacaoVersao) {
-      return const CacheSyncResult(
-        seriesMudou: false,
-        alocacoesMudou: false,
-        disponibilidadesMudou: false,
-        medicosMudou: false,
-        gabinetesMudou: false,
-      );
-    }
-
-    _ultimaVerificacaoVersao[unidadeKey] = DateTime.now();
+    final versaoSeriesLocal = _versaoSeriesPorUnidade[unidadeKey];
+    final versaoAlocacoesLocal = _versaoAlocacoesPorUnidade[unidadeKey];
+    final versaoDisponibilidadesLocal =
+        _versaoDisponibilidadesPorUnidade[unidadeKey];
+    final versaoMedicosLocal = _versaoMedicosPorUnidade[unidadeKey];
+    final versaoGabinetesLocal = _versaoGabinetesPorUnidade[unidadeKey];
     final versoes =
         await CacheVersionService.fetchVersions(unidadeId: unidade?.id);
+
+    final versaoSeriesRemota = versoes[CacheVersionService.fieldSeries] ?? 0;
+    final versaoAlocacoesRemota =
+        versoes[CacheVersionService.fieldAlocacoes] ?? 0;
+    final versaoDisponibilidadesRemota =
+        versoes[CacheVersionService.fieldDisponibilidades] ?? 0;
+    final versaoMedicosRemota = versoes[CacheVersionService.fieldMedicos] ?? 0;
+    final versaoGabinetesRemota =
+        versoes[CacheVersionService.fieldGabinetes] ?? 0;
 
     final seriesMudou = _atualizarVersao(
       _versaoSeriesPorUnidade,
       unidadeKey,
-      versoes[CacheVersionService.fieldSeries] ?? 0,
+      versaoSeriesRemota,
     );
     final alocacoesMudou = _atualizarVersao(
       _versaoAlocacoesPorUnidade,
       unidadeKey,
-      versoes[CacheVersionService.fieldAlocacoes] ?? 0,
+      versaoAlocacoesRemota,
     );
     final disponibilidadesMudou = _atualizarVersao(
       _versaoDisponibilidadesPorUnidade,
       unidadeKey,
-      versoes[CacheVersionService.fieldDisponibilidades] ?? 0,
+      versaoDisponibilidadesRemota,
     );
     final medicosMudou = _atualizarVersao(
       _versaoMedicosPorUnidade,
       unidadeKey,
-      versoes[CacheVersionService.fieldMedicos] ?? 0,
+      versaoMedicosRemota,
     );
     final gabinetesMudou = _atualizarVersao(
       _versaoGabinetesPorUnidade,
       unidadeKey,
-      versoes[CacheVersionService.fieldGabinetes] ?? 0,
+      versaoGabinetesRemota,
     );
 
     final result = CacheSyncResult(
@@ -115,12 +121,26 @@ class AlocacaoCacheSync {
       gabinetesMudou: gabinetesMudou,
     );
 
+    _log(
+        '🔎 [CACHE] Versões $unidadeKey (remotas): series=$versaoSeriesRemota, '
+        'alocs=$versaoAlocacoesRemota, disps=$versaoDisponibilidadesRemota, '
+        'medicos=$versaoMedicosRemota, gabs=$versaoGabinetesRemota');
+    _log(
+        '🔎 [CACHE] Versões $unidadeKey (locais): series=${versaoSeriesLocal ?? 'null'}, '
+        'alocs=${versaoAlocacoesLocal ?? 'null'}, disps=${versaoDisponibilidadesLocal ?? 'null'}, '
+        'medicos=${versaoMedicosLocal ?? 'null'}, gabs=${versaoGabinetesLocal ?? 'null'}');
+    _log(
+        '🔎 [CACHE] Mudanças $unidadeKey: series=$seriesMudou, alocs=$alocacoesMudou, '
+        'disps=$disponibilidadesMudou, medicos=$medicosMudou, gabs=$gabinetesMudou, '
+        'forcar=$forcar');
+
     if (result.recarregarDinamico) {
       AlocacaoCacheStore.clearAll();
     }
     if (seriesMudou) {
       SerieService.invalidateCacheSeries(unidadeKey);
       _forcarServidorSeriesPorUnidade[unidadeKey] = true;
+      _log('⚠️ [CACHE] séries mudaram para $unidadeKey, forçar servidor');
     }
     if (result.recarregarDinamico || result.recarregarStatic) {
       AlocacaoCacheStore.log(

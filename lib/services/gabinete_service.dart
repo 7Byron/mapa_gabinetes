@@ -5,6 +5,21 @@ import '../models/gabinete.dart';
 import '../models/unidade.dart';
 import 'cache_version_service.dart';
 
+final Map<String, List<Gabinete>> _cacheGabinetesPorUnidade = {};
+
+String _cacheKeyGabinetes(Unidade? unidade) {
+  final id = unidade?.id;
+  return (id == null || id.isEmpty) ? '_global' : id;
+}
+
+void limparCacheGabinetes({Unidade? unidade}) {
+  if (unidade == null) {
+    _cacheGabinetesPorUnidade.clear();
+    return;
+  }
+  _cacheGabinetesPorUnidade.remove(_cacheKeyGabinetes(unidade));
+}
+
 Future<void> salvarGabineteCompleto(Gabinete gabinete,
     {Unidade? unidade}) async {
   final firestore = FirebaseFirestore.instance;
@@ -34,11 +49,24 @@ Future<void> salvarGabineteCompleto(Gabinete gabinete,
     unidadeId: unidade?.id,
     field: CacheVersionService.fieldGabinetes,
   );
+  limparCacheGabinetes(unidade: unidade);
 }
 
-Future<List<Gabinete>> buscarGabinetes({Unidade? unidade}) async {
+Future<List<Gabinete>> buscarGabinetes({
+  Unidade? unidade,
+  bool usarCache = true,
+  bool forcarAtualizacao = false,
+}) async {
   final firestore = FirebaseFirestore.instance;
   CollectionReference gabinetesRef;
+  final cacheKey = _cacheKeyGabinetes(unidade);
+
+  if (usarCache && !forcarAtualizacao) {
+    final cached = _cacheGabinetesPorUnidade[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return List<Gabinete>.from(cached);
+    }
+  }
 
   if (unidade != null) {
     // Busca gabinetes da unidade específica
@@ -64,6 +92,9 @@ Future<List<Gabinete>> buscarGabinetes({Unidade? unidade}) async {
     gabinetes.add(Gabinete.fromMap(dados));
   }
 
+  if (gabinetes.isNotEmpty) {
+    _cacheGabinetesPorUnidade[cacheKey] = List<Gabinete>.from(gabinetes);
+  }
   return gabinetes;
 }
 
@@ -88,4 +119,5 @@ Future<void> deletarGabinete(String gabineteId, {Unidade? unidade}) async {
     unidadeId: unidade?.id,
     field: CacheVersionService.fieldGabinetes,
   );
+  limparCacheGabinetes(unidade: unidade);
 }

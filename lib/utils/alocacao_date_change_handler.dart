@@ -34,7 +34,6 @@ class DateChangeResult {
 }
 
 class AlocacaoDateChangeHandler {
-  static const Duration _cacheTtl = Duration(minutes: 5);
   static final Map<String, _CacheDia> _cacheResultados = {};
 
   static DateChangeResult? _getCache(DateTime data) {
@@ -45,7 +44,9 @@ class AlocacaoDateChangeHandler {
       _cacheResultados.remove(key);
       return null;
     }
-    if (DateTime.now().difference(cached.atualizadoEm) > _cacheTtl) {
+    final cacheDisp = AlocacaoCacheStore.getDisponibilidades(data);
+    final cacheAloc = AlocacaoCacheStore.getAlocacoes(data);
+    if (cacheDisp == null || cacheAloc == null) {
       _cacheResultados.remove(key);
       return null;
     }
@@ -89,7 +90,33 @@ class AlocacaoDateChangeHandler {
     final cacheLocal = _getCache(dataNormalizada);
     if (cacheLocal != null) {
       onProgress(0.60, 'A usar cache local do dia...');
-      return cacheLocal;
+      final cacheDisp = AlocacaoCacheStore.getDisponibilidades(dataNormalizada);
+      final cacheAloc = AlocacaoCacheStore.getAlocacoes(dataNormalizada);
+      if (cacheDisp != null) {
+        disponibilidades
+          ..clear()
+          ..addAll(cacheDisp);
+      }
+      if (cacheAloc != null) {
+        alocacoes
+          ..clear()
+          ..addAll(cacheAloc);
+      }
+      final resultadoCache = DateChangeResult(
+        clinicaFechada: cacheLocal.clinicaFechada,
+        mensagemClinicaFechada: cacheLocal.mensagemClinicaFechada,
+        feriados: cacheLocal.feriados,
+        diasEncerramento: cacheLocal.diasEncerramento,
+        horariosClinica: cacheLocal.horariosClinica,
+        encerraFeriados: cacheLocal.encerraFeriados,
+        nuncaEncerra: cacheLocal.nuncaEncerra,
+        encerraDias: cacheLocal.encerraDias,
+        alocacoesAtualizadas: cacheAloc != null
+            ? List<Alocacao>.from(cacheAloc)
+            : cacheLocal.alocacoesAtualizadas,
+      );
+      _setCache(dataNormalizada, resultadoCache);
+      return resultadoCache;
     }
 
     final resultado = await atualizarDadosDoDia(

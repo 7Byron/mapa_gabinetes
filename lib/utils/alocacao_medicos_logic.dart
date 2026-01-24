@@ -21,6 +21,10 @@ import '../utils/conflict_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AlocacaoMedicosLogic {
+  static const String _unidadeFallbackId = 'fyEj6kOXvCuL65sMfCaR';
+  static final Map<String, List<Gabinete>> _cacheGabinetesPorUnidade = {};
+  static final Map<String, List<Medico>> _cacheMedicosPorUnidade = {};
+
   /// Verifica se o cache está invalidado para um dia específico
   static bool isCacheInvalidado(DateTime day) =>
       AlocacaoCacheStore.isCacheInvalidado(day);
@@ -33,6 +37,9 @@ class AlocacaoMedicosLogic {
   static void _log(String message) {
     AlocacaoCacheStore.log(message);
   }
+
+  static String _cacheUnidadeKey(Unidade? unidade) =>
+      unidade?.id ?? _unidadeFallbackId;
 
   /// Atualiza o cache do dia.
   /// Se `forcarValido` for true, marca o cache como válido mesmo se estava invalidado.
@@ -274,32 +281,20 @@ class AlocacaoMedicosLogic {
   
   /// Define se o app está em foco (chamado pelo lifecycle observer)
   static void setAppEmFoco(bool emFoco) {
+    if (_appEmFoco == emFoco) return;
     _appEmFoco = emFoco;
-    if (!emFoco) {
-      // Quando o app perde foco, invalidar cache para garantir dados atualizados ao voltar
-      _log(
-          '⚠️ [CACHE] App perdeu foco - cache será invalidado na próxima busca');
-    }
+    _log('ℹ️ [CACHE] App em foco: ${_appEmFoco ? 'sim' : 'não'}');
   }
   
-  /// Retorna Source.server se o cache foi invalidado ou app não está em foco, Source.serverAndCache caso contrário
-  /// CORREÇÃO: Quando o app não está em foco, sempre buscar do servidor para garantir dados atualizados
+  /// Retorna Source.server se o cache foi invalidado, Source.serverAndCache caso contrário
   static Source _getSourceForDay(DateTime? day) {
     if (day == null) {
-      // Se app não está em foco, buscar do servidor mesmo sem filtro de dia
-      return _appEmFoco ? Source.serverAndCache : Source.server;
+      return Source.serverAndCache;
     }
-    final key = keyDia(day);
     if (isCacheInvalidado(day)) {
       return Source.server; // Cache invalidado, buscar do servidor
     }
-    // CORREÇÃO CRÍTICA: Se app não está em foco, sempre buscar do servidor
-    if (!_appEmFoco) {
-      _log(
-          '⚠️ [CACHE] App não está em foco - forçando busca do servidor para dia $key');
-      return Source.server;
-    }
-    return Source.serverAndCache; // Usar cache do Firestore apenas quando app está em foco
+    return Source.serverAndCache; // Usar cache do Firestore quando válido
   }
 
   /// Extrai datas com exceções canceladas do Firestore para um dia específico
@@ -444,16 +439,45 @@ class AlocacaoMedicosLogic {
         forcar: reloadStatic,
       );
       final deveRecarregarStatic = reloadStatic || sync.recarregarStatic;
+      final unidadeKey = _cacheUnidadeKey(unidade);
+      if (deveRecarregarStatic) {
+        _cacheGabinetesPorUnidade.remove(unidadeKey);
+        _cacheMedicosPorUnidade.remove(unidadeKey);
+      }
 
       // Carrega dados estáticos (gabinetes/medicos) apenas quando solicitado
       final List<Gabinete> gabs;
       final List<Medico> meds;
-      if (deveRecarregarStatic || gabinetes.isEmpty || medicos.isEmpty) {
-        gabs = await buscarGabinetes(unidade: unidade);
-        meds = await buscarMedicos(unidade: unidade);
+      final cacheGabs = _cacheGabinetesPorUnidade[unidadeKey];
+      final cacheMeds = _cacheMedicosPorUnidade[unidadeKey];
+      final precisaGabinetes =
+          deveRecarregarStatic || (gabinetes.isEmpty && cacheGabs == null);
+      final precisaMedicos =
+          deveRecarregarStatic || (medicos.isEmpty && cacheMeds == null);
+
+      if (precisaGabinetes) {
+        gabs = await buscarGabinetes(
+          unidade: unidade,
+          forcarAtualizacao: deveRecarregarStatic,
+        );
       } else {
-        gabs = gabinetes;
-        meds = medicos;
+        gabs = gabinetes.isNotEmpty ? gabinetes : (cacheGabs ?? []);
+      }
+
+      if (precisaMedicos) {
+        meds = await buscarMedicos(
+          unidade: unidade,
+          forcarAtualizacao: deveRecarregarStatic,
+        );
+      } else {
+        meds = medicos.isNotEmpty ? medicos : (cacheMeds ?? []);
+      }
+
+      if (gabs.isNotEmpty) {
+        _cacheGabinetesPorUnidade[unidadeKey] = List<Gabinete>.from(gabs);
+      }
+      if (meds.isNotEmpty) {
+        _cacheMedicosPorUnidade[unidadeKey] = List<Medico>.from(meds);
       }
 
 
@@ -483,13 +507,6 @@ class AlocacaoMedicosLogic {
           );
           // Cache não disponível ou invalidado, buscar do Firestore
           // CORREÇÃO: Se app não está em foco, sempre buscar do servidor mesmo se cache existe
-          final deveBuscarDoServidor = estaInvalidado || !_appEmFoco;
-          if (deveBuscarDoServidor && !estaInvalidado) {
-            // Invalidar cache se app não está em foco para garantir dados atualizados
-            AlocacaoCacheStore.cacheInvalidadoPorDia.add(key);
-            _log(
-                '⚠️ [CACHE] App não está em foco - invalidando cache do dia $key para buscar dados atualizados');
-          }
           _log('🔄 [CACHE] Buscando do Firestore para dia $key');
           final results = await Future.wait([
             _carregarDisponibilidadesUnidade(unidade,
@@ -1414,8 +1431,21 @@ class AlocacaoMedicosLogic {
         dataInicio = DateTime(ano, 1, 1);
       }
 
-      // Carregar TODOS os médicos ativos do Firestore
-      // CORREÇÃO: Forçar buscar do servidor para evitar cache desatualizado
+    // Carregar médicos ativos a partir do cache local quando possível
+    // (evita round-trip desnecessário ao Firestore).
+    final unidadeKey = _cacheUnidadeKey(unidade);
+    final cachedMedicos = _cacheMedicosPorUnidade[unidadeKey];
+    List<String> medicoIds = [];
+    if (cachedMedicos != null && cachedMedicos.isNotEmpty) {
+      medicoIds = cachedMedicos
+          .where((m) => m.ativo)
+          .map((m) => m.id)
+          .where((id) => id.isNotEmpty)
+          .toList();
+    }
+    
+    if (medicoIds.isEmpty) {
+      // Fallback: buscar do servidor apenas quando não há cache confiável
       final medicosRef = firestore
           .collection('unidades')
           .doc(unidade.id)
@@ -1424,7 +1454,8 @@ class AlocacaoMedicosLogic {
       final medicosSnapshot = await medicosRef
           .where('ativo', isEqualTo: true)
           .get(const GetOptions(source: Source.server)); // Forçar servidor para evitar cache
-      final medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+      medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+    }
       if (medicoIds.isEmpty) {
         return disponibilidadesMap.values.toList();
       }
@@ -1498,19 +1529,23 @@ class AlocacaoMedicosLogic {
             
 // #endregion
 
-            // CORREÇÃO CRÍTICA: Quando anoEspecifico é fornecido (ex: filtro de médicos não alocados),
-            // SEMPRE forçar servidor para garantir dados completos do ano inteiro, independentemente do cache do dia atual.
-            // O cache baseado no dia atual pode estar incompleto ou desatualizado.
-            // Se dataFiltroDia é fornecido, usar cache apenas se não estiver invalidado.
-            final deveForcarServidor = anoEspecifico != null
-                ? true // Sempre forçar servidor quando filtro de ano completo é usado
-                : forcarServidorSeries;
+            // CORREÇÃO CRÍTICA: Só forçar servidor quando estamos a carregar o ANO inteiro
+            // (ex: filtro de médicos não alocados). Para filtros de dia, usar cache quando
+            // possível e só forçar servidor se a versão de séries mudou.
+            final deveForcarServidor =
+                (anoEspecifico != null && dataFiltroDia == null)
+                    ? true
+                    : forcarServidorSeries;
+            final cacheSeriesMedico =
+                SerieService.getSeriesFromCache(unidade.id, medicoId);
+            final deveForcarServidorMedico =
+                deveForcarServidor && cacheSeriesMedico == null;
             final series = await SerieService.carregarSeries(
               medicoId,
               unidade: unidade,
               dataInicio: dataInicioParaCarregarSeries,
               dataFim: dataFimParaCarregarSeries,
-              forcarServidor: deveForcarServidor,
+              forcarServidor: deveForcarServidorMedico,
             );
 
             // #region agent log (COMENTADO - pode ser reativado se necessário)

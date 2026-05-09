@@ -11,6 +11,7 @@ import '../screens/dias_encerramento_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
 import '../screens/scripts_screen.dart';
 import '../screens/relatorio_ocupacao_detalhe_screen.dart';
+import '../screens/relatorio_horas_especialidade_screen.dart';
 import '../services/unidade_selecionada_service.dart';
 
 /// Drawer personalizado com menu de navegação
@@ -77,7 +78,6 @@ class CustomDrawer extends StatelessWidget {
                     fit: BoxFit.contain,
                   ),
                 ),
-              
               ],
             ),
           ),
@@ -179,6 +179,32 @@ class CustomDrawer extends StatelessWidget {
                     fim: DateTime.now(),
                     gabineteIds: const [],
                   ),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.query_stats),
+            title: const Text(
+              'Horas por Especialidade',
+              style: TextStyle(fontSize: 14),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              if (unidade == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Unidade não definida.'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      RelatorioHorasEspecialidadeScreen(unidade: unidade!),
                 ),
               );
             },

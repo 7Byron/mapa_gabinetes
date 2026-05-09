@@ -33,6 +33,20 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Firebase/local deploy output
+.firebase/
+firebase-debug.log
+firestore-debug.log
+web/flutter_service_worker.js
+
+# Node/Firebase Functions dependencies
+**/node_modules/
+
+# Local backups and legacy SQLite data
+backups/
+banco_dados/*.db
+banco_dados/save/*.db
+
 # Symbolication related
 app.*.symbols
 

@@ -146,6 +146,7 @@ class _RelatorioOcupacaoDetalheScreenState
   final DateFormat _dateFormatSemana = DateFormat('EEE', 'pt_PT');
 
   bool _carregando = true;
+  bool _relatorioGerado = false;
   String? _erro;
   List<RelatorioOcupacaoDia> _dias = [];
   List<RelatorioDisponibilidadeDia> _diasDisponibilidade = [];
@@ -257,6 +258,14 @@ class _RelatorioOcupacaoDetalheScreenState
     ].join('|');
   }
 
+  void _limparRelatorioAtual() {
+    _dias = [];
+    _diasDisponibilidade = [];
+    _percentualGeral = 0.0;
+    _relatorioGerado = false;
+    _erro = null;
+  }
+
   Future<void> _carregarGabinetes() async {
     try {
       final gabinetes = await buscarGabinetes(unidade: widget.unidade);
@@ -283,17 +292,9 @@ class _RelatorioOcupacaoDetalheScreenState
       setState(() {
         _gabinetes = gabinetes;
         _gabineteSelecionadoId = selecionado;
+        _limparRelatorioAtual();
+        _carregando = false;
       });
-      if (selecionado == null) {
-        setState(() {
-          _dias = [];
-          _diasDisponibilidade = [];
-          _percentualGeral = 0.0;
-          _carregando = false;
-        });
-      } else {
-        await _carregarDadosPorModo();
-      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -325,8 +326,9 @@ class _RelatorioOcupacaoDetalheScreenState
       if (_gabineteSelecionadoId == null) {
         setState(() {
           _dias = [];
-        _diasDisponibilidade = [];
+          _diasDisponibilidade = [];
           _percentualGeral = 0.0;
+          _relatorioGerado = false;
           _carregando = false;
         });
         return;
@@ -340,7 +342,8 @@ class _RelatorioOcupacaoDetalheScreenState
         if (!mounted) return;
         setState(() {
           _dias = cache.dias;
-          _percentualGeral = cache.percentual;
+          _percentualGeral = _calcularPercentualGeral(cache.dias);
+          _relatorioGerado = true;
           _carregando = false;
         });
         _atualizarProgresso(1.0, 'Concluído');
@@ -363,6 +366,7 @@ class _RelatorioOcupacaoDetalheScreenState
       setState(() {
         _dias = dias;
         _percentualGeral = percentualGeral;
+        _relatorioGerado = true;
         _carregando = false;
       });
       _cacheOcupacao[cacheKey] = _CacheRelatorioOcupacao(
@@ -399,6 +403,7 @@ class _RelatorioOcupacaoDetalheScreenState
       setState(() {
         _diasDisponibilidade = [];
         _percentualGeral = 0.0;
+        _relatorioGerado = false;
         _carregando = false;
       });
       return;
@@ -415,7 +420,9 @@ class _RelatorioOcupacaoDetalheScreenState
         if (!mounted) return;
         setState(() {
           _diasDisponibilidade = cache.dias;
-          _percentualGeral = cache.percentual;
+          _percentualGeral =
+              _calcularPercentualGeralDisponibilidade(cache.dias);
+          _relatorioGerado = true;
           _carregando = false;
         });
         _atualizarProgresso(1.0, 'Concluído');
@@ -455,7 +462,8 @@ class _RelatorioOcupacaoDetalheScreenState
 
       for (int i = 0; i < medicosAtivos.length; i++) {
         final medico = medicosAtivos[i];
-        if (medicosAtivos.isNotEmpty && (i % 4 == 0 || i == medicosAtivos.length - 1)) {
+        if (medicosAtivos.isNotEmpty &&
+            (i % 4 == 0 || i == medicosAtivos.length - 1)) {
           final progressoMedicos =
               0.35 + (0.4 * ((i + 1) / medicosAtivos.length));
           _atualizarProgresso(
@@ -599,6 +607,7 @@ class _RelatorioOcupacaoDetalheScreenState
       setState(() {
         _diasDisponibilidade = resultados;
         _percentualGeral = percentualGeral;
+        _relatorioGerado = true;
         _carregando = false;
       });
       _cacheDisponibilidade[cacheKey] = _CacheRelatorioDisponibilidade(
@@ -910,8 +919,8 @@ class _RelatorioOcupacaoDetalheScreenState
     setState(() {
       _inicioRelatorio = intervalo.inicio;
       _fimRelatorio = intervalo.fim;
+      _limparRelatorioAtual();
     });
-    await _carregarDadosPorModo();
   }
 
   @override
@@ -928,11 +937,11 @@ class _RelatorioOcupacaoDetalheScreenState
           constraints: const BoxConstraints(maxWidth: 845),
           child: Padding(
             padding: const EdgeInsets.all(16),
-          child: _carregando
-              ? _buildCarregamento()
-              : _erro != null
-                  ? _buildErro()
-                  : _buildConteudo(),
+            child: _carregando
+                ? _buildCarregamento()
+                : _erro != null
+                    ? _buildErro()
+                    : _buildConteudo(),
           ),
         ),
       ),
@@ -967,7 +976,7 @@ class _RelatorioOcupacaoDetalheScreenState
       decoration: BoxDecoration(
         color: base,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.shade900.withOpacity(0.7)),
+        border: Border.all(color: Colors.blue.shade900.withValues(alpha: 0.7)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
@@ -980,8 +989,8 @@ class _RelatorioOcupacaoDetalheScreenState
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      base.withOpacity(0.92),
-                      base.withOpacity(0.98),
+                      base.withValues(alpha: 0.92),
+                      base.withValues(alpha: 0.98),
                     ],
                   ),
                 ),
@@ -992,28 +1001,28 @@ class _RelatorioOcupacaoDetalheScreenState
               left: 0,
               right: 0,
               height: 2,
-              child: Container(color: Colors.black.withOpacity(0.25)),
+              child: Container(color: Colors.black.withValues(alpha: 0.25)),
             ),
             Positioned(
               left: 0,
               top: 0,
               bottom: 0,
               width: 2,
-              child: Container(color: Colors.black.withOpacity(0.2)),
+              child: Container(color: Colors.black.withValues(alpha: 0.2)),
             ),
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
               height: 1,
-              child: Container(color: Colors.white.withOpacity(0.22)),
+              child: Container(color: Colors.white.withValues(alpha: 0.22)),
             ),
             Positioned(
               right: 0,
               top: 0,
               bottom: 0,
               width: 1,
-              child: Container(color: Colors.white.withOpacity(0.18)),
+              child: Container(color: Colors.white.withValues(alpha: 0.18)),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1038,11 +1047,13 @@ class _RelatorioOcupacaoDetalheScreenState
                     );
                   }).toList(),
                   onChanged: (value) async {
-                    if (value == null || value == _gabineteSelecionadoId) return;
+                    if (value == null || value == _gabineteSelecionadoId) {
+                      return;
+                    }
                     setState(() {
                       _gabineteSelecionadoId = value;
+                      _limparRelatorioAtual();
                     });
-                    await _carregarDadosPorModo();
                   },
                 ),
               ),
@@ -1085,14 +1096,14 @@ class _RelatorioOcupacaoDetalheScreenState
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                cor.withOpacity(0.98),
-                cor.withOpacity(0.85),
-                cor.withOpacity(0.7),
+                cor.withValues(alpha: 0.98),
+                cor.withValues(alpha: 0.85),
+                cor.withValues(alpha: 0.7),
               ],
               stops: const [0.0, 0.6, 1.0],
             ),
             border: Border.all(
-              color: cor.withOpacity(0.55),
+              color: cor.withValues(alpha: 0.55),
               width: 0.8,
             ),
           ),
@@ -1103,14 +1114,14 @@ class _RelatorioOcupacaoDetalheScreenState
                 left: 0,
                 right: 0,
                 height: espessura,
-                child: Container(color: Colors.white.withOpacity(0.35)),
+                child: Container(color: Colors.white.withValues(alpha: 0.35)),
               ),
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
                 height: espessura,
-                child: Container(color: Colors.black.withOpacity(0.18)),
+                child: Container(color: Colors.black.withValues(alpha: 0.18)),
               ),
             ],
           ),
@@ -1128,7 +1139,7 @@ class _RelatorioOcupacaoDetalheScreenState
       decoration: BoxDecoration(
         boxShadow: [
           BoxShadow(
-            color: cor.withOpacity(0.35),
+            color: cor.withValues(alpha: 0.35),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -1142,12 +1153,12 @@ class _RelatorioOcupacaoDetalheScreenState
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                cor.withOpacity(0.98),
-                cor.withOpacity(0.8),
+                cor.withValues(alpha: 0.98),
+                cor.withValues(alpha: 0.8),
               ],
             ),
             border: Border.all(
-              color: cor.withOpacity(0.6),
+              color: cor.withValues(alpha: 0.6),
               width: 0.6,
             ),
           ),
@@ -1158,18 +1169,17 @@ class _RelatorioOcupacaoDetalheScreenState
                 left: 0,
                 right: 0,
                 height: 1,
-                child: Container(color: Colors.white.withOpacity(0.35)),
+                child: Container(color: Colors.white.withValues(alpha: 0.35)),
               ),
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
                 height: 1,
-                child: Container(color: Colors.black.withOpacity(0.18)),
+                child: Container(color: Colors.black.withValues(alpha: 0.18)),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: Text(
                   texto,
                   textAlign: TextAlign.center,
@@ -1194,16 +1204,16 @@ class _RelatorioOcupacaoDetalheScreenState
   }) {
     final base =
         selecionado ? cor : (Color.lerp(cor, Colors.grey.shade500, 0.6) ?? cor);
-    final topo = base.withOpacity(selecionado ? 0.4 : 0.2);
-    final baseFundo = base.withOpacity(selecionado ? 0.28 : 0.12);
-    final borda = base.withOpacity(selecionado ? 0.8 : 0.4);
+    final topo = base.withValues(alpha: selecionado ? 0.4 : 0.2);
+    final baseFundo = base.withValues(alpha: selecionado ? 0.28 : 0.12);
+    final borda = base.withValues(alpha: selecionado ? 0.8 : 0.4);
     final sombraPrincipal = BoxShadow(
-      color: base.withOpacity(selecionado ? 0.5 : 0.2),
+      color: base.withValues(alpha: selecionado ? 0.5 : 0.2),
       blurRadius: selecionado ? 10 : 4,
       offset: const Offset(0, 3),
     );
     final sombraSecundaria = BoxShadow(
-      color: Colors.white.withOpacity(selecionado ? 0.35 : 0.18),
+      color: Colors.white.withValues(alpha: selecionado ? 0.35 : 0.18),
       blurRadius: selecionado ? 6 : 3,
       offset: const Offset(0, -1),
     );
@@ -1231,7 +1241,7 @@ class _RelatorioOcupacaoDetalheScreenState
                 left: 0,
                 right: 0,
                 height: 1,
-                child: Container(color: Colors.white.withOpacity(0.35)),
+                child: Container(color: Colors.white.withValues(alpha: 0.35)),
               ),
               Icon(icon, size: 20, color: base),
             ],
@@ -1309,48 +1319,76 @@ class _RelatorioOcupacaoDetalheScreenState
           ),
         ),
         const SizedBox(height: 8),
-        _buildGraficoDiasExpansivo(),
+        _relatorioGerado
+            ? _buildGraficoDiasExpansivo()
+            : _buildRelatorioPorGerar(),
       ],
     );
   }
 
   Widget _buildToggleGrafico() {
+    final podeGerar = !_carregando && _gabineteSelecionadoId != null;
     return Center(
-      child: ToggleButtons(
-        borderRadius: BorderRadius.circular(12),
-        borderColor: Colors.transparent,
-        selectedBorderColor: Colors.transparent,
-        fillColor: Colors.transparent,
-        selectedColor: Colors.transparent,
-        color: Colors.transparent,
-        isSelected: [
-          _modoGrafico == ModoGrafico.ocupacao,
-          _modoGrafico == ModoGrafico.disponibilidade,
-        ],
-        onPressed: (index) async {
-          final novoModo =
-              index == 0 ? ModoGrafico.ocupacao : ModoGrafico.disponibilidade;
-          if (novoModo == _modoGrafico) return;
-          setState(() {
-            _modoGrafico = novoModo;
-          });
-          await _carregarDadosPorModo();
-        },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: _buildIcon3D(
-              icon: Icons.bar_chart,
-              cor: Colors.blue.shade600,
-              selecionado: _modoGrafico == ModoGrafico.ocupacao,
-            ),
+          ToggleButtons(
+            borderRadius: BorderRadius.circular(12),
+            borderColor: Colors.transparent,
+            selectedBorderColor: Colors.transparent,
+            fillColor: Colors.transparent,
+            selectedColor: Colors.transparent,
+            color: Colors.transparent,
+            isSelected: [
+              _modoGrafico == ModoGrafico.ocupacao,
+              _modoGrafico == ModoGrafico.disponibilidade,
+            ],
+            onPressed: (index) {
+              final novoModo = index == 0
+                  ? ModoGrafico.ocupacao
+                  : ModoGrafico.disponibilidade;
+              if (novoModo == _modoGrafico) return;
+              setState(() {
+                _modoGrafico = novoModo;
+                _limparRelatorioAtual();
+              });
+            },
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: _buildIcon3D(
+                  icon: Icons.bar_chart,
+                  cor: Colors.blue.shade600,
+                  selecionado: _modoGrafico == ModoGrafico.ocupacao,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: _buildIcon3D(
+                  icon: Icons.stacked_bar_chart,
+                  cor: Colors.deepPurple.shade400,
+                  selecionado: _modoGrafico == ModoGrafico.disponibilidade,
+                ),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: _buildIcon3D(
-              icon: Icons.stacked_bar_chart,
-              cor: Colors.deepPurple.shade400,
-              selecionado: _modoGrafico == ModoGrafico.disponibilidade,
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Gerar relatório',
+            child: Opacity(
+              opacity: podeGerar ? 1.0 : 0.45,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: podeGerar ? () => _carregarDadosPorModo() : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _buildIcon3D(
+                    icon: Icons.refresh,
+                    cor: Colors.orange.shade700,
+                    selecionado: !_relatorioGerado,
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -1372,6 +1410,25 @@ class _RelatorioOcupacaoDetalheScreenState
           ),
         );
       },
+    );
+  }
+
+  Widget _buildRelatorioPorGerar() {
+    final texto = _gabineteSelecionadoId == null
+        ? 'Selecione um gabinete para gerar o relatório.'
+        : 'Clique no botão laranja para gerar o relatório.';
+    return SizedBox(
+      height: 260,
+      child: Center(
+        child: Text(
+          texto,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1432,12 +1489,7 @@ class _RelatorioOcupacaoDetalheScreenState
                       if (value == null) return;
                       setState(() {
                         _filtroDiaSelecionado = value;
-                        _percentualGeral = _modoGrafico ==
-                                ModoGrafico.disponibilidade
-                            ? _calcularPercentualGeralDisponibilidade(
-                                _diasDisponibilidade,
-                              )
-                            : _calcularPercentualGeral(_dias);
+                        _limparRelatorioAtual();
                       });
                     },
                   ),
@@ -1472,66 +1524,86 @@ class _RelatorioOcupacaoDetalheScreenState
             Align(
               alignment: Alignment.center,
               child: Text(
-                'Ocupação média, ${_rotuloPeriodoTitulo(_periodoSelecionado)}: '
-                '${_textoPeriodo()}',
+                _relatorioGerado
+                    ? 'Ocupação média, ${_rotuloPeriodoTitulo(_periodoSelecionado)}: '
+                        '${_textoPeriodo()}'
+                    : 'Período selecionado: ${_textoPeriodo()}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 48,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final percentual =
-                      _percentualGeral.clamp(0.0, 100.0) / 100.0;
-                  final largura = (constraints.maxWidth * percentual)
-                      .clamp(8.0, double.infinity);
-                  final maxLeft = constraints.maxWidth - 48.0;
-                  final limiteEsquerda = 8.0;
-                  final limiteDireita =
-                      maxLeft < limiteEsquerda ? limiteEsquerda : maxLeft;
-                  final posicaoEsquerda = (largura + 6.0)
-                      .clamp(limiteEsquerda, limiteDireita);
-                  return Stack(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: _buildBarra3D(
-                          width: largura,
-                          height: 48,
-                          cor: _corParaPercentual(_percentualGeral),
-                          radius: 18,
-                        ),
-                      ),
-                      Positioned(
-                        left: posicaoEsquerda,
-                        top: 0,
-                        bottom: 0,
-                        child: SizedBox(
-                          width: 48,
-                          child: Center(
-                            child: Text(
-                              '${_percentualGeral.toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: _corParaPercentual(_percentualGeral),
+            _relatorioGerado
+                ? SizedBox(
+                    height: 48,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final percentual =
+                            _percentualGeral.clamp(0.0, 100.0) / 100.0;
+                        final largura = (constraints.maxWidth * percentual)
+                            .clamp(8.0, double.infinity);
+                        final maxLeft = constraints.maxWidth - 48.0;
+                        final limiteEsquerda = 8.0;
+                        final limiteDireita =
+                            maxLeft < limiteEsquerda ? limiteEsquerda : maxLeft;
+                        final posicaoEsquerda = (largura + 6.0)
+                            .clamp(limiteEsquerda, limiteDireita);
+                        return Stack(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(18),
                               ),
                             ),
-                          ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: _buildBarra3D(
+                                width: largura,
+                                height: 48,
+                                cor: _corParaPercentual(_percentualGeral),
+                                radius: 18,
+                              ),
+                            ),
+                            Positioned(
+                              left: posicaoEsquerda,
+                              top: 0,
+                              bottom: 0,
+                              child: SizedBox(
+                                width: 48,
+                                child: Center(
+                                  child: Text(
+                                    '${_percentualGeral.toStringAsFixed(0)}%',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          _corParaPercentual(_percentualGeral),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  )
+                : Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Relatório por gerar',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
                         ),
                       ),
-                    ],
-                  );
-                },
-              ),
-            ),
+                    ),
+                  ),
           ],
         ),
       ),
@@ -1561,8 +1633,7 @@ class _RelatorioOcupacaoDetalheScreenState
       larguraItem = 85.0;
       intervalo = 2.0;
     }
-    final larguraTotal =
-        (totalItens * (larguraItem + intervalo)).toDouble();
+    final larguraTotal = (totalItens * (larguraItem + intervalo)).toDouble();
     final larguraBarra = intervalo == 0.0
         ? larguraItem
         : (larguraItem * 0.66).clamp(40.0, larguraItem).toDouble();
@@ -1579,9 +1650,8 @@ class _RelatorioOcupacaoDetalheScreenState
             child: GestureDetector(
               onHorizontalDragUpdate: (details) {
                 if (!_graficoScrollController.hasClients) return;
-                final novoOffset = (_graficoScrollController.offset -
-                        details.delta.dx)
-                    .clamp(
+                final novoOffset =
+                    (_graficoScrollController.offset - details.delta.dx).clamp(
                         0.0, _graficoScrollController.position.maxScrollExtent);
                 _graficoScrollController.jumpTo(novoOffset);
               },
@@ -1608,95 +1678,98 @@ class _RelatorioOcupacaoDetalheScreenState
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: diasVisiveis.map((dia) {
-                      final percentual = dia.percentual.clamp(0.0, 100.0);
-                      final cor = _corParaPercentual(percentual);
-                      final alturaBarra =
-                          (percentual / 100.0) * alturaMaximaBarra;
-                      final alturaFinal =
-                          alturaBarra < 4.0 ? 4.0 : alturaBarra;
-                      final textoBarra = '${percentual.toStringAsFixed(0)}%';
-                      final textoHoras = (dia.fechado || dia.horasTotais <= 0)
-                          ? 'Fechado'
-                          : '${_formatHoras(dia.horasOcupadas)}h/'
-                              '${_formatHoras(dia.horasTotais)}h';
-                      final posicaoTexto = (alturaFinal + 6)
-                          .clamp(6.0, alturaMaximaBarra - 18.0);
+                              final percentual =
+                                  dia.percentual.clamp(0.0, 100.0);
+                              final cor = _corParaPercentual(percentual);
+                              final alturaBarra =
+                                  (percentual / 100.0) * alturaMaximaBarra;
+                              final alturaFinal =
+                                  alturaBarra < 4.0 ? 4.0 : alturaBarra;
+                              final textoBarra =
+                                  '${percentual.toStringAsFixed(0)}%';
+                              final textoHoras =
+                                  (dia.fechado || dia.horasTotais <= 0)
+                                      ? 'Fechado'
+                                      : '${_formatHoras(dia.horasOcupadas)}h/'
+                                          '${_formatHoras(dia.horasTotais)}h';
+                              final posicaoTexto = (alturaFinal + 6)
+                                  .clamp(6.0, alturaMaximaBarra - 18.0);
 
-                      return Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: intervalo / 2),
-                        child: SizedBox(
-                          width: larguraItem,
-                          child: Column(
-                            children: [
-                              SizedBox(
-                                height: alturaMaximaBarra,
-                                child: Stack(
-                                  alignment: Alignment.bottomCenter,
-                                  children: [
-                                    Container(
-                                      width: larguraBarra,
-                                      height: alturaMaximaBarra,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[300],
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                    _buildBarra3D(
-                                      width: larguraBarra,
-                                      height: alturaFinal,
-                                      cor: cor,
-                                      radius: 14,
-                                    ),
-                                    Positioned(
-                                      bottom: posicaoTexto,
-                                      left: 0,
-                                      right: 0,
-                                      child: Text(
-                                        textoBarra,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: cor,
+                              return Padding(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: intervalo / 2),
+                                child: SizedBox(
+                                  width: larguraItem,
+                                  child: Column(
+                                    children: [
+                                      SizedBox(
+                                        height: alturaMaximaBarra,
+                                        child: Stack(
+                                          alignment: Alignment.bottomCenter,
+                                          children: [
+                                            Container(
+                                              width: larguraBarra,
+                                              height: alturaMaximaBarra,
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey[300],
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                              ),
+                                            ),
+                                            _buildBarra3D(
+                                              width: larguraBarra,
+                                              height: alturaFinal,
+                                              cor: cor,
+                                              radius: 14,
+                                            ),
+                                            Positioned(
+                                              bottom: posicaoTexto,
+                                              left: 0,
+                                              right: 0,
+                                              child: Text(
+                                                textoBarra,
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: cor,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _dateFormatCurto.format(dia.data),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _formatSemana(dia.data),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[600],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        textoHoras,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[600],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _dateFormatCurto.format(dia.data),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatSemana(dia.data),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                textoHoras,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                              );
+                            }).toList(),
                           ),
                         ),
                       ),
@@ -1740,12 +1813,19 @@ class _RelatorioOcupacaoDetalheScreenState
       larguraItem = 85.0;
       intervalo = 2.0;
     }
-    final larguraTotal =
-        (totalItens * (larguraItem + intervalo)).toDouble();
+    final larguraTotal = (totalItens * (larguraItem + intervalo)).toDouble();
     final larguraBarra = intervalo == 0.0
         ? larguraItem
         : (larguraItem * 0.66).clamp(40.0, larguraItem).toDouble();
-    const legendaLateral = 28.0;
+    const larguraEixoHoras = 36.0;
+    const espacoEixoGrafico = 4.0;
+    const alturaRotulosInferiores = 46.0;
+    final inicioGlobal = diasVisiveis
+        .map((dia) => dia.inicioMinutos)
+        .reduce((a, b) => a < b ? a : b);
+    final fimGlobal = diasVisiveis
+        .map((dia) => dia.fimMinutos)
+        .reduce((a, b) => a > b ? a : b);
 
     return SizedBox(
       height: 440,
@@ -1757,164 +1837,253 @@ class _RelatorioOcupacaoDetalheScreenState
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: GestureDetector(
-              onHorizontalDragUpdate: (details) {
-                if (!_graficoScrollController.hasClients) return;
-                final novoOffset = (_graficoScrollController.offset -
-                        details.delta.dx)
-                    .clamp(
-                        0.0, _graficoScrollController.position.maxScrollExtent);
-                _graficoScrollController.jumpTo(novoOffset);
-              },
-              child: Scrollbar(
-                controller: _graficoScrollController,
-                thumbVisibility: true,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final larguraDisponivel = constraints.maxWidth;
-                    final larguraGrafico = larguraTotal + (2 * legendaLateral);
-                    final larguraFinal = larguraGrafico < larguraDisponivel
-                        ? larguraDisponivel
-                        : larguraGrafico;
-                    final inicioGlobal = diasVisiveis
-                        .map((dia) => dia.inicioMinutos)
-                        .reduce((a, b) => a < b ? a : b);
-                    final fimGlobal = diasVisiveis
-                        .map((dia) => dia.fimMinutos)
-                        .reduce((a, b) => a > b ? a : b);
-                    return SingleChildScrollView(
-                      controller: _graficoScrollController,
-                      scrollDirection: Axis.horizontal,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: SizedBox(
-                        width: larguraFinal,
-                        child: Align(
-                          alignment: larguraGrafico < larguraDisponivel
-                              ? Alignment.center
-                              : Alignment.centerLeft,
-                          child: SizedBox(
-                            width: larguraGrafico,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                  height: alturaMaximaBarra,
-                                  child: Stack(
-                                    children: [
-                                      ..._buildLinhasHorasGlobais(
-                                        inicioGlobal,
-                                        fimGlobal,
-                                        alturaMaximaBarra,
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: legendaLateral,
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: diasVisiveis.map((dia) {
-                                            final percentual =
-                                                dia.percentual.clamp(0.0, 100.0);
-                                            final cor =
-                                                _corParaPercentual(percentual);
-                                            final totalGlobal =
-                                                (fimGlobal - inicioGlobal)
-                                                    .clamp(1, 24 * 60);
-                                            final topAberto =
-                                                ((dia.inicioMinutos -
-                                                            inicioGlobal) /
-                                                        totalGlobal) *
-                                                    alturaMaximaBarra;
-                                            final alturaAberto =
-                                                ((dia.fimMinutos -
-                                                            dia.inicioMinutos) /
-                                                        totalGlobal) *
-                                                    alturaMaximaBarra;
-                                            final textoBarra =
-                                                '${percentual.toStringAsFixed(0)}%';
-
-                                            return Padding(
-                                              padding: EdgeInsets.symmetric(
-                                                horizontal: intervalo / 2,
+            child: SizedBox(
+              height: 440,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: larguraEixoHoras,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildEixoHorasFixo(
+                            inicioGlobal,
+                            fimGlobal,
+                            alturaMaximaBarra,
+                          ),
+                          const SizedBox(height: 6),
+                          const SizedBox(height: alturaRotulosInferiores),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: espacoEixoGrafico),
+                  Expanded(
+                    child: GestureDetector(
+                      onHorizontalDragUpdate: (details) {
+                        if (!_graficoScrollController.hasClients) return;
+                        final novoOffset =
+                            (_graficoScrollController.offset - details.delta.dx)
+                                .clamp(
+                          0.0,
+                          _graficoScrollController.position.maxScrollExtent,
+                        );
+                        _graficoScrollController.jumpTo(novoOffset);
+                      },
+                      child: Scrollbar(
+                        controller: _graficoScrollController,
+                        thumbVisibility: true,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final larguraDisponivel = constraints.maxWidth;
+                            final larguraFinal =
+                                larguraTotal < larguraDisponivel
+                                    ? larguraDisponivel
+                                    : larguraTotal;
+                            return SingleChildScrollView(
+                              controller: _graficoScrollController,
+                              scrollDirection: Axis.horizontal,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: SizedBox(
+                                width: larguraFinal,
+                                child: Align(
+                                  alignment: larguraTotal < larguraDisponivel
+                                      ? Alignment.center
+                                      : Alignment.centerLeft,
+                                  child: SizedBox(
+                                    width: larguraTotal,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          height: alturaMaximaBarra,
+                                          child: Stack(
+                                            children: [
+                                              ..._buildLinhasHorasGlobais(
+                                                inicioGlobal,
+                                                fimGlobal,
+                                                alturaMaximaBarra,
                                               ),
-                                              child: SizedBox(
-                                                width: larguraItem,
-                                                height: alturaMaximaBarra,
-                                                child: Stack(
-                                                  alignment:
-                                                      Alignment.bottomCenter,
-                                                  children: [
-                                                    SizedBox(
-                                                      width: larguraBarra,
-                                                      height:
-                                                          alturaMaximaBarra,
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
+                                                children:
+                                                    diasVisiveis.map((dia) {
+                                                  final percentual = dia
+                                                      .percentual
+                                                      .clamp(0.0, 100.0);
+                                                  final cor =
+                                                      _corParaPercentual(
+                                                    percentual,
+                                                  );
+                                                  final totalGlobal =
+                                                      (fimGlobal - inicioGlobal)
+                                                          .clamp(1, 24 * 60);
+                                                  final topAberto =
+                                                      ((dia.inicioMinutos -
+                                                                  inicioGlobal) /
+                                                              totalGlobal) *
+                                                          alturaMaximaBarra;
+                                                  final alturaAberto = ((dia
+                                                                  .fimMinutos -
+                                                              dia.inicioMinutos) /
+                                                          totalGlobal) *
+                                                      alturaMaximaBarra;
+                                                  final textoBarra =
+                                                      '${percentual.toStringAsFixed(0)}%';
+
+                                                  return Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                      horizontal: intervalo / 2,
+                                                    ),
+                                                    child: SizedBox(
+                                                      width: larguraItem,
+                                                      height: alturaMaximaBarra,
                                                       child: Stack(
+                                                        alignment: Alignment
+                                                            .bottomCenter,
                                                         children: [
+                                                          SizedBox(
+                                                            width: larguraBarra,
+                                                            height:
+                                                                alturaMaximaBarra,
+                                                            child: Stack(
+                                                              children: [
+                                                                Positioned(
+                                                                  top: topAberto
+                                                                      .clamp(
+                                                                    0.0,
+                                                                    alturaMaximaBarra,
+                                                                  ),
+                                                                  height:
+                                                                      alturaAberto
+                                                                          .clamp(
+                                                                    0.0,
+                                                                    alturaMaximaBarra,
+                                                                  ),
+                                                                  left: 0,
+                                                                  right: 0,
+                                                                  child:
+                                                                      Container(
+                                                                    decoration:
+                                                                        BoxDecoration(
+                                                                      color: Colors
+                                                                              .grey[
+                                                                          300],
+                                                                      borderRadius:
+                                                                          BorderRadius
+                                                                              .circular(
+                                                                        14,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                          Container(
+                                                            width: larguraBarra,
+                                                            height:
+                                                                alturaMaximaBarra,
+                                                            decoration:
+                                                                BoxDecoration(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                14,
+                                                              ),
+                                                            ),
+                                                            child: ClipRRect(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                14,
+                                                              ),
+                                                              child: Stack(
+                                                                children: [
+                                                                  ..._buildSegmentosDisponibilidade(
+                                                                    dia,
+                                                                    alturaMaximaBarra,
+                                                                    cor,
+                                                                    inicioGlobal,
+                                                                    fimGlobal,
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
                                                           Positioned(
-                                                            top: topAberto
-                                                                .clamp(
-                                                                    0.0,
-                                                                    alturaMaximaBarra),
-                                                            height: alturaAberto
-                                                                .clamp(
-                                                                    0.0,
-                                                                    alturaMaximaBarra),
+                                                            top: 6,
                                                             left: 0,
                                                             right: 0,
-                                                            child: Container(
-                                                              decoration:
-                                                                  BoxDecoration(
-                                                                color: Colors
-                                                                    .grey[300],
-                                                                borderRadius:
-                                                                    BorderRadius
-                                                                        .circular(
-                                                                            14),
+                                                            child: Center(
+                                                              child:
+                                                                  _buildBadge3D(
+                                                                texto:
+                                                                    textoBarra,
+                                                                cor: cor,
                                                               ),
                                                             ),
                                                           ),
                                                         ],
                                                       ),
                                                     ),
-                                                    Container(
-                                                      width: larguraBarra,
-                                                      height:
-                                                          alturaMaximaBarra,
-                                                      decoration: BoxDecoration(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(14),
-                                                      ),
-                                                      child: ClipRRect(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(14),
-                                                        child: Stack(
-                                                          children: [
-                                                            ..._buildSegmentosDisponibilidade(
-                                                              dia,
-                                                              alturaMaximaBarra,
-                                                              cor,
-                                                              inicioGlobal,
-                                                              fimGlobal,
-                                                            ),
-                                                          ],
-                                                        ),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: diasVisiveis.map((dia) {
+                                            final textoHoras = dia.fechado
+                                                ? 'Fechado'
+                                                : '${_formatHoras(dia.minutosDisponiveis / 60)}h/'
+                                                    '${_formatHoras(dia.minutosTotais / 60)}h';
+                                            return Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: intervalo / 2,
+                                              ),
+                                              child: SizedBox(
+                                                width: larguraItem,
+                                                child: Column(
+                                                  children: [
+                                                    Text(
+                                                      _dateFormatCurto
+                                                          .format(dia.data),
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[700],
                                                       ),
                                                     ),
-                                                    Positioned(
-                                                      top: 6,
-                                                      left: 0,
-                                                      right: 0,
-                                                      child: Center(
-                                                        child:
-                                                            _buildBadge3D(
-                                                          texto: textoBarra,
-                                                          cor: cor,
-                                                        ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      _formatSemana(dia.data),
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[600],
                                                       ),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      textoHoras,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                      textAlign:
+                                                          TextAlign.center,
                                                     ),
                                                   ],
                                                 ),
@@ -1922,78 +2091,18 @@ class _RelatorioOcupacaoDetalheScreenState
                                             );
                                           }).toList(),
                                         ),
-                                      ),
-                                      ..._buildLegendasHorasGlobais(
-                                        inicioGlobal,
-                                        fimGlobal,
-                                        alturaMaximaBarra,
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: legendaLateral,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: diasVisiveis.map((dia) {
-                                      final textoHoras = dia.fechado
-                                          ? 'Fechado'
-                                          : '${_formatHoras(dia.minutosDisponiveis / 60)}h/'
-                                              '${_formatHoras(dia.minutosTotais / 60)}h';
-                                      return Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: intervalo / 2,
-                                        ),
-                                        child: SizedBox(
-                                          width: larguraItem,
-                                          child: Column(
-                                            children: [
-                                              Text(
-                                                _dateFormatCurto
-                                                    .format(dia.data),
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey[700],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                _formatSemana(dia.data),
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                textAlign: TextAlign.center,
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                textoHoras,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                textAlign: TextAlign.center,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2033,14 +2142,14 @@ class _RelatorioOcupacaoDetalheScreenState
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                cor.withOpacity(0.98),
-                cor.withOpacity(0.85),
-                cor.withOpacity(0.7),
+                cor.withValues(alpha: 0.98),
+                cor.withValues(alpha: 0.85),
+                cor.withValues(alpha: 0.7),
               ],
               stops: const [0.0, 0.6, 1.0],
             ),
             border: Border.all(
-              color: cor.withOpacity(0.55),
+              color: cor.withValues(alpha: 0.55),
               width: 0.8,
             ),
             borderRadius: BorderRadius.circular(4),
@@ -2052,14 +2161,14 @@ class _RelatorioOcupacaoDetalheScreenState
                 left: 0,
                 right: 0,
                 height: 2,
-                child: Container(color: Colors.white.withOpacity(0.35)),
+                child: Container(color: Colors.white.withValues(alpha: 0.35)),
               ),
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
                 height: 2,
-                child: Container(color: Colors.black.withOpacity(0.18)),
+                child: Container(color: Colors.black.withValues(alpha: 0.18)),
               ),
             ],
           ),
@@ -2076,7 +2185,7 @@ class _RelatorioOcupacaoDetalheScreenState
     final totalMinutos = (fimMinutos - inicioMinutos).clamp(1, 24 * 60);
     final totalHoras = (totalMinutos / 60).floor();
     if (totalHoras <= 0) return const [];
-    final corLinha = Colors.grey[500]!.withOpacity(0.3);
+    final corLinha = Colors.grey[500]!.withValues(alpha: 0.3);
     const paddingLabel = 6.0;
     final alturaUtil =
         (alturaMaximaBarra - (2 * paddingLabel)).clamp(0.0, alturaMaximaBarra);
@@ -2096,14 +2205,14 @@ class _RelatorioOcupacaoDetalheScreenState
     return widgets;
   }
 
-  List<Widget> _buildLegendasHorasGlobais(
+  Widget _buildEixoHorasFixo(
     int inicioMinutos,
     int fimMinutos,
     double alturaMaximaBarra,
   ) {
     final totalMinutos = (fimMinutos - inicioMinutos).clamp(1, 24 * 60);
     final totalHoras = (totalMinutos / 60).floor();
-    if (totalHoras <= 0) return const [];
+    if (totalHoras <= 0) return SizedBox(height: alturaMaximaBarra);
     const paddingLabel = 6.0;
     final alturaUtil =
         (alturaMaximaBarra - (2 * paddingLabel)).clamp(0.0, alturaMaximaBarra);
@@ -2116,39 +2225,30 @@ class _RelatorioOcupacaoDetalheScreenState
       final minutos = inicioMinutos + (i * 60);
       final top = (paddingLabel + ((i / totalHoras) * alturaUtil))
           .clamp(0.0, alturaMaximaBarra);
-      final posicaoTexto =
-          (top - 6.0).clamp(0.0, alturaMaximaBarra - 12.0);
+      final posicaoTexto = (top - 6.0).clamp(0.0, alturaMaximaBarra - 12.0);
       final label = _formatHoraLegenda(minutos);
       widgets.add(
         Positioned(
-          left: 0,
+          right: 2,
           top: posicaoTexto,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 2),
+          child: ColoredBox(
+            color: Colors.white,
             child: Container(
-              color: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(label, style: estiloTexto),
-            ),
-          ),
-        ),
-      );
-      widgets.add(
-        Positioned(
-          right: 0,
-          top: posicaoTexto,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 2),
-            child: Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(label, style: estiloTexto),
+              child: Text(
+                label,
+                textAlign: TextAlign.right,
+                style: estiloTexto,
+              ),
             ),
           ),
         ),
       );
     }
-    return widgets;
+    return SizedBox(
+      height: alturaMaximaBarra,
+      child: Stack(clipBehavior: Clip.none, children: widgets),
+    );
   }
 
   Widget _buildBotaoNavegacao({

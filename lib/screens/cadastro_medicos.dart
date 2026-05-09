@@ -147,7 +147,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       // Carregar disponibilidades, alocações e gabinetes com progress bar
       _anoVisualizado = DateTime.now().year;
       _dataCalendario = DateTime.now();
-      
+
       _carregarDadosIniciaisCompleto(widget.medico!.id);
 
       // Guarda os valores originais
@@ -467,7 +467,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor, corrija os erros no formulário antes de continuar'),
+          content: Text(
+              'Por favor, corrija os erros no formulário antes de continuar'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -617,7 +618,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
     // CORREÇÃO CRÍTICA: NÃO definir _isCarregandoInicial aqui
     // Isso será feito dentro de _carregarDadosIniciaisCompleto
     // Se definirmos aqui, _carregarDadosIniciaisCompleto vai ver que já está carregando e retornar sem fazer nada
-    
+
     // Guardar o ID do médico anterior para detectar mudança
     final medicoAnteriorId = _medicoAtual?.id;
 
@@ -680,7 +681,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       // Carregar disponibilidades, alocações e gabinetes com progress bar completa
       // Passar informação se é mudança de médico para exibir mensagem apropriada
-      await _carregarDadosIniciaisCompleto(medico.id, isMudancaMedico: medicoAnteriorId != null && medicoAnteriorId != medico.id);
+      await _carregarDadosIniciaisCompleto(medico.id,
+          isMudancaMedico:
+              medicoAnteriorId != null && medicoAnteriorId != medico.id);
     } catch (e) {
       debugPrint('❌ Erro ao carregar médico: $e');
       if (mounted) {
@@ -1004,19 +1007,22 @@ class CadastroMedicoState extends State<CadastroMedico> {
   }
 
   /// Carrega todos os dados iniciais (disponibilidades, alocações e gabinetes) com progress bar
-  Future<void> _carregarDadosIniciaisCompleto(String medicoId, {bool isMudancaMedico = false}) async {
+  Future<void> _carregarDadosIniciaisCompleto(String medicoId,
+      {bool isMudancaMedico = false}) async {
     if (!mounted) return;
-    
+
     // CORREÇÃO CRÍTICA: Proteção contra execuções concorrentes
     // Se já está carregando, não iniciar novo carregamento
     if (_isCarregandoInicial) {
-      debugPrint('⚠️ [PROTEÇÃO] _carregarDadosIniciaisCompleto já está em execução, ignorando chamada duplicada');
+      debugPrint(
+          '⚠️ [PROTEÇÃO] _carregarDadosIniciaisCompleto já está em execução, ignorando chamada duplicada');
       return;
     }
 
     // Ativar progress bar inicial
     // CORREÇÃO: Definir mensagem apropriada baseada no contexto (mudança de médico ou carregamento inicial)
-    final mensagemInicial = isMudancaMedico ? 'A mudar médico...' : 'A iniciar...';
+    final mensagemInicial =
+        isMudancaMedico ? 'A mudar médico...' : 'A iniciar...';
     setState(() {
       _isCarregandoInicial = true;
       _progressoCarregamentoInicial = 0.0;
@@ -1146,8 +1152,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
               // Quando progresso = 1.0, deve resultar em 92% do progresso total
               // Fórmula: 25% + (progresso * 67%) = 25% + 67% = 92% quando progresso = 1.0
               final progressoTotal = 0.25 + (progresso * 0.67);
-              
-              
+
               setState(() {
                 _progressoCarregamentoInicial =
                     progressoTotal.clamp(0.25, 0.92);
@@ -1268,7 +1273,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
       {int? ano,
       Function(double, String)? onProgressoExterno,
       bool forcarRecarregamentoSeries = false}) async {
-    
     // Carrega o ano especificado ou o ano atual por padrão
     final anoParaCarregar = ano ?? DateTime.now().year;
 
@@ -1320,7 +1324,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //      };
 //      writeLogToFile(jsonEncode(logEntry));
 //    } catch (e) {}
-    
+
 // #endregion
 
     // NOVO MODELO: Apenas séries - carregar séries e gerar disponibilidades dinamicamente
@@ -1345,7 +1349,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
           onProgressoExterno(0.15, 'A carregar séries...');
         }
 
-        
         // Carregar séries do médico (carregar TODAS as séries ativas, não apenas do ano)
         // CORREÇÃO CRÍTICA: Forçar busca do servidor quando carregar pela primeira vez
         // para garantir que dados recém-salvos sejam carregados após reabrir a aplicação
@@ -1356,7 +1359,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
               true, // Forçar servidor para garantir dados atualizados
           // Não filtrar por data para carregar todas as séries ativas
         );
-        
 
         // Atualizar progresso após carregar séries (esta operação pode demorar)
         if (onProgressoExterno != null) {
@@ -1384,7 +1386,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //          };
 //          writeLogToFile(jsonEncode(logEntry));
 //        } catch (e) {}
-        
+
 // #endregion
       } else {
         // Usar séries já carregadas
@@ -1412,7 +1414,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //          };
 //          writeLogToFile(jsonEncode(logEntry));
 //        } catch (e) {}
-        
+
 // #endregion
       }
 
@@ -1456,7 +1458,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //            };
 //            writeLogToFile(jsonEncode(logEntry));
 //          } catch (e) {}
-          
+
 // #endregion
 
           // Substituir completamente para garantir dados atualizados
@@ -1660,7 +1662,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //          };
 //          writeLogToFile(jsonEncode(logEntry));
 //        } catch (e) {}
-        
+
 // #endregion
 
         final dispsGeradas = SerieGenerator.gerarDisponibilidades(
@@ -1694,7 +1696,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //          };
 //          writeLogToFile(jsonEncode(logEntry));
 //        } catch (e) {}
-        
+
 // #endregion
 
         if (mostrarProgressoInterno && mounted) {
@@ -2817,7 +2819,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //                      };
 //                      writeLogToFile(jsonEncode(logEntry));
 //                    } catch (e) {}
-                    
+
 // #endregion
                     if (_medicoAtual != null &&
                         _anoVisualizado != null &&
@@ -3464,6 +3466,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
     );
 
     final dataNormalizada = DateTime(date.year, date.month, date.day);
+    List<ExcecaoSerie> excecoesCanceladasParaAtualizar = [];
+    String? serieIdExcecoesParaAtualizar;
+
     // Se está removendo a série inteira, encontrar e remover do Firestore
     SerieRecorrencia? serieParaRemover;
     if (removeSerie) {
@@ -3529,8 +3534,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
               final serieIdPrefix = 'serie_${serieEncontrada.id}_';
               alocacoes.removeWhere((a) {
                 if (!a.id.startsWith(serieIdPrefix)) return false;
-                final aDate =
-                    DateTime(a.data.year, a.data.month, a.data.day);
+                final aDate = DateTime(a.data.year, a.data.month, a.data.day);
                 return !aDate.isBefore(dataNormalizada);
               });
             });
@@ -3565,10 +3569,56 @@ class CadastroMedicoState extends State<CadastroMedico> {
               '❌ Erro ao remover disponibilidade única do Firestore: $e');
           // Continuar mesmo se houver erro - ainda vamos remover da lista local
         }
+      } else if (disponibilidadeNaData.id.isNotEmpty) {
+        final serieEncontrada =
+            DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+          disponibilidadeNaData,
+          series,
+          date,
+        );
+
+        if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
+          try {
+            excecoesCanceladasParaAtualizar =
+                await DisponibilidadeSerieService.cancelarDataSerie(
+              serieId: serieEncontrada.id,
+              medicoId: _medicoId,
+              data: dataNormalizada,
+              unidade: widget.unidade,
+            );
+            serieIdExcecoesParaAtualizar = serieEncontrada.id;
+
+            if (widget.unidade != null) {
+              await AlocacaoDisponibilidadeRemocaoService
+                  .removerAlocacoesEDisponibilidadesPorData(
+                widget.unidade!.id,
+                _medicoId,
+                dataNormalizada,
+              );
+            }
+
+            debugPrint(
+                '✅ Data de série cancelada no Firestore: série=${serieEncontrada.id}, data: ${date.day}/${date.month}/${date.year}');
+          } catch (e) {
+            debugPrint('❌ Erro ao cancelar data de série no Firestore: $e');
+            // Continuar com a remoção local para manter a resposta da UI.
+          }
+        }
       }
     }
 
     setState(() {
+      if (serieIdExcecoesParaAtualizar != null) {
+        excecoes.removeWhere(
+          (e) =>
+              e.serieId == serieIdExcecoesParaAtualizar &&
+              e.data.year == dataNormalizada.year &&
+              e.data.month == dataNormalizada.month &&
+              e.data.day == dataNormalizada.day,
+        );
+        excecoes.addAll(excecoesCanceladasParaAtualizar);
+      }
+
       final removerComoSerie = removeSerie && serieParaRemover != null;
       disponibilidades = removerDisponibilidade(
         disponibilidades,
@@ -4126,7 +4176,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
               unidade: widget.unidade);
 
           setState(() {
-            excecoes.add(excecao);
+            final index = excecoes.indexWhere((e) => e.id == excecao.id);
+            if (index == -1) {
+              excecoes.add(excecao);
+            } else {
+              excecoes[index] = excecao;
+            }
           });
         },
       );
@@ -4257,7 +4312,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
               unidade: widget.unidade);
 
           setState(() {
-            excecoes.add(excecao);
+            final index = excecoes.indexWhere((e) => e.id == excecao.id);
+            if (index == -1) {
+              excecoes.add(excecao);
+            } else {
+              excecoes[index] = excecao;
+            }
           });
         },
       );
@@ -5426,7 +5486,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                       unidade: widget.unidade,
                                       onGabineteChanged: _onGabineteChanged,
                                       series: series,
-                                      onNavegarParaMapa: _salvarAntesDeNavegarParaMapa,
+                                      onNavegarParaMapa:
+                                          _salvarAntesDeNavegarParaMapa,
                                     ),
                                   ),
                                 ),
@@ -5717,7 +5778,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                               ),
                                                             ),
                                                           );
-                                                          if (!context.mounted) {
+                                                          if (!context
+                                                              .mounted) {
                                                             return;
                                                           }
                                                           if (serieEscolhida !=
@@ -5976,7 +6038,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                         unidade: widget.unidade,
                                         onGabineteChanged: _onGabineteChanged,
                                         series: series,
-                                        onNavegarParaMapa: _salvarAntesDeNavegarParaMapa,
+                                        onNavegarParaMapa:
+                                            _salvarAntesDeNavegarParaMapa,
                                       ),
                                     ),
                                     const SizedBox(height: 24),

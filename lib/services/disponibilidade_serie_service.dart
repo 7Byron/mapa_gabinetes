@@ -84,7 +84,7 @@ class DisponibilidadeSerieService {
 //      };
 //      writeLogToFile(jsonEncode(logEntry));
 //    } catch (e) {}
-    
+
 // #endregion
 
     // Salvar no Firestore
@@ -109,7 +109,7 @@ class DisponibilidadeSerieService {
 //      };
 //      writeLogToFile(jsonEncode(logEntry));
 //    } catch (e) {}
-    
+
 // #endregion
 
     // CORREÇÃO CRÍTICA: Invalidar cache para todos os dias que esta série afeta
@@ -150,35 +150,89 @@ class DisponibilidadeSerieService {
   }
 
   /// Cria uma exceção para cancelar uma data específica de uma série
-  static Future<void> cancelarDataSerie({
+  static Future<List<ExcecaoSerie>> cancelarDataSerie({
     required String serieId,
     required String medicoId,
     required DateTime data,
     Unidade? unidade,
   }) async {
-    final excecaoId = 'excecao_${data.millisecondsSinceEpoch}';
-
-    final excecao = ExcecaoSerie(
-      id: excecaoId,
+    final dataNormalizada = DateTime(data.year, data.month, data.day);
+    final excecoesExistentes = await SerieService.carregarExcecoes(
+      medicoId,
+      unidade: unidade,
+      dataInicio: dataNormalizada,
+      dataFim: dataNormalizada,
       serieId: serieId,
-      data: data,
-      cancelada: true,
+      forcarServidor: true,
     );
 
-    await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
-    
+    final excecoesParaData = excecoesExistentes
+        .where(
+          (e) =>
+              e.serieId == serieId &&
+              e.data.year == dataNormalizada.year &&
+              e.data.month == dataNormalizada.month &&
+              e.data.day == dataNormalizada.day,
+        )
+        .toList();
+
+    final excecoesCanceladas = <ExcecaoSerie>[];
+    var gravouAlteracao = false;
+
+    if (excecoesParaData.isEmpty) {
+      final excecao = ExcecaoSerie(
+        id: 'excecao_${serieId}_${dataNormalizada.millisecondsSinceEpoch}',
+        serieId: serieId,
+        data: dataNormalizada,
+        cancelada: true,
+      );
+
+      await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
+      excecoesCanceladas.add(excecao);
+      gravouAlteracao = true;
+    } else {
+      for (final excecaoExistente in excecoesParaData) {
+        final excecaoCancelada = ExcecaoSerie(
+          id: excecaoExistente.id,
+          serieId: excecaoExistente.serieId,
+          data: dataNormalizada,
+          cancelada: true,
+        );
+
+        excecoesCanceladas.add(excecaoCancelada);
+
+        if (!excecaoExistente.cancelada ||
+            excecaoExistente.gabineteId != null ||
+            excecaoExistente.horarios != null) {
+          await SerieService.salvarExcecao(
+            excecaoCancelada,
+            medicoId,
+            unidade: unidade,
+          );
+          gravouAlteracao = true;
+        }
+      }
+    }
+
     // CORREÇÃO CRÍTICA: Invalidar cache para o dia específico e do ano
     // SerieService.salvarExcecao já invalida, mas garantimos aqui também
-    final dataNormalizada = DateTime(data.year, data.month, data.day);
     AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
     AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
-    
+
     // Invalidar também cache de séries para garantir que exceções sejam carregadas
     final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
     SerieService.invalidateCacheSeries(unidadeId, medicoId);
-    
+
+    if (!gravouAlteracao) {
+      debugPrint(
+          'ℹ️ Exceção cancelada já existia: data ${data.day}/${data.month}/${data.year} para série $serieId');
+      return excecoesCanceladas;
+    }
+
     debugPrint(
         '✅ Exceção criada: data ${data.day}/${data.month}/${data.year} cancelada para série $serieId');
+
+    return excecoesCanceladas;
   }
 
   /// Cria uma exceção para modificar horários de uma data específica
@@ -200,17 +254,17 @@ class DisponibilidadeSerieService {
     );
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
-    
+
     // CORREÇÃO CRÍTICA: Invalidar cache para o dia específico e do ano
     // SerieService.salvarExcecao já invalida, mas garantimos aqui também
     final dataNormalizada = DateTime(data.year, data.month, data.day);
     AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
     AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
-    
+
     // Invalidar também cache de séries para garantir que exceções sejam carregadas
     final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
     SerieService.invalidateCacheSeries(unidadeId, medicoId);
-    
+
     debugPrint(
         '✅ Exceção criada: horários modificados para data ${data.day}/${data.month}/${data.year}');
   }
@@ -250,8 +304,10 @@ class DisponibilidadeSerieService {
         .toList();
 
     // Separar exceções canceladas e não canceladas
-    final excecoesNaoCanceladas = excecoesParaData.where((e) => !e.cancelada).toList();
-    final excecoesCanceladas = excecoesParaData.where((e) => e.cancelada).toList();
+    final excecoesNaoCanceladas =
+        excecoesParaData.where((e) => !e.cancelada).toList();
+    final excecoesCanceladas =
+        excecoesParaData.where((e) => e.cancelada).toList();
 
     if (excecoesNaoCanceladas.isNotEmpty) {
       // Se há múltiplas exceções não canceladas, cancelar todas exceto a primeira
@@ -279,11 +335,14 @@ class DisponibilidadeSerieService {
         id: excecaoExistente.id,
         serieId: excecaoExistente.serieId,
         data: excecaoExistente.data,
-        cancelada: false, // IMPORTANTE: Não cancelada - é exceção de gabinete, não de disponibilidade
+        cancelada:
+            false, // IMPORTANTE: Não cancelada - é exceção de gabinete, não de disponibilidade
         horarios: excecaoExistente.horarios,
-        gabineteId: null, // Remover gabinete - médico fica sem gabinete mas disponível
+        gabineteId:
+            null, // Remover gabinete - médico fica sem gabinete mas disponível
       );
-      debugPrint('🔄 Atualizando exceção existente para remover gabinete: ${excecao.id}');
+      debugPrint(
+          '🔄 Atualizando exceção existente para remover gabinete: ${excecao.id}');
     } else if (excecoesCanceladas.isNotEmpty) {
       // Se há exceção cancelada, reativá-la como exceção de gabinete (não cancelada, sem gabinete)
       final excecaoCancelada = excecoesCanceladas[0];
@@ -293,9 +352,11 @@ class DisponibilidadeSerieService {
         data: excecaoCancelada.data,
         cancelada: false, // Reativar como exceção de gabinete (não cancelada)
         horarios: excecaoCancelada.horarios,
-        gabineteId: null, // Sem gabinete - médico fica disponível mas sem gabinete
+        gabineteId:
+            null, // Sem gabinete - médico fica disponível mas sem gabinete
       );
-      debugPrint('🔄 Reativando exceção cancelada como exceção de gabinete: ${excecao.id}');
+      debugPrint(
+          '🔄 Reativando exceção cancelada como exceção de gabinete: ${excecao.id}');
     } else {
       // Criar nova exceção de gabinete (sem gabinete)
       final excecaoId =
@@ -305,9 +366,11 @@ class DisponibilidadeSerieService {
         serieId: serieId,
         data: dataNormalizada,
         cancelada: false, // IMPORTANTE: Não cancelada - é exceção de gabinete
-        gabineteId: null, // Sem gabinete - médico fica disponível mas sem gabinete
+        gabineteId:
+            null, // Sem gabinete - médico fica disponível mas sem gabinete
       );
-      debugPrint('➕ Criando nova exceção de gabinete (sem gabinete): ${excecao.id}');
+      debugPrint(
+          '➕ Criando nova exceção de gabinete (sem gabinete): ${excecao.id}');
     }
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
@@ -316,7 +379,7 @@ class DisponibilidadeSerieService {
     AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
     AlocacaoMedicosLogic.invalidateCacheFromDate(
         DateTime(dataNormalizada.year, 1, 1));
-    
+
     final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
     SerieService.invalidateCacheSeries(unidadeId, medicoId);
 
@@ -416,11 +479,11 @@ class DisponibilidadeSerieService {
     // CORREÇÃO CRÍTICA: Invalidar cache do dia específico para garantir que mudanças apareçam imediatamente
     // Isso é especialmente importante quando um administrador faz alterações
     AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
-    
+
     // Também invalidar cache do ano para garantir que todas as alocações sejam atualizadas
     AlocacaoMedicosLogic.invalidateCacheFromDate(
         DateTime(dataNormalizada.year, 1, 1));
-    
+
     // Invalidar cache de séries para garantir que exceções sejam carregadas corretamente
     final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
     SerieService.invalidateCacheSeries(unidadeId, medicoId);
@@ -444,20 +507,20 @@ class DisponibilidadeSerieService {
       // quando tentamos alocar novamente, carregamos a série atualizada (gabineteId: null)
       final unidadeIdTemp = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
       SerieService.invalidateCacheSeries(unidadeIdTemp, medicoId);
-      
+
       // Aguardar um pouco para garantir que o cache foi invalidado
       await Future.delayed(const Duration(milliseconds: 100));
-      
+
       // CORREÇÃO CRÍTICA: Forçar carregamento do servidor para garantir que temos
       // a versão mais recente da série antes de atualizar
-      final series =
-          await SerieService.carregarSeries(medicoId, unidade: unidade, forcarServidor: true);
-      
+      final series = await SerieService.carregarSeries(medicoId,
+          unidade: unidade, forcarServidor: true);
+
       // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //      try {
-//        final serieEncontradaLog = series.where((s) => s.id == serieId).isNotEmpty 
-//            ? series.firstWhere((s) => s.id == serieId).gabineteId 
+//        final serieEncontradaLog = series.where((s) => s.id == serieId).isNotEmpty
+//            ? series.firstWhere((s) => s.id == serieId).gabineteId
 //            : null;
 //        final logEntry = {
 //          'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -477,9 +540,9 @@ class DisponibilidadeSerieService {
 //        };
 //        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId, gabineteIdAtual=$serieEncontradaLog');
 //      } catch (e) {}
-      
+
 // #endregion
-      
+
       final serie = series.firstWhere(
         (s) => s.id == serieId,
         orElse: () => SerieRecorrencia(
@@ -495,7 +558,8 @@ class DisponibilidadeSerieService {
 
       // CORREÇÃO: Se não encontrou a série, tentar buscar diretamente do Firestore
       if (serie.id.isEmpty) {
-        debugPrint('⚠️ Série não encontrada no cache, buscando diretamente do Firestore...');
+        debugPrint(
+            '⚠️ Série não encontrada no cache, buscando diretamente do Firestore...');
         final firestore = FirebaseFirestore.instance;
         final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
         final serieDoc = await firestore
@@ -506,18 +570,19 @@ class DisponibilidadeSerieService {
             .collection('series')
             .doc(serieId)
             .get(const GetOptions(source: Source.server));
-        
+
         if (!serieDoc.exists) {
           throw Exception('Série $serieId não encontrada no Firestore');
         }
-        
+
         final serieData = serieDoc.data();
         if (serieData == null) {
           throw Exception('Dados da série $serieId estão vazios');
         }
-        
-        final serieCarregada = SerieRecorrencia.fromMap({...serieData, 'id': serieDoc.id});
-        
+
+        final serieCarregada =
+            SerieRecorrencia.fromMap({...serieData, 'id': serieDoc.id});
+
         // Atualizar série com gabinete
         final serieAtualizada = SerieRecorrencia(
           id: serieCarregada.id,
@@ -532,7 +597,8 @@ class DisponibilidadeSerieService {
         );
 
         await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
-        debugPrint('✅ Série atualizada diretamente do Firestore: ${serieAtualizada.id}');
+        debugPrint(
+            '✅ Série atualizada diretamente do Firestore: ${serieAtualizada.id}');
         return;
       }
 
@@ -550,7 +616,7 @@ class DisponibilidadeSerieService {
       );
 
       await SerieService.salvarSerie(serieAtualizada, unidade: unidade);
-      
+
       // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //      try {
@@ -571,12 +637,12 @@ class DisponibilidadeSerieService {
 //        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId, gabineteIdAnterior=${serie.gabineteId}, gabineteIdNovo=$gabineteId');
 //        writeLogToFile(jsonEncode(logEntry));
 //      } catch (e) {}
-      
+
 // #endregion
-      
+
       // CORREÇÃO CRÍTICA: Aguardar após salvar para garantir que a escrita foi persistida
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //      try {
@@ -595,13 +661,14 @@ class DisponibilidadeSerieService {
 //        };
 //        writeLogToFile(jsonEncode(logEntry));
 //      } catch (e) {}
-      
+
 // #endregion
 
       // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
       // Isso garante que quando o utilizador navega para qualquer dia da série,
       // as alocações geradas estarão visíveis imediatamente
-      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada, unidade: unidade);
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada,
+          unidade: unidade);
 
       debugPrint('✅ Série alocada ao gabinete $gabineteId');
     } catch (e) {
@@ -645,7 +712,8 @@ class DisponibilidadeSerieService {
       // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
       // Isso garante que quando o utilizador navega para qualquer dia da série,
       // as alocações serão removidas imediatamente
-      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada, unidade: unidade);
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada,
+          unidade: unidade);
 
       // #region agent log (COMENTADO - pode ser reativado se necessário)
 
@@ -666,7 +734,7 @@ class DisponibilidadeSerieService {
 //        };
 //        debugPrint('📝 [DEBUG] ${logEntry['message']}: serieId=$serieId');
 //      } catch (e) {}
-      
+
 // #endregion
 
       debugPrint('✅ Série desalocada (gabinete removido)');
@@ -682,16 +750,18 @@ class DisponibilidadeSerieService {
     required String medicoId,
     required DateTime dataRef,
     required String gabineteOrigem,
-    required bool Function(DateTime data, SerieRecorrencia serie) verificarSeDataCorrespondeSerie,
+    required bool Function(DateTime data, SerieRecorrencia serie)
+        verificarSeDataCorrespondeSerie,
     Unidade? unidade,
   }) async {
     try {
       // Carregar série
-      final series =
-          await SerieService.carregarSeries(medicoId, unidade: unidade, forcarServidor: true);
+      final series = await SerieService.carregarSeries(medicoId,
+          unidade: unidade, forcarServidor: true);
       final serie = series.firstWhere((s) => s.id == serieId);
 
-      final dataRefNormalizada = DateTime(dataRef.year, dataRef.month, dataRef.day);
+      final dataRefNormalizada =
+          DateTime(dataRef.year, dataRef.month, dataRef.day);
       final dataInicioSerie = DateTime(
         serie.dataInicio.year,
         serie.dataInicio.month,
@@ -701,10 +771,11 @@ class DisponibilidadeSerieService {
       // CORREÇÃO: Ao desalocar a partir de uma data, simplesmente remover o gabineteId da série
       // e criar exceções apenas para manter gabinete nas datas anteriores (se necessário)
       // NÃO criar exceções para datas futuras - isso é desnecessário e ineficiente
-      
+
       final dataFimSerie = serie.dataFim ?? DateTime(dataRef.year + 1, 12, 31);
-      final dataFimProcessamento = DateTime(dataFimSerie.year, dataFimSerie.month, dataFimSerie.day);
-      
+      final dataFimProcessamento =
+          DateTime(dataFimSerie.year, dataFimSerie.month, dataFimSerie.day);
+
       // Carregar todas as exceções existentes de uma vez (mais eficiente)
       final excecoesExistentes = await SerieService.carregarExcecoes(
         medicoId,
@@ -714,12 +785,13 @@ class DisponibilidadeSerieService {
         serieId: serieId,
         forcarServidor: true,
       );
-      
+
       // Criar mapa de exceções por data para busca rápida
       final excecoesPorData = <String, ExcecaoSerie>{};
       for (final excecao in excecoesExistentes) {
         if (excecao.serieId == serieId && !excecao.cancelada) {
-          final dataKey = '${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+          final dataKey =
+              '${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
           excecoesPorData[dataKey] = excecao;
         }
       }
@@ -729,9 +801,10 @@ class DisponibilidadeSerieService {
         DateTime dataAtual = dataInicioSerie;
         while (dataAtual.isBefore(dataRefNormalizada)) {
           if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
-            final dataKey = '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
+            final dataKey =
+                '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
             final excecaoExistente = excecoesPorData[dataKey];
-            
+
             // CORREÇÃO: Sempre criar/atualizar exceção para manter o gabinete original nas datas anteriores
             // Mesmo que já exista exceção com gabineteId == null, precisamos substituí-la para manter o gabinete
             // quando desalocamos apenas "a partir de uma data"
@@ -741,7 +814,8 @@ class DisponibilidadeSerieService {
                 serieId: serieId,
                 medicoId: medicoId,
                 data: dataAtual,
-                novoGabineteId: gabineteOrigem, // Manter gabinete original nas datas anteriores
+                novoGabineteId:
+                    gabineteOrigem, // Manter gabinete original nas datas anteriores
                 unidade: unidade,
               );
             } else if (excecaoExistente.gabineteId != gabineteOrigem) {
@@ -750,7 +824,8 @@ class DisponibilidadeSerieService {
                 serieId: serieId,
                 medicoId: medicoId,
                 data: dataAtual,
-                novoGabineteId: gabineteOrigem, // Manter gabinete original nas datas anteriores
+                novoGabineteId:
+                    gabineteOrigem, // Manter gabinete original nas datas anteriores
                 unidade: unidade,
               );
             }
@@ -767,9 +842,10 @@ class DisponibilidadeSerieService {
       DateTime dataAtual = dataRefNormalizada;
       while (!dataAtual.isAfter(dataFimSerie)) {
         if (verificarSeDataCorrespondeSerie(dataAtual, serie)) {
-          final dataKey = '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
+          final dataKey =
+              '${dataAtual.year}-${dataAtual.month}-${dataAtual.day}';
           final excecaoExistente = excecoesPorData[dataKey];
-          
+
           if (excecaoExistente == null) {
             // Criar exceção sem gabinete para esta data (apenas datas >= dataRef)
             await removerGabineteDataSerie(
@@ -800,7 +876,8 @@ class DisponibilidadeSerieService {
       SerieService.invalidateCacheSeries(unidadeId, medicoId);
       AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
 
-      debugPrint('✅ Série desalocada a partir de ${dataRef.day}/${dataRef.month}/${dataRef.year} (exceções criadas para manter gabinete nas datas anteriores e desalocar datas >= dataRef)');
+      debugPrint(
+          '✅ Série desalocada a partir de ${dataRef.day}/${dataRef.month}/${dataRef.year} (exceções criadas para manter gabinete nas datas anteriores e desalocar datas >= dataRef)');
     } catch (e) {
       debugPrint('❌ Erro ao desalocar série a partir de data: $e');
       rethrow;

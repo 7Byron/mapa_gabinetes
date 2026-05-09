@@ -6,6 +6,63 @@ import '../utils/series_helper.dart';
 /// Serviço para criar exceções de séries
 /// Extracted from cadastro_medicos.dart to reduce code size
 class ExcecaoSerieCriacaoService {
+  static DateTime _normalizarData(DateTime data) {
+    return DateTime(data.year, data.month, data.day);
+  }
+
+  static bool _mesmaData(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  static String _criarExcecaoId(SerieRecorrencia serie, DateTime data) {
+    return 'excecao_${serie.id}_${data.millisecondsSinceEpoch}';
+  }
+
+  /// Prepara as exceções necessárias para cancelar uma data da série.
+  ///
+  /// Se a data já tiver uma exceção ativa, por exemplo uma exceção antiga
+  /// "sem gabinete" (`cancelada=false`, `gabineteId=null`), essa exceção é
+  /// atualizada para `cancelada=true` em vez de ser ignorada.
+  static List<ExcecaoSerie> _prepararExcecoesCanceladasParaData(
+    SerieRecorrencia serie,
+    List<ExcecaoSerie> excecoesExistentes,
+    DateTime data,
+  ) {
+    final dataNormalizada = _normalizarData(data);
+    final excecoesDaData = excecoesExistentes
+        .where(
+          (e) => e.serieId == serie.id && _mesmaData(e.data, dataNormalizada),
+        )
+        .toList();
+
+    if (excecoesDaData.isEmpty) {
+      return [
+        ExcecaoSerie(
+          id: _criarExcecaoId(serie, dataNormalizada),
+          serieId: serie.id,
+          data: dataNormalizada,
+          cancelada: true,
+        ),
+      ];
+    }
+
+    final excecoesAtivas = excecoesDaData.where((e) => !e.cancelada).toList();
+    if (excecoesAtivas.isEmpty) {
+      return [];
+    }
+
+    return excecoesAtivas
+        .map(
+          (excecao) => ExcecaoSerie(
+            id: excecao.id,
+            serieId: excecao.serieId,
+            data: dataNormalizada,
+            cancelada: true,
+          ),
+        )
+        .toList();
+  }
+
   /// Verifica se uma data corresponde ao padrão de uma série
   static bool verificarDataCorrespondeSerie(
       DateTime data, SerieRecorrencia serie) {
@@ -48,7 +105,7 @@ class ExcecaoSerieCriacaoService {
     DateTime dataInicio,
     DateTime dataFim,
     String medicoId,
-    Function(ExcecaoSerie) onExcecaoCriada,
+    Future<void> Function(ExcecaoSerie) onExcecaoCriada,
   ) async {
     int totalExcecoesCriadas = 0;
 
@@ -59,35 +116,18 @@ class ExcecaoSerieCriacaoService {
       while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
         if (verificarDataDentroPeriodoSerie(dataAtual, serie) &&
             verificarDataCorrespondeSerie(dataAtual, serie)) {
-          final excecaoId =
-              'excecao_${serie.id}_${dataAtual.millisecondsSinceEpoch}';
+          final excecoesParaSalvar = _prepararExcecoesCanceladasParaData(
+            serie,
+            excecoesExistentes,
+            dataAtual,
+          );
 
-          // Verificar se já existe exceção para esta data
-          final jaExiste = excecoesExistentes.any((e) =>
-              e.serieId == serie.id &&
-              e.data.year == dataAtual.year &&
-              e.data.month == dataAtual.month &&
-              e.data.day == dataAtual.day);
+          for (final excecao in excecoesParaSalvar) {
+            final dataNormalizada = excecao.data;
+            debugPrint(
+                '➕ [CRIAR EXCEÇÃO] Série=${serie.id}, Data=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, Chave esperada=${serie.id}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
 
-          if (!jaExiste) {
-            // CORREÇÃO CRÍTICA: Normalizar a data antes de criar a exceção
-            // Isso garante correspondência exata na busca
-            final dataNormalizada = DateTime(
-              dataAtual.year,
-              dataAtual.month,
-              dataAtual.day,
-            );
-            
-            final excecao = ExcecaoSerie(
-              id: excecaoId,
-              serieId: serie.id,
-              data: dataNormalizada,
-              cancelada: true,
-            );
-
-            debugPrint('➕ [CRIAR EXCEÇÃO] Série=${serie.id}, Data=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, Chave esperada=${serie.id}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
-            
-            onExcecaoCriada(excecao);
+            await onExcecaoCriada(excecao);
             totalExcecoesCriadas++;
           }
         }
@@ -107,7 +147,7 @@ class ExcecaoSerieCriacaoService {
     DateTime dataInicio,
     DateTime dataFim,
     String medicoId,
-    Function(ExcecaoSerie) onExcecaoCriada,
+    Future<void> Function(ExcecaoSerie) onExcecaoCriada,
   ) async {
     int excecoesCriadas = 0;
 
@@ -115,35 +155,18 @@ class ExcecaoSerieCriacaoService {
     while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
       if (verificarDataDentroPeriodoSerie(dataAtual, serie) &&
           verificarDataCorrespondeSerie(dataAtual, serie)) {
-        final excecaoId =
-            'excecao_${serie.id}_${dataAtual.millisecondsSinceEpoch}';
+        final excecoesParaSalvar = _prepararExcecoesCanceladasParaData(
+          serie,
+          excecoesExistentes,
+          dataAtual,
+        );
 
-        // Verificar se já existe exceção para esta data
-        final jaExiste = excecoesExistentes.any((e) =>
-            e.serieId == serie.id &&
-            e.data.year == dataAtual.year &&
-            e.data.month == dataAtual.month &&
-            e.data.day == dataAtual.day);
+        for (final excecao in excecoesParaSalvar) {
+          final dataNormalizada = excecao.data;
+          debugPrint(
+              '➕ [CRIAR EXCEÇÃO SÉRIE] Série=${serie.id}, Data=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, Chave esperada=${serie.id}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
 
-        if (!jaExiste) {
-          // CORREÇÃO CRÍTICA: Normalizar a data antes de criar a exceção
-          // Isso garante correspondência exata na busca
-          final dataNormalizada = DateTime(
-            dataAtual.year,
-            dataAtual.month,
-            dataAtual.day,
-          );
-          
-          final excecao = ExcecaoSerie(
-            id: excecaoId,
-            serieId: serie.id,
-            data: dataNormalizada,
-            cancelada: true,
-          );
-
-          debugPrint('➕ [CRIAR EXCEÇÃO SÉRIE] Série=${serie.id}, Data=${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}, Chave esperada=${serie.id}_${dataNormalizada.year}-${dataNormalizada.month.toString().padLeft(2, '0')}-${dataNormalizada.day.toString().padLeft(2, '0')}');
-          
-          onExcecaoCriada(excecao);
+          await onExcecaoCriada(excecao);
           excecoesCriadas++;
         }
       }

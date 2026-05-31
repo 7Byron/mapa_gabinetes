@@ -3,6 +3,7 @@ import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../services/medico_salvar_service.dart';
+import '../utils/text_search_utils.dart';
 import 'cadastro_medicos.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -198,26 +199,8 @@ class ListaMedicosState extends State<ListaMedicos> {
         ocupantesRef = FirebaseFirestore.instance.collection('medicos');
       }
 
-      final q = _searchController.text.trim().toLowerCase();
-      // Pesquisa server-side por prefixo no nome ou por token na especialidade
-      // Tenta nomeSearch (prefixo). Se vazio, usa apenas paginação normal.
-      Query? query;
-      if (q.isNotEmpty) {
-        final end = '$q\uf8ff';
-        query = ocupantesRef
-            .orderBy('nomeSearch')
-            .where('nomeSearch', isGreaterThanOrEqualTo: q)
-            .where('nomeSearch', isLessThanOrEqualTo: end);
-      }
-      // Fallback: tokens
-      var snapshot = await (query ?? ocupantesRef.orderBy('nomeSearch'))
+      final snapshot = await ocupantesRef
           .get(const GetOptions(source: Source.serverAndCache));
-      if (q.isNotEmpty && snapshot.docs.isEmpty) {
-        // Coleção antiga sem nomeSearch: traz tudo e filtramos localmente
-        snapshot = await ocupantesRef
-            .orderBy('nomeSearch')
-            .get(const GetOptions(source: Source.serverAndCache));
-      }
       final todos = <Medico>[];
       for (final doc in snapshot.docs) {
         final dados = doc.data() as Map<String, dynamic>;
@@ -374,7 +357,7 @@ class ListaMedicosState extends State<ListaMedicos> {
             debugPrint('Erro ao apagar documento de ano ${anoDoc.id}: $e');
           }
         }
-        
+
         // Verificação final: garantir que todas as exceções foram apagadas
         try {
           final verificacaoFinal = await excecoesRef.get();
@@ -821,12 +804,13 @@ class ListaMedicosState extends State<ListaMedicos> {
   }
 
   List<Medico> _filtered() {
-    final q = _normalize(_searchController.text.trim());
+    final q = _searchController.text.trim();
     if (q.isEmpty) return medicos;
     return medicos.where((m) {
-      final nome = _normalize(m.nome);
-      final esp = _normalize(m.especialidade);
-      return nome.contains(q) || esp.contains(q);
+      return TextSearchUtils.matchesAllTerms(
+        q,
+        [m.nome, m.especialidade],
+      );
     }).toList();
   }
 
@@ -844,4 +828,3 @@ class ListaMedicosState extends State<ListaMedicos> {
       .replaceAll(RegExp(r"[ú]"), 'u')
       .replaceAll(RegExp(r"[ç]"), 'c');
 }
-

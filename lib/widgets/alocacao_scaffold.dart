@@ -13,6 +13,7 @@ class AlocacaoScaffold extends StatelessWidget {
   final VoidCallback onZoomOut;
   final VoidCallback onRefresh;
   final Widget body;
+  final int? onboardingStep;
 
   const AlocacaoScaffold({
     super.key,
@@ -24,6 +25,7 @@ class AlocacaoScaffold extends StatelessWidget {
     required this.onZoomOut,
     required this.onRefresh,
     required this.body,
+    this.onboardingStep,
   });
 
   @override
@@ -31,7 +33,7 @@ class AlocacaoScaffold extends StatelessWidget {
     return Scaffold(
       appBar: CustomAppBar(
         title:
-            'Mapa de ${unidade.nomeAlocacao} - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
+            'AlocMap: ${unidade.nome} - ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
         onZoomIn: onZoomIn,
         onZoomOut: onZoomOut,
         currentZoom: zoomLevel,
@@ -41,6 +43,7 @@ class AlocacaoScaffold extends StatelessWidget {
         onRefresh: onRefresh,
         unidade: unidade,
         isAdmin: isAdmin,
+        onboardingStep: onboardingStep,
       ),
       body: body,
     );

@@ -146,7 +146,7 @@ class CadastroGabineteState extends State<CadastroGabinete> {
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 300),
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 380),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Card(
@@ -155,6 +155,7 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                 child: Form(
                   key: _formKey,
                   child: ListView(
+                    shrinkWrap: true,
                     children: [
                       // Campo para Setor / Piso com TypeAheadField
                       TypeAheadField<String>(
@@ -249,29 +250,50 @@ class CadastroGabineteState extends State<CadastroGabinete> {
                         },
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            IconButton(
-                              onPressed: () => _salvarGabinete(),
-                              icon: const Icon(Icons.save, color: Colors.blue),
-                              tooltip: 'Salvar',
-                            ),
-                            IconButton(
-                              onPressed: () async {
-                                await _salvarGabineteInterno(voltar: false);
-                                _criarNovo();
-                              },
-                              icon: const Icon(Icons.add, color: Colors.green),
-                              tooltip: 'Salvar e Adicionar Novo',
-                            ),
-                            IconButton(
-                              onPressed: _cancelar,
-                              icon: const Icon(Icons.cancel, color: Colors.red),
-                              tooltip: 'Cancelar',
-                            ),
-                          ],
+                        padding: const EdgeInsets.only(top: 16, bottom: 8),
+                        child: SizedBox(
+                          height: 72,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              IconButton(
+                                onPressed: () async {
+                                  await _salvarGabineteInterno(voltar: false);
+                                  _criarNovo();
+                                },
+                                iconSize: 48,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 72,
+                                  height: 72,
+                                ),
+                                icon:
+                                    const Icon(Icons.add, color: Colors.green),
+                                tooltip: 'Guardar e Criar novo',
+                              ),
+                              IconButton(
+                                onPressed: () => _salvarGabinete(),
+                                iconSize: 48,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 72,
+                                  height: 72,
+                                ),
+                                icon:
+                                    const Icon(Icons.save, color: Colors.blue),
+                                tooltip: 'Gravar e Sair',
+                              ),
+                              IconButton(
+                                onPressed: _cancelar,
+                                iconSize: 48,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 72,
+                                  height: 72,
+                                ),
+                                icon:
+                                    const Icon(Icons.cancel, color: Colors.red),
+                                tooltip: 'Cancelar',
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],

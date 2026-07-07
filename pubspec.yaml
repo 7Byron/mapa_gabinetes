@@ -1,7 +1,7 @@
 name: mapa_gabinetes
 description: "App para gerir dotações de gabinetes médicos"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.6.0
@@ -21,6 +21,7 @@ dependencies:
   intl: 0.20.2
   get: ^4.6.6
   shared_preferences: ^2.2.2
+  url_launcher: ^6.3.2
 
 # Removidas dependências de banco local para migração Firebase
 #   sqflite: ^2.4.2

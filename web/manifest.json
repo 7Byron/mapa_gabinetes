@@ -1,6 +1,6 @@
 {
-    "name": "mapa_gabinetes",
-    "short_name": "mapa_gabinetes",
+    "name": "AlocMap",
+    "short_name": "AlocMap",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
-import 'package:mapa_gabinetes/widgets/time_picker_dialog.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
 import '../utils/ui_atualizar_dia.dart';
@@ -253,30 +252,36 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
       h = int.tryParse(parts[0]) ?? 8;
       m = int.tryParse(parts[1]) ?? 0;
     }
+    if (h < 0 || h > 23) h = 8;
+    if (m < 0 || m > 59) m = 0;
 
-    final result = await showDialog<TimeOfDay>(
+    final picked = await showTimePicker(
       context: context,
-      builder: (context) => CustomTimePickerDialog(
-        initialTime: TimeOfDay(hour: h, minute: m),
-        onTimeSelected: (picked) {
-          final hh = picked.hour.toString().padLeft(2, '0');
-          final mm = picked.minute.toString().padLeft(2, '0');
-          setState(() {
-            if (isAbertura) {
-              horarios[ds]![0] = '$hh:$mm';
-            } else {
-              horarios[ds]![1] = '$hh:$mm';
-            }
-          });
-
-          // Salva automaticamente após selecionar
-          _gravarAlteracoes();
-        },
-      ),
+      initialTime: TimeOfDay(hour: h, minute: m),
+      initialEntryMode: TimePickerEntryMode.dial,
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
     );
 
-    // Se o usuário cancelou, não faz nada
-    if (result == null) return;
+    if (picked == null || !mounted) return;
+
+    final hh = picked.hour.toString().padLeft(2, '0');
+    final mm = picked.minute.toString().padLeft(2, '0');
+
+    setState(() {
+      if (isAbertura) {
+        horarios[ds]![0] = '$hh:$mm';
+      } else {
+        horarios[ds]![1] = '$hh:$mm';
+      }
+    });
+
+    // Salva automaticamente após selecionar
+    await _gravarAlteracoes();
   }
 
   @override

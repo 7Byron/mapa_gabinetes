@@ -21,6 +21,7 @@ import '../widgets/layout_responsivo_alocacao.dart';
 import '../widgets/layout_desktop_alocacao.dart';
 import '../widgets/alocacao_body.dart';
 import '../widgets/alocacao_scaffold.dart';
+import '../widgets/onboarding_tip_aviso.dart';
 
 // Lógica separada
 import '../utils/alocacao_medicos_logic.dart' as logic;
@@ -470,11 +471,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   Future<bool> _prepararClinicaParaCarregamento({
     bool forcarServidor = false,
   }) async {
-      final preparacao = await AlocacaoClinicaPreparacaoService.preparar(
-        unidadeId: widget.unidade.id,
-        dataReferencia: selectedDate,
+    final preparacao = await AlocacaoClinicaPreparacaoService.preparar(
+      unidadeId: widget.unidade.id,
+      dataReferencia: selectedDate,
       forcarServidor: forcarServidor,
-      );
+    );
     _aplicarPreparacaoClinica(preparacao);
 
     if (!clinicaFechada) {
@@ -616,8 +617,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
     final delta = DateTime.now().difference(_ultimaAtualizacaoMedicos!);
     if (delta < const Duration(milliseconds: 500)) {
-      _logDebug(
-          '⚠️ [ATUALIZAR-MÉDICOS] Ignorando (atualização muito recente)');
+      _logDebug('⚠️ [ATUALIZAR-MÉDICOS] Ignorando (atualização muito recente)');
       return true;
     }
 
@@ -833,8 +833,8 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
 
     if (_lastUpdateDate != null) {
-      final lastDateNormalizada = DateTime(_lastUpdateDate!.year,
-          _lastUpdateDate!.month, _lastUpdateDate!.day);
+      final lastDateNormalizada = DateTime(
+          _lastUpdateDate!.year, _lastUpdateDate!.month, _lastUpdateDate!.day);
       if (lastDateNormalizada == dataNormalizada) {
         _logDebug(
             '⚠️ [RACE-CONDITION] Ignorando atualização duplicada para a mesma data: ${data.day}/${data.month}/${data.year}');
@@ -1209,8 +1209,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
 // #endregion
 
-      final resultadoAno =
-          await AlocacaoMedicosNaoAlocadosAnoService.carregar(
+      final resultadoAno = await AlocacaoMedicosNaoAlocadosAnoService.carregar(
         unidade: widget.unidade,
         ano: ano,
         medicos: medicos,
@@ -1494,6 +1493,76 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     return gabinetes.isEmpty && medicos.isEmpty;
   }
 
+  bool _semHorariosConfigurados() {
+    return widget.isAdmin &&
+        !nuncaEncerra &&
+        clinicaFechada &&
+        mensagemClinicaFechada.trim() == 'Sem horários' &&
+        horariosClinica.isEmpty;
+  }
+
+  int? _getOnboardingStep() {
+    if (!widget.isAdmin) return null;
+    if (isCarregando || _isRefreshing) return null;
+    if (_semHorariosConfigurados()) return 1;
+    if (clinicaFechada) return null;
+    if (gabinetes.isEmpty) return 2;
+    if (medicos.isEmpty) return 3;
+    return null;
+  }
+
+  String _nomeProjeto() {
+    final nome = widget.unidade.nome.trim();
+    return nome.isEmpty ? 'atual' : nome;
+  }
+
+  String _nomeAlocacao() {
+    final nome = widget.unidade.nomeAlocacao.trim();
+    return nome.isEmpty ? 'locais de alocação' : nome;
+  }
+
+  String _nomeOcupantes() {
+    final nome = widget.unidade.nomeOcupantes.trim();
+    return nome.isEmpty ? 'ocupantes' : nome;
+  }
+
+  Widget _buildOnboardingTip(int passo) {
+    switch (passo) {
+      case 1:
+        return OnboardingTipAviso(
+          projetoNome: _nomeProjeto(),
+          passo: 1,
+          totalPassos: 3,
+          iconeAlvo: Icons.schedule,
+          alvoMenu: 'Configurar Horários',
+          descricao:
+              'Comece por definir as horas de abertura do estabelecimento.',
+        );
+      case 2:
+        return OnboardingTipAviso(
+          projetoNome: _nomeProjeto(),
+          passo: 2,
+          totalPassos: 3,
+          iconeAlvo: Icons.business,
+          alvoMenu: 'Gerir ${_nomeAlocacao()}',
+          descricao:
+              'As horas de abertura já estão configuradas. Agora faça a criação dos locais de alocação.',
+        );
+      case 3:
+        return OnboardingTipAviso(
+          projetoNome: _nomeProjeto(),
+          passo: 3,
+          totalPassos: 3,
+          iconeAlvo: Icons.medical_services,
+          alvoMenu: 'Gerir ${_nomeOcupantes()}',
+          descricao:
+              'Os locais de alocação já existem. Agora crie os ${_nomeOcupantes()}.',
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
   List<Gabinete> _getGabinetesFiltrados() {
     return logic.AlocacaoMedicosLogic.filtrarGabinetesPorUI(
       gabinetes: gabinetes,
@@ -1652,6 +1721,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
   @override
   Widget build(BuildContext context) {
+    final onboardingStep = _getOnboardingStep();
     return AlocacaoScaffold(
       unidade: widget.unidade,
       isAdmin: widget.isAdmin,
@@ -1660,6 +1730,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       onZoomIn: _zoomIn,
       onZoomOut: _zoomOut,
       onRefresh: _refreshDados,
+      onboardingStep: onboardingStep,
       body: AlocacaoBody(
         usarLayoutResponsivo: _deveUsarLayoutResponsivo(context),
         layoutResponsivo: _buildLayoutResponsivo(),
@@ -1671,6 +1742,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         isDesalocandoSerie: _isDesalocandoSerie,
         mensagemDesalocacao: _mensagemDesalocacao,
         progressoDesalocacao: _progressoDesalocacao,
+        mostrarSetaMenuLateral: onboardingStep != null,
       ),
     );
   }
@@ -1725,6 +1797,15 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
   // Conteúdo da coluna direita (Médicos Disponíveis + Gabinetes)
   Widget _buildColunaDireita() {
+    if (isCarregando || _isRefreshing) {
+      return const SizedBox.shrink();
+    }
+
+    final onboardingStep = _getOnboardingStep();
+    if (onboardingStep != null) {
+      return _buildOnboardingTip(onboardingStep);
+    }
+
     if (clinicaFechada) {
       return ClinicaFechadaAviso(mensagem: mensagemClinicaFechada);
     }

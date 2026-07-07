@@ -14,6 +14,7 @@ class AlocacaoBody extends StatelessWidget {
   final bool isDesalocandoSerie;
   final String mensagemDesalocacao;
   final double progressoDesalocacao;
+  final bool mostrarSetaMenuLateral;
 
   const AlocacaoBody({
     super.key,
@@ -27,6 +28,7 @@ class AlocacaoBody extends StatelessWidget {
     required this.isDesalocandoSerie,
     required this.mensagemDesalocacao,
     required this.progressoDesalocacao,
+    this.mostrarSetaMenuLateral = false,
   });
 
   @override
@@ -58,6 +60,32 @@ class AlocacaoBody extends StatelessWidget {
               DesalocacaoSerieOverlay(
                 mensagem: mensagemDesalocacao,
                 progresso: progressoDesalocacao,
+              ),
+            if (mostrarSetaMenuLateral && !isCarregando && !isRefreshing)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: IgnorePointer(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.north_west,
+                        color: Colors.red.shade700,
+                        size: 48,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Menu',
+                        style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
           ],
         );

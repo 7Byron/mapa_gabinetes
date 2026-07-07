@@ -8,8 +8,13 @@ import '../services/password_service.dart';
 
 class CadastroUnidadeScreen extends StatefulWidget {
   final Unidade? unidade;
+  final bool confirmarAoAtualizar;
 
-  const CadastroUnidadeScreen({super.key, this.unidade});
+  const CadastroUnidadeScreen({
+    super.key,
+    this.unidade,
+    this.confirmarAoAtualizar = false,
+  });
 
   @override
   State<CadastroUnidadeScreen> createState() => _CadastroUnidadeScreenState();
@@ -31,6 +36,8 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
   bool _isLoading = false;
   bool _showProjectPassword = false;
   bool _showAdminPassword = false;
+  String _passwordProjetoOriginal = '';
+  String _passwordAdminOriginal = '';
 
   @override
   void initState() {
@@ -68,17 +75,21 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
 
       if (projectPassword != null) {
         _passwordProjetoController.text = projectPassword;
+        _passwordProjetoOriginal = projectPassword;
         debugPrint(
             '✅ Password do projeto carregada: ${projectPassword.length} caracteres');
       } else {
+        _passwordProjetoOriginal = '';
         debugPrint('⚠️ Password do projeto não encontrada');
       }
 
       if (adminPassword != null) {
         _passwordAdminController.text = adminPassword;
+        _passwordAdminOriginal = adminPassword;
         debugPrint(
             '✅ Password do administrador carregada: ${adminPassword.length} caracteres');
       } else {
+        _passwordAdminOriginal = '';
         debugPrint('⚠️ Password do administrador não encontrada');
       }
 
@@ -108,6 +119,56 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     _passwordProjetoController.dispose();
     _passwordAdminController.dispose();
     super.dispose();
+  }
+
+  String _normalizarCampoOpcional(String? value) => value?.trim() ?? '';
+
+  bool _temAlteracoes(
+      Unidade unidade, String passwordProjeto, String passwordAdmin) {
+    final unidadeOriginal = widget.unidade;
+    if (unidadeOriginal == null) return true;
+
+    return unidade.nome != unidadeOriginal.nome ||
+        unidade.tipo != unidadeOriginal.tipo ||
+        unidade.endereco != unidadeOriginal.endereco ||
+        _normalizarCampoOpcional(unidade.telefone) !=
+            _normalizarCampoOpcional(unidadeOriginal.telefone) ||
+        _normalizarCampoOpcional(unidade.email) !=
+            _normalizarCampoOpcional(unidadeOriginal.email) ||
+        unidade.nomeOcupantes != unidadeOriginal.nomeOcupantes ||
+        unidade.nomeAlocacao != unidadeOriginal.nomeAlocacao ||
+        passwordProjeto != _passwordProjetoOriginal ||
+        passwordAdmin != _passwordAdminOriginal;
+  }
+
+  Future<bool> _confirmarAtualizacaoUnidade() async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirmar alterações'),
+        content: const Text(
+          'Existem alterações na configuração da unidade.\n\n'
+          'Ao confirmar, as alterações serão gravadas e terá de entrar novamente no projeto.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: MyAppTheme.azulEscuro,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    return confirmado == true;
   }
 
   Future<void> _salvarUnidade() async {
@@ -174,6 +235,43 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
       return;
     }
 
+    final unidade = Unidade(
+      id: widget.unidade?.id ?? '',
+      nome: nome,
+      tipo: tipo,
+      endereco: endereco,
+      telefone: _telefoneController.text.trim().isEmpty
+          ? null
+          : _telefoneController.text.trim(),
+      email: _emailController.text.trim().isEmpty
+          ? null
+          : _emailController.text.trim(),
+      dataCriacao: widget.unidade?.dataCriacao ?? DateTime.now(),
+      ativa: widget.unidade?.ativa ?? true,
+      nomeOcupantes: nomeOcupantes,
+      nomeAlocacao: nomeAlocacao,
+    );
+
+    if (widget.confirmarAoAtualizar && widget.unidade != null) {
+      final temAlteracoes =
+          _temAlteracoes(unidade, passwordProjeto, passwordAdmin);
+
+      if (!temAlteracoes) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Não existem alterações para atualizar.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      final confirmado = await _confirmarAtualizacaoUnidade();
+      if (!confirmado) return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -186,23 +284,6 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
       debugPrint('   - Password Admin: ${passwordAdmin.length} caracteres');
       debugPrint('   - Ocupantes: $nomeOcupantes');
       debugPrint('   - Alocação: $nomeAlocacao');
-
-      final unidade = Unidade(
-        id: widget.unidade?.id ?? '',
-        nome: nome,
-        tipo: tipo,
-        endereco: endereco,
-        telefone: _telefoneController.text.trim().isEmpty
-            ? null
-            : _telefoneController.text.trim(),
-        email: _emailController.text.trim().isEmpty
-            ? null
-            : _emailController.text.trim(),
-        dataCriacao: widget.unidade?.dataCriacao ?? DateTime.now(),
-        ativa: widget.unidade?.ativa ?? true,
-        nomeOcupantes: nomeOcupantes,
-        nomeAlocacao: nomeAlocacao,
-      );
 
       bool sucesso;
       String? unidadeId;

@@ -42,7 +42,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mapa de Gabinetes',
+      title: 'AlocMap',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primaryColor: MyAppTheme.azulEscuro,

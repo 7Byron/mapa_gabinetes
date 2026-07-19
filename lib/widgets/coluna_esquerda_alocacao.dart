@@ -4,6 +4,8 @@ import '../utils/app_theme.dart';
 import '../widgets/calendario_disponibilidades.dart';
 import '../widgets/filtros_section.dart';
 import '../widgets/pesquisa_section.dart';
+import '../widgets/proxima_consulta_section.dart';
+import '../utils/proxima_consulta_utils.dart';
 
 class ColunaEsquerdaAlocacao extends StatelessWidget {
   final DateTime selectedDate;
@@ -16,12 +18,23 @@ class ColunaEsquerdaAlocacao extends StatelessWidget {
   final String? filtroEspecialidadeGabinete;
   final List<String> opcoesNome;
   final List<String> opcoesEspecialidade;
+  final int cartoesDestacados;
+  final String? proximaConsultaMedicoId;
+  final String? proximaConsultaEspecialidade;
+  final Map<String, String> opcoesProximaConsultaMedicos;
+  final List<String> opcoesProximaConsultaEspecialidades;
+  final List<ProximaConsultaItem> proximasConsultas;
+  final bool carregandoProximasConsultas;
+  final String? erroProximasConsultas;
   final List<String> especialidadesGabinetes;
   final ValueChanged<DateTime> onDateSelected;
   final ValueChanged<DateTime> onViewChanged;
   final ValueChanged<String?> onPesquisaNomeChanged;
   final ValueChanged<String?> onPesquisaEspecialidadeChanged;
   final VoidCallback onLimparPesquisa;
+  final ValueChanged<String?> onProximaConsultaMedicoChanged;
+  final ValueChanged<String?> onProximaConsultaEspecialidadeChanged;
+  final ValueChanged<ProximaConsultaItem> onProximaConsultaTap;
   final void Function(String setor, bool isSelected) onTogglePiso;
   final ValueChanged<String> onFiltroOcupacaoChanged;
   final ValueChanged<bool> onMostrarConflitosChanged;
@@ -39,12 +52,23 @@ class ColunaEsquerdaAlocacao extends StatelessWidget {
     required this.filtroEspecialidadeGabinete,
     required this.opcoesNome,
     required this.opcoesEspecialidade,
+    required this.cartoesDestacados,
+    required this.proximaConsultaMedicoId,
+    required this.proximaConsultaEspecialidade,
+    required this.opcoesProximaConsultaMedicos,
+    required this.opcoesProximaConsultaEspecialidades,
+    required this.proximasConsultas,
+    required this.carregandoProximasConsultas,
+    required this.erroProximasConsultas,
     required this.especialidadesGabinetes,
     required this.onDateSelected,
     required this.onViewChanged,
     required this.onPesquisaNomeChanged,
     required this.onPesquisaEspecialidadeChanged,
     required this.onLimparPesquisa,
+    required this.onProximaConsultaMedicoChanged,
+    required this.onProximaConsultaEspecialidadeChanged,
+    required this.onProximaConsultaTap,
     required this.onTogglePiso,
     required this.onFiltroOcupacaoChanged,
     required this.onMostrarConflitosChanged,
@@ -73,9 +97,22 @@ class ColunaEsquerdaAlocacao extends StatelessWidget {
             pesquisaEspecialidade: pesquisaEspecialidade,
             opcoesNome: opcoesNome,
             opcoesEspecialidade: opcoesEspecialidade,
+            cartoesDestacados: cartoesDestacados,
             onPesquisaNomeChanged: onPesquisaNomeChanged,
             onPesquisaEspecialidadeChanged: onPesquisaEspecialidadeChanged,
             onLimparPesquisa: onLimparPesquisa,
+          ),
+          ProximaConsultaSection(
+            medicoId: proximaConsultaMedicoId,
+            especialidade: proximaConsultaEspecialidade,
+            opcoesMedicos: opcoesProximaConsultaMedicos,
+            opcoesEspecialidades: opcoesProximaConsultaEspecialidades,
+            resultados: proximasConsultas,
+            carregando: carregandoProximasConsultas,
+            erro: erroProximasConsultas,
+            onMedicoChanged: onProximaConsultaMedicoChanged,
+            onEspecialidadeChanged: onProximaConsultaEspecialidadeChanged,
+            onConsultaTap: onProximaConsultaTap,
           ),
           Container(
             decoration: BoxDecoration(

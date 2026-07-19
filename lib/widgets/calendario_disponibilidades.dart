@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:intl/intl.dart';
 import '../utils/app_theme.dart';
+import '../utils/serie_tipo_colors.dart';
+import '../models/disponibilidade.dart';
 
 class CalendarioDisponibilidades extends StatefulWidget {
   final List<DateTime> diasSelecionados;
+  final List<Disponibilidade> disponibilidades;
 
   /// onAdicionarData recebe (DateTime date, String tipo)
   final Function(DateTime, String) onAdicionarData;
@@ -27,6 +30,7 @@ class CalendarioDisponibilidades extends StatefulWidget {
   const CalendarioDisponibilidades({
     super.key,
     required this.diasSelecionados,
+    this.disponibilidades = const [],
     required this.onAdicionarData,
     required this.onRemoverData,
     this.onViewChanged,
@@ -48,6 +52,13 @@ class _CalendarioDisponibilidadesState
 
   Future<void> _mostrarDialogoTipoMarcacao(
       BuildContext context, DateTime date) async {
+    const tiposMarcacao = [
+      'Única',
+      'Semanal',
+      'Quinzenal',
+      'Mensal',
+      'Consecutivo',
+    ];
     final String? tipoMarcacao = await showDialog<String>(
       context: context,
       builder: (context) {
@@ -55,28 +66,27 @@ class _CalendarioDisponibilidadesState
           title: const Text('Escolha o tipo de marcação'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('Única'),
-                onTap: () => Navigator.of(context).pop('Única'),
-              ),
-              ListTile(
-                title: const Text('Semanal'),
-                onTap: () => Navigator.of(context).pop('Semanal'),
-              ),
-              ListTile(
-                title: const Text('Quinzenal'),
-                onTap: () => Navigator.of(context).pop('Quinzenal'),
-              ),
-              ListTile(
-                title: const Text('Mensal'),
-                onTap: () => Navigator.of(context).pop('Mensal'),
-              ),
-              ListTile(
-                title: const Text('Consecutivo'),
-                onTap: () => Navigator.of(context).pop('Consecutivo'),
-              ),
-            ],
+            children: tiposMarcacao.map((tipo) {
+              final cor = SerieTipoColors.para(tipo);
+              return ListTile(
+                leading: Container(
+                  width: 12,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: cor,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                title: Text(
+                  tipo,
+                  style: TextStyle(
+                    color: cor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onTap: () => Navigator.of(context).pop(tipo),
+              );
+            }).toList(),
           ),
         );
       },
@@ -169,39 +179,33 @@ class _CalendarioDisponibilidadesState
     );
   }
 
-  Future<void> _mostrarDialogoRemocaoSeries(
-      BuildContext context, DateTime date) async {
-    final escolha = await showDialog<String>(
+  Future<void> _confirmarNovaSerie(BuildContext context, DateTime date) async {
+    final criarNova = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Remover disponibilidade'),
+          title: const Text('Criar nova série?'),
           content: Text(
-            'Deseja remover apenas este dia ou toda a série a partir de '
-            '${date.day}/${date.month}/${date.year}?',
+            'Já existe uma disponibilidade em '
+            '${date.day}/${date.month}/${date.year}. '
+            'Deseja criar uma nova série para este dia?',
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop('single'),
-              child: const Text('Apenas este dia'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop('all'),
-              child: const Text('Toda a série a partir deste dia'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
+              onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Criar nova série'),
             ),
           ],
         );
       },
     );
 
-    if (escolha == 'single') {
-      widget.onRemoverData(date, false); // remove só o dia
-    } else if (escolha == 'all') {
-      widget.onRemoverData(date, true); // remove toda a série
+    if (criarNova == true && context.mounted) {
+      await _mostrarDialogoTipoMarcacao(context, date);
     }
   }
 
@@ -309,18 +313,21 @@ class _CalendarioDisponibilidadesState
                         final diaAtual = displayDate.day;
                         final mesAtual = displayDate.month;
                         // Garantir que o dia existe no novo mês/ano (ex: 29/02 em ano não bissexto)
-                        final ultimoDiaDoMes = DateTime(novoAno, mesAtual + 1, 0).day;
-                        final diaFinal = diaAtual <= ultimoDiaDoMes ? diaAtual : ultimoDiaDoMes;
+                        final ultimoDiaDoMes =
+                            DateTime(novoAno, mesAtual + 1, 0).day;
+                        final diaFinal = diaAtual <= ultimoDiaDoMes
+                            ? diaAtual
+                            : ultimoDiaDoMes;
                         final novaData = DateTime(novoAno, mesAtual, diaFinal);
-                        
+
                         // Marcar como atualização programática para evitar conflitos
                         _lastProgrammaticDate = novaData;
-                        
+
                         setState(() {});
                         _calendarController.displayDate = novaData;
                         // CORREÇÃO: Não chamar forward!() pois isso avança o mês
                         // Apenas atualizar o displayDate é suficiente
-                        
+
                         // Notificar mudança
                         if (widget.onViewChanged != null) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -401,15 +408,15 @@ class _CalendarioDisponibilidadesState
                                 final indiceMes = meses.indexOf(novoMes) + 1;
                                 final novaData =
                                     DateTime(displayDate.year, indiceMes, 1);
-                                
+
                                 // Marcar como atualização programática para evitar conflitos
                                 _lastProgrammaticDate = novaData;
-                                
+
                                 setState(() {});
                                 _calendarController.displayDate = novaData;
                                 // CORREÇÃO: Não chamar forward!() pois isso avança apenas um mês
                                 // Apenas atualizar o displayDate é suficiente
-                                
+
                                 // Notificar mudança
                                 if (widget.onViewChanged != null) {
                                   WidgetsBinding.instance
@@ -561,8 +568,9 @@ class _CalendarioDisponibilidadesState
                     );
 
                     if (isSelected) {
-                      // Se já está selecionado (vermelho), pergunta se remove só esse ou toda a série
-                      _mostrarDialogoRemocaoSeries(context, date);
+                      // A remoção é feita no cartão. No calendário, um segundo
+                      // clique permite adicionar outra série no mesmo dia.
+                      _confirmarNovaSerie(context, date);
                     } else {
                       // Se não está selecionado, perguntar qual tipo de marcação (Única, Semanal etc.)
                       _mostrarDialogoTipoMarcacao(context, date);
@@ -580,27 +588,43 @@ class _CalendarioDisponibilidadesState
                   // Verifica se a célula pertence ao mês atual
                   final isCurrentMonth =
                       details.visibleDates[10].month == details.date.month;
+                  final coresDoDia = widget.disponibilidades
+                      .where((d) =>
+                          d.data.year == details.date.year &&
+                          d.data.month == details.date.month &&
+                          d.data.day == details.date.day)
+                      .map((d) => SerieTipoColors.para(d.tipo))
+                      .toSet()
+                      .toList();
+                  if (isSelected && coresDoDia.isEmpty) {
+                    coresDoDia.add(Colors.purple);
+                  }
 
                   return Center(
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey, width: 0.5),
-                        color: isSelected ? Colors.purple : Colors.transparent,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '${details.date.day}',
-                        style: TextStyle(
-                          color: isSelected
-                              ? Colors.white
-                              : isCurrentMonth
-                                  ? Colors.black
-                                  : Colors.grey,
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
+                    child: CustomPaint(
+                      painter: isSelected
+                          ? _CoresSeriesDiaPainter(coresDoDia)
+                          : null,
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey, width: 0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${details.date.day}',
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : isCurrentMonth
+                                    ? Colors.black
+                                    : Colors.grey,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
                         ),
                       ),
                     ),
@@ -612,5 +636,43 @@ class _CalendarioDisponibilidadesState
         ),
       ),
     );
+  }
+}
+
+class _CoresSeriesDiaPainter extends CustomPainter {
+  final List<Color> cores;
+
+  const _CoresSeriesDiaPainter(this.cores);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (cores.isEmpty) return;
+    final rect = Offset.zero & size;
+    if (cores.length == 1) {
+      canvas.drawOval(rect, Paint()..color = cores.first);
+      return;
+    }
+
+    final sweep = 2 * 3.141592653589793 / cores.length;
+    var inicio = -3.141592653589793 / 2;
+    for (final cor in cores) {
+      canvas.drawArc(
+        rect,
+        inicio,
+        sweep,
+        true,
+        Paint()..color = cor,
+      );
+      inicio += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CoresSeriesDiaPainter oldDelegate) {
+    if (oldDelegate.cores.length != cores.length) return true;
+    for (var i = 0; i < cores.length; i++) {
+      if (oldDelegate.cores[i] != cores[i]) return true;
+    }
+    return false;
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import 'package:flutter/foundation.dart';
 import '../services/password_service.dart';
+import '../services/unidade_selecionada_service.dart';
 import '../models/unidade.dart';
 import 'alocacao_medicos_screen.dart';
 import 'selecao_unidade_screen.dart';
@@ -38,7 +39,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _carregarPreferenciaLembrarPassword() async {
-    final remember = await PasswordService.getRememberPassword();
+    final remember =
+        await PasswordService.getRememberPassword(unidadeId: widget.unidade.id);
     setState(() {
       _lembrarPassword = remember;
     });
@@ -48,6 +50,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _logout() async {
+    await UnidadeSelecionadaService.limparUnidadeSelecionada();
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SelecaoUnidadeScreen(),
+      ),
+      (route) => false,
+    );
   }
 
   Future<void> _login() async {
@@ -138,21 +153,24 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('   - É administrador: $isAdmin');
 
       if (isValid) {
-        // Guarda a preferência de lembrar password
-        await PasswordService.setRememberPassword(_lembrarPassword);
+        // Vincula explicitamente a sessão à mesma unidade cuja password foi
+        // validada, inclusive no caso de administradores que alternam unidades.
+        await UnidadeSelecionadaService.salvarUnidadeSelecionada(
+            widget.unidade.id);
 
-        // Se "Lembrar password" estiver marcado, guarda a password
-        if (_lembrarPassword) {
-          if (isAdmin) {
-            await PasswordService.saveAdminPassword(password,
-                unidadeId: widget.unidade.id);
-          } else {
-            await PasswordService.saveProjectPassword(password,
-                unidadeId: widget.unidade.id);
-          }
-          debugPrint('   - Password guardada para lembrar');
-        } else {
-          debugPrint('   - Password não guardada (não lembrar)');
+        // Guarda a preferência de lembrar password
+        await PasswordService.setRememberPassword(_lembrarPassword,
+            unidadeId: widget.unidade.id);
+
+        // O login nunca deve regravar a credencial oficial no Firebase. A
+        // verificação já atualizou apenas o cache desta unidade. Se o
+        // utilizador não quiser recordar, removemos esse cache imediatamente.
+        if (!_lembrarPassword) {
+          await PasswordService.clearProjectPassword(
+              unidadeId: widget.unidade.id);
+          await PasswordService.clearAdminPassword(
+              unidadeId: widget.unidade.id);
+          debugPrint('   - Cache de passwords da unidade removido');
         }
 
         // Login bem-sucedido - vai para a tela de alocação
@@ -196,12 +214,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       debugPrint('   - Erro no login: $e');
       if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao fazer login: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao fazer login: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -217,6 +235,13 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: MyAppTheme.azulEscuro,
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sair e escolher outro projeto',
+          ),
+        ],
       ),
       body: Center(
         child: ConstrainedBox(

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/alocacao.dart';
 import '../models/relatorio_ocupacao_dia.dart';
 import '../models/unidade.dart';
+import '../utils/time_utils.dart';
 import 'alocacao_ano_alocacoes_service.dart';
 import 'alocacao_clinica_config_service.dart';
 import 'alocacao_clinica_status_service.dart';
@@ -82,16 +83,56 @@ class RelatoriosService {
     return '${data.year}-${data.month.toString().padLeft(2, '0')}-${data.day.toString().padLeft(2, '0')}';
   }
 
-  static double _somarHorasAlocacaoObjeto(Alocacao aloc) {
-    final horarioInicio = aloc.horarioInicio;
-    final horarioFim = aloc.horarioFim;
-    if (horarioInicio.contains(',')) {
-      return _somarHorasAlocacao(horarioInicio);
+  /// Calcula as horas efetivamente ocupadas pela união dos intervalos.
+  /// Intervalos sobrepostos contam uma única vez; intervalos separados do
+  /// mesmo médico ou de médicos diferentes são ambos preservados.
+  static double calcularHorasOcupadasUnicas(
+    List<Alocacao> alocacoes, {
+    required String abertura,
+    required String fecho,
+  }) {
+    final aberturaMin = TimeUtils.parseTimeToMinutes(abertura);
+    final fechoMin =
+        fecho == '24:00' ? 24 * 60 : TimeUtils.parseTimeToMinutes(fecho);
+    if (fechoMin <= aberturaMin) return 0.0;
+
+    final intervalos = <(int, int)>[];
+    for (final alocacao in alocacoes) {
+      try {
+        final pares = alocacao.horarioInicio.contains(',')
+            ? alocacao.horarioInicio.split(',').map((h) => h.trim()).toList()
+            : <String>[alocacao.horarioInicio, alocacao.horarioFim];
+        for (var i = 0; i + 1 < pares.length; i += 2) {
+          final inicio = TimeUtils.parseTimeToMinutes(pares[i]);
+          final fim = TimeUtils.parseTimeToMinutes(pares[i + 1]);
+          final inicioAjustado = inicio < aberturaMin ? aberturaMin : inicio;
+          final fimAjustado = fim > fechoMin ? fechoMin : fim;
+          if (fimAjustado > inicioAjustado) {
+            intervalos.add((inicioAjustado, fimAjustado));
+          }
+        }
+      } catch (_) {
+        // Registos antigos malformados são ignorados, tal como no cálculo
+        // anterior, em vez de invalidarem todo o relatório.
+      }
     }
-    if (horarioFim.trim().isNotEmpty) {
-      return _calcHorasIntervalo(horarioInicio, horarioFim);
+    if (intervalos.isEmpty) return 0.0;
+
+    intervalos.sort((a, b) => a.$1.compareTo(b.$1));
+    var inicioAtual = intervalos.first.$1;
+    var fimAtual = intervalos.first.$2;
+    var minutos = 0;
+    for (final intervalo in intervalos.skip(1)) {
+      if (intervalo.$1 <= fimAtual) {
+        if (intervalo.$2 > fimAtual) fimAtual = intervalo.$2;
+      } else {
+        minutos += fimAtual - inicioAtual;
+        inicioAtual = intervalo.$1;
+        fimAtual = intervalo.$2;
+      }
     }
-    return 0.0;
+    minutos += fimAtual - inicioAtual;
+    return minutos / 60.0;
   }
 
   /// Soma horas de um registo de alocação (legacy ou estrutura nova).
@@ -110,10 +151,11 @@ class RelatoriosService {
   }
 
   /// Busca horários da clínica no Firestore
-  static Future<Map<int, List<String>>> _carregarHorariosMap({String? unidadeId}) async {
+  static Future<Map<int, List<String>>> _carregarHorariosMap(
+      {String? unidadeId}) async {
     final firestore = FirebaseFirestore.instance;
     CollectionReference horariosRef;
-    
+
     if (unidadeId != null) {
       horariosRef = firestore
           .collection('unidades')
@@ -122,7 +164,7 @@ class RelatoriosService {
     } else {
       horariosRef = firestore.collection('horarios_clinica');
     }
-    
+
     final snap = await horariosRef.get();
     final map = <int, List<String>>{};
     for (final doc in snap.docs) {
@@ -157,7 +199,7 @@ class RelatoriosService {
   }) async {
     final firestore = FirebaseFirestore.instance;
     CollectionReference feriadosRef;
-    
+
     if (unidadeId != null) {
       feriadosRef = firestore
           .collection('unidades')
@@ -166,12 +208,13 @@ class RelatoriosService {
     } else {
       feriadosRef = firestore.collection('feriados');
     }
-    
+
     final feriados = <Map<String, dynamic>>[];
 
     // Para relatórios, carregar apenas anos no intervalo
     for (final ano in _anosNoIntervalo(inicio, fim)) {
-      final registosRef = feriadosRef.doc(ano.toString()).collection('registos');
+      final registosRef =
+          feriadosRef.doc(ano.toString()).collection('registos');
       final registosSnapshot = await registosRef.get();
       for (final doc in registosSnapshot.docs) {
         feriados.add(doc.data());
@@ -229,10 +272,11 @@ class RelatoriosService {
   }
 
   /// Busca gabinetes no Firestore
-  static Future<List<Map<String, dynamic>>> _carregarGabinetes({String? unidadeId}) async {
+  static Future<List<Map<String, dynamic>>> _carregarGabinetes(
+      {String? unidadeId}) async {
     final firestore = FirebaseFirestore.instance;
     CollectionReference gabinetesRef;
-    
+
     if (unidadeId != null) {
       // Busca gabinetes da unidade específica
       gabinetesRef = firestore
@@ -243,7 +287,7 @@ class RelatoriosService {
       // Busca todos os gabinetes (fallback para compatibilidade)
       gabinetesRef = firestore.collection('gabinetes');
     }
-    
+
     final snap = await gabinetesRef.get();
     return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
   }
@@ -328,10 +372,8 @@ class RelatoriosService {
   }) async {
     // Carrega gabinetes para saber quais IDs pertencem a esse setor
     final gabinetes = await _carregarGabinetes(unidadeId: unidadeId);
-    final gabIds = gabinetes
-        .where((g) => g['setor'] == setor)
-        .map((g) => g['id'])
-        .toSet();
+    final gabIds =
+        gabinetes.where((g) => g['setor'] == setor).map((g) => g['id']).toSet();
 
     // Carrega alocações + horários + feriados
     final alocacoes = await _carregarAlocacoes(
@@ -454,8 +496,7 @@ class RelatoriosService {
       final alocDoDia = alocFiltradas.where((a) =>
           _parseData(a['data'])?.year == dia.year &&
           _parseData(a['data'])?.month == dia.month &&
-          _parseData(a['data'])?.day == dia.day
-      );
+          _parseData(a['data'])?.day == dia.day);
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
         horasOcupDia += _somarHorasAlocacaoRegistro(al);
@@ -551,7 +592,8 @@ class RelatoriosService {
     // Carrega gabinetes => filtra os que contêm essa especialidade
     final gabinetes = await _carregarGabinetes(unidadeId: unidadeId);
     final gabIds = gabinetes
-        .where((g) => (g['especialidadesPermitidas'] as List).contains(especialidadeProcurada))
+        .where((g) => (g['especialidadesPermitidas'] as List)
+            .contains(especialidadeProcurada))
         .map((g) => g['id'])
         .toSet();
 
@@ -603,8 +645,7 @@ class RelatoriosService {
       final alocDoDia = alocFiltradas.where((a) =>
           _parseData(a['data'])?.year == dia.year &&
           _parseData(a['data'])?.month == dia.month &&
-          _parseData(a['data'])?.day == dia.day
-      );
+          _parseData(a['data'])?.day == dia.day);
       double horasOcupDia = 0.0;
       for (final al in alocDoDia) {
         horasOcupDia += _somarHorasAlocacaoRegistro(al);
@@ -626,8 +667,7 @@ class RelatoriosService {
   }) async {
     final inicioNormalizado = _normalizarData(inicio);
     final fimNormalizado = _normalizarData(fim);
-    final gabSet =
-        gabineteIds.where((id) => id.trim().isNotEmpty).toSet();
+    final gabSet = gabineteIds.where((id) => id.trim().isNotEmpty).toSet();
     if (gabSet.isEmpty) return [];
 
     final alocacoes = await _carregarAlocacoesPeriodoComSeries(
@@ -636,14 +676,12 @@ class RelatoriosService {
       unidade: unidade,
     );
 
-    final horasPorDiaGabinete = <String, Map<String, double>>{};
+    final alocacoesPorDiaGabinete = <String, Map<String, List<Alocacao>>>{};
     for (final aloc in alocacoes) {
       if (!gabSet.contains(aloc.gabineteId)) continue;
       final diaKey = _dataKey(aloc.data);
-      final gabMap = horasPorDiaGabinete.putIfAbsent(diaKey, () => {});
-      final horas = _somarHorasAlocacaoObjeto(aloc);
-      if (horas <= 0) continue;
-      gabMap[aloc.gabineteId] = (gabMap[aloc.gabineteId] ?? 0) + horas;
+      final gabMap = alocacoesPorDiaGabinete.putIfAbsent(diaKey, () => {});
+      gabMap.putIfAbsent(aloc.gabineteId, () => []).add(aloc);
     }
 
     final config =
@@ -655,8 +693,7 @@ class RelatoriosService {
     final feriadosPorAno = <int, List<Map<String, String>>>{};
     final encerramentosPorAno = <int, List<Map<String, dynamic>>>{};
     for (final ano in _anosNoIntervalo(inicioNormalizado, fimNormalizado)) {
-      feriadosPorAno[ano] =
-          await AlocacaoClinicaConfigService.carregarFeriados(
+      feriadosPorAno[ano] = await AlocacaoClinicaConfigService.carregarFeriados(
         unidadeId: unidade.id,
         anoSelecionado: ano,
         forcarServidor: false,
@@ -670,8 +707,8 @@ class RelatoriosService {
     }
 
     final resultados = <RelatorioOcupacaoDia>[];
-    for (final dia in _gerarDatasNoIntervalo(
-        inicioNormalizado, fimNormalizado)) {
+    for (final dia
+        in _gerarDatasNoIntervalo(inicioNormalizado, fimNormalizado)) {
       final feriadosAno = feriadosPorAno[dia.year] ?? [];
       final encerramentosAno = encerramentosPorAno[dia.year] ?? [];
       final status = AlocacaoClinicaStatusService.verificar(
@@ -719,11 +756,15 @@ class RelatoriosService {
       }
 
       final diaKey = _dataKey(dia);
-      final mapaDia = horasPorDiaGabinete[diaKey] ?? {};
+      final mapaDia = alocacoesPorDiaGabinete[diaKey] ?? {};
       double horasOcupadas = 0.0;
       for (final gabId in gabSet) {
-        final horasGab = mapaDia[gabId] ?? 0.0;
-        horasOcupadas += horasGab > horasAbertas ? horasAbertas : horasGab;
+        final alocacoesGabinete = mapaDia[gabId] ?? const <Alocacao>[];
+        horasOcupadas += calcularHorasOcupadasUnicas(
+          alocacoesGabinete,
+          abertura: horariosDia.length >= 2 ? horariosDia[0] : '00:00',
+          fecho: horariosDia.length >= 2 ? horariosDia[1] : '24:00',
+        );
       }
       final horasTotais = horasAbertas * gabSet.length;
       if (horasOcupadas > horasTotais) {

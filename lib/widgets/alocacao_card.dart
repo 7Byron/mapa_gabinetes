@@ -5,6 +5,7 @@ import '../models/alocacao.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_card_actions.dart';
+import '../utils/serie_tipo_colors.dart';
 
 /// Widget base para cartão de alocação
 /// Pode ser usado tanto para cartões únicos quanto de série
@@ -106,7 +107,11 @@ class AlocacaoCard extends StatelessWidget {
               ),
               Text(
                 'Série: ${disponibilidade.tipo}',
-                style: const TextStyle(fontSize: 9),
+                style: TextStyle(
+                  fontSize: 9,
+                  color: SerieTipoColors.para(disponibilidade.tipo),
+                  fontWeight: FontWeight.w600,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

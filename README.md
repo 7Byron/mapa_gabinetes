@@ -41,7 +41,7 @@ App para gerir dotações de gabinetes médicos
 
 
 ## para deploy no firebase
-flutter build web --release
+dart run tool/build_web.dart
 firebase deploy --only hosting
 
 ## para fazer o upload para o github
@@ -50,5 +50,4 @@ git add .
 git status
 git commit -m "24 jan"
 git push origin master
-
 

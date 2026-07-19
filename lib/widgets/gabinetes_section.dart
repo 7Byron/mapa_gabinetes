@@ -25,7 +25,8 @@ class GabinetesSection extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
   final DateTime selectedDate;
   final Future<void> Function() onAtualizarEstado;
-  final Future<void> Function(String medicoId) onDesalocarMedicoComPergunta;
+  final Future<void> Function(String medicoId, {String? alocacaoId})
+      onDesalocarMedicoComPergunta;
   final bool isAdmin; // Novo parâmetro para controlar permissões
   final Set<String>
       medicosDestacados; // IDs dos médicos destacados pela pesquisa
@@ -51,8 +52,13 @@ class GabinetesSection extends StatefulWidget {
 
   /// Callback opcional para atualização otimista durante alocação de série
   /// Permite remover médico dos disponíveis e criar alocação temporária imediatamente
-  final void Function(String medicoId, String gabineteId, DateTime data)?
-      onAlocacaoSerieOtimista;
+  final void Function(
+    String medicoId,
+    String gabineteId,
+    DateTime data,
+    List<String> horarios,
+    String? serieId,
+  )? onAlocacaoSerieOtimista;
 
   const GabinetesSection({
     super.key,
@@ -78,6 +84,51 @@ class GabinetesSection extends StatefulWidget {
 }
 
 class _GabinetesSectionState extends State<GabinetesSection> {
+  String _medicoIdDoDrag(String data) => data.split('|||').first;
+
+  String? _disponibilidadeIdDoDrag(String data) {
+    final partes = data.split('|||');
+    return partes.length > 1 ? partes.sublist(1).join('|||') : null;
+  }
+
+  Disponibilidade? _disponibilidadeDoDrag(String data) {
+    final disponibilidadeId = _disponibilidadeIdDoDrag(data);
+    if (disponibilidadeId == null) return null;
+    for (final disponibilidade in widget.disponibilidades) {
+      if (disponibilidade.id == disponibilidadeId) return disponibilidade;
+    }
+    return null;
+  }
+
+  String? _alocacaoIdDoDrag(String data) {
+    final identificador = _disponibilidadeIdDoDrag(data);
+    if (identificador == null || !identificador.startsWith('alocacao:')) {
+      return null;
+    }
+    return identificador.substring('alocacao:'.length);
+  }
+
+  Alocacao? _alocacaoDoDrag(String data) {
+    final id = _alocacaoIdDoDrag(data);
+    if (id == null) return null;
+    for (final alocacao in widget.alocacoes) {
+      if (alocacao.id == id) return alocacao;
+    }
+    return null;
+  }
+
+  bool _alocacaoPertenceDisponibilidade(
+      Alocacao alocacao, Disponibilidade disponibilidade) {
+    if (alocacao.medicoId != disponibilidade.medicoId) return false;
+    if (disponibilidade.id.startsWith('serie_')) {
+      final serieId =
+          SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id);
+      return alocacao.id.contains(serieId);
+    }
+    return alocacao.horarioInicio == disponibilidade.horarios.firstOrNull &&
+        alocacao.horarioFim == disponibilidade.horarios.lastOrNull;
+  }
+
   // Variáveis para controlar o progresso da alocação de séries
   bool _isAlocandoSerie = false;
   double _progressoAlocacao = 0.0;
@@ -87,7 +138,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
   bool _isRealocando = false;
   double _progressoRealocacao = 0.0;
   String _mensagemRealocacao = 'A iniciar...';
-  String? _medicoIdEmRealocacao; // ID do médico que está sendo realocado
+  String? _alocacaoIdEmRealocacao;
   String?
       _gabineteOrigemRealocacao; // ID do gabinete de origem durante realocação
 
@@ -242,6 +293,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
     required String gabineteOrigem,
     required String gabineteDestino,
     required DateTime dataAlvo,
+    required String alocacaoId,
   }) async {
     debugPrint(
         '🔵 [REALOCAÇÃO-MÉDICO] INÍCIO: médico=$medicoId, origem=$gabineteOrigem, destino=$gabineteDestino');
@@ -253,7 +305,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
       final alocacaoAtual = widget.alocacoes.firstWhere(
         (a) {
           final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-          return a.medicoId == medicoId &&
+          return a.id == alocacaoId &&
+              a.medicoId == medicoId &&
               a.gabineteId == gabineteOrigem &&
               aDate.year == dataAlvo.year &&
               aDate.month == dataAlvo.month &&
@@ -275,7 +328,9 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             d.medicoId == medicoId &&
             d.data.year == dataAlvo.year &&
             d.data.month == dataAlvo.month &&
-            d.data.day == dataAlvo.day,
+            d.data.day == dataAlvo.day &&
+            d.horarios.firstOrNull == alocacaoAtual.horarioInicio &&
+            d.horarios.lastOrNull == alocacaoAtual.horarioFim,
         orElse: () => Disponibilidade(
           id: '',
           medicoId: '',
@@ -302,7 +357,6 @@ class _GabinetesSectionState extends State<GabinetesSection> {
       // Buscar mesmo se tipoSerie for 'Única', porque pode ser que a disponibilidade
       // não esteja em widget.disponibilidades quando o cartão está nos desalocados
       if (alocacaoAtual.id.isEmpty) {
-
         debugPrint(
             '⚠️ [REALOCAÇÃO-MÉDICO] Alocação não encontrada em widget.alocacoes, buscando série do Firestore...');
         try {
@@ -332,14 +386,12 @@ class _GabinetesSectionState extends State<GabinetesSection> {
           }
 
           if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
-
             debugPrint(
                 '✅ [REALOCAÇÃO-MÉDICO] Série encontrada no Firestore: ${serieEncontrada.id}, tipo: ${serieEncontrada.tipo}');
             podeSerSerie = true;
             tipoSerie = serieEncontrada.tipo;
             serieIdEncontrado ??= serieEncontrada.id;
           } else {
-
             debugPrint(
                 '⚠️ [REALOCAÇÃO-MÉDICO] Série não encontrada no Firestore');
           }
@@ -389,8 +441,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
             }
           }
         } catch (e) {
-          debugPrint(
-              '❌ [REALOCAÇÃO-MÉDICO] Erro ao buscar série pelo ID: $e');
+          debugPrint('❌ [REALOCAÇÃO-MÉDICO] Erro ao buscar série pelo ID: $e');
         }
       }
 
@@ -539,7 +590,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
               _isRealocando = false;
               _progressoRealocacao = 0.0;
               _mensagemRealocacao = 'A iniciar...';
-              _medicoIdEmRealocacao = null;
+              _alocacaoIdEmRealocacao = null;
               _gabineteOrigemRealocacao = null;
             });
           }
@@ -547,15 +598,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
         }
 
         if (escolha == 'serie') {
-
           // CORREÇÃO: Atualização otimista PRIMEIRO - mover cartão visualmente
           debugPrint(
               '🟢 [REALOCAÇÃO-MÉDICO] Escolha: Toda a série - chamando atualização otimista PRIMEIRO');
-          if (widget.onRealocacaoOtimista != null) {
-            widget.onRealocacaoOtimista!(
-                medicoId, gabineteOrigem, gabineteDestino, dataAlvo);
-            await Future.delayed(const Duration(milliseconds: 50));
-          }
+          _realocarCartaoLocalmente(alocacaoId, gabineteDestino);
+          await Future.delayed(const Duration(milliseconds: 50));
 
           // DEPOIS iniciar progress bar (cartão já está visível no destino)
           if (mounted) {
@@ -563,24 +610,26 @@ class _GabinetesSectionState extends State<GabinetesSection> {
               _isRealocando = true;
               _progressoRealocacao = 0.0;
               _mensagemRealocacao = 'A iniciar realocação...';
-              _medicoIdEmRealocacao = medicoId;
+              _alocacaoIdEmRealocacao = alocacaoId;
               _gabineteOrigemRealocacao = gabineteOrigem;
             });
           }
 
           // Realocar toda a série usando o serviço
           try {
-          if (!mounted) return;
+            if (!mounted) return;
             final sucesso = await RealocacaoSerieService.realocar(
               medicoId: medicoId,
               gabineteOrigem: gabineteOrigem,
               gabineteDestino: gabineteDestino,
               dataRef: dataAlvo,
               tipoSerie: tipoSerie,
+              serieId: serieIdEncontrado,
+              alocacaoId: alocacaoId,
               alocacoes: widget.alocacoes,
               unidade: widget.unidade,
               context: context,
-              onRealocacaoOtimista: widget.onRealocacaoOtimista,
+              onRealocacaoOtimista: null,
               onAtualizarEstado: widget.onAtualizarEstado,
               onProgresso: (progresso, mensagem) {
                 if (mounted) {
@@ -612,11 +661,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
         // CORREÇÃO: Atualização otimista PRIMEIRO mesmo para "Apenas este dia"
         debugPrint(
             '🟢 [REALOCAÇÃO-MÉDICO] Chamando atualização otimista PRIMEIRO para "Apenas este dia"');
-        if (widget.onRealocacaoOtimista != null) {
-          widget.onRealocacaoOtimista!(
-              medicoId, gabineteOrigem, gabineteDestino, dataAlvo);
-          await Future.delayed(const Duration(milliseconds: 50));
-        }
+        _realocarCartaoLocalmente(alocacaoId, gabineteDestino);
+        await Future.delayed(const Duration(milliseconds: 50));
       }
 
       // Se não é série OU usuário escolheu "Apenas este dia", fazer realocação de dia único
@@ -625,11 +671,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
       if (!podeSerSerie || tipoSerie == 'Única') {
         debugPrint(
             '🟢 [REALOCAÇÃO-MÉDICO] Não é série - chamando atualização otimista PRIMEIRO');
-        if (widget.onRealocacaoOtimista != null) {
-          widget.onRealocacaoOtimista!(
-              medicoId, gabineteOrigem, gabineteDestino, dataAlvo);
-          await Future.delayed(const Duration(milliseconds: 50));
-        }
+        _realocarCartaoLocalmente(alocacaoId, gabineteDestino);
+        await Future.delayed(const Duration(milliseconds: 50));
       }
 
       // CORREÇÃO: Não mostrar progress bar para realocações únicas
@@ -642,10 +685,13 @@ class _GabinetesSectionState extends State<GabinetesSection> {
         gabineteOrigem: gabineteOrigem,
         gabineteDestino: gabineteDestino,
         data: dataAlvo,
+        alocacaoId: alocacaoId,
+        serieId: serieIdEncontrado,
+        horarios: [alocacaoAtual.horarioInicio, alocacaoAtual.horarioFim],
         alocacoes: widget.alocacoes,
         unidade: widget.unidade,
         context: context,
-        onRealocacaoOtimista: widget.onRealocacaoOtimista,
+        onRealocacaoOtimista: null,
         onAlocarMedico: widget.onAlocarMedico,
         onAtualizarEstado: widget.onAtualizarEstado,
         onProgresso: (progresso, mensagem) {
@@ -674,7 +720,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
           _isRealocando = false;
           _progressoRealocacao = 0.0;
           _mensagemRealocacao = 'A iniciar...';
-          _medicoIdEmRealocacao = null;
+          _alocacaoIdEmRealocacao = null;
           _gabineteOrigemRealocacao = null;
         });
       }
@@ -686,6 +732,21 @@ class _GabinetesSectionState extends State<GabinetesSection> {
         widget.onRealocacaoConcluida!();
       }
     }
+  }
+
+  void _realocarCartaoLocalmente(String alocacaoId, String gabineteDestino) {
+    final index = widget.alocacoes.indexWhere((a) => a.id == alocacaoId);
+    if (index == -1) return;
+    final atual = widget.alocacoes[index];
+    widget.alocacoes[index] = Alocacao(
+      id: atual.id,
+      medicoId: atual.medicoId,
+      gabineteId: gabineteDestino,
+      data: atual.data,
+      horarioInicio: atual.horarioInicio,
+      horarioFim: atual.horarioFim,
+    );
+    if (mounted) setState(() {});
   }
 
   bool _validarDisponibilidade(Disponibilidade disponibilidade) {
@@ -890,7 +951,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             return false;
                           }
 
-                          final medicoId = details.data;
+                          final medicoId = _medicoIdDoDrag(details.data);
+                          final disponibilidadeArrastada =
+                              _disponibilidadeDoDrag(details.data);
+                          final alocacaoArrastada =
+                              _alocacaoDoDrag(details.data);
                           // 1) Ache o médico
                           final medico = widget.medicos.firstWhere(
                             (m) => m.id == medicoId,
@@ -915,6 +980,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             final aDate =
                                 DateTime(a.data.year, a.data.month, a.data.day);
                             return a.medicoId == medicoId &&
+                                (alocacaoArrastada != null
+                                    ? a.id == alocacaoArrastada.id
+                                    : disponibilidadeArrastada == null ||
+                                        _alocacaoPertenceDisponibilidade(
+                                            a, disponibilidadeArrastada)) &&
                                 a.gabineteId != gabinete.id &&
                                 aDate == dataAlvo;
                           });
@@ -928,22 +998,22 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           // 3) Se não está alocado, verificar disponibilidade (vem da área de não alocados)
                           // CORREÇÃO: Para séries, a disponibilidade pode não estar na lista local
                           // porque é gerada dinamicamente. Verificar se é série primeiro.
-                          final disponibilidade =
+                          final disponibilidade = disponibilidadeArrastada ??
                               widget.disponibilidades.firstWhere(
-                            (d) =>
-                                d.medicoId == medico.id &&
-                                d.data.year == widget.selectedDate.year &&
-                                d.data.month == widget.selectedDate.month &&
-                                d.data.day == widget.selectedDate.day,
-                            orElse: () => Disponibilidade(
-                              id: '',
-                              medicoId: '',
-                              data: DateTime(1900, 1, 1),
-                              horarios: [],
-                              tipo: 'Única',
-                            ),
-                          );
-                          
+                                (d) =>
+                                    d.medicoId == medico.id &&
+                                    d.data.year == widget.selectedDate.year &&
+                                    d.data.month == widget.selectedDate.month &&
+                                    d.data.day == widget.selectedDate.day,
+                                orElse: () => Disponibilidade(
+                                  id: '',
+                                  medicoId: '',
+                                  data: DateTime(1900, 1, 1),
+                                  horarios: [],
+                                  tipo: 'Única',
+                                ),
+                              );
+
                           // CORREÇÃO: Se não encontrou disponibilidade local, pode ser série
                           // Para séries, a disponibilidade é gerada dinamicamente e pode não estar na lista local
                           // Permitir mesmo sem disponibilidade local - será validada no onAccept
@@ -979,7 +1049,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           return true;
                         },
                         onAcceptWithDetails: (details) async {
-                          final medicoId = details.data;
+                          final medicoId = _medicoIdDoDrag(details.data);
+                          final disponibilidadeArrastada =
+                              _disponibilidadeDoDrag(details.data);
+                          final alocacaoArrastada =
+                              _alocacaoDoDrag(details.data);
                           debugPrint(
                               '🟢 [DRAG-ACCEPT] Cartão solto: médico=$medicoId, gabinete=${gabinete.id}');
 
@@ -992,21 +1066,21 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           debugPrint('🟢 [DRAG-ACCEPT] Data alvo: $dataAlvo');
 
                           // 1) Localiza disponibilidade para verificar o tipo
-                          final disponibilidade =
+                          final disponibilidade = disponibilidadeArrastada ??
                               widget.disponibilidades.firstWhere(
-                            (d) =>
-                                d.medicoId == medicoId &&
-                                d.data.year == widget.selectedDate.year &&
-                                d.data.month == widget.selectedDate.month &&
-                                d.data.day == widget.selectedDate.day,
-                            orElse: () => Disponibilidade(
-                              id: '',
-                              medicoId: '',
-                              data: DateTime(1900, 1, 1),
-                              horarios: [],
-                              tipo: '',
-                            ),
-                          );
+                                (d) =>
+                                    d.medicoId == medicoId &&
+                                    d.data.year == widget.selectedDate.year &&
+                                    d.data.month == widget.selectedDate.month &&
+                                    d.data.day == widget.selectedDate.day,
+                                orElse: () => Disponibilidade(
+                                  id: '',
+                                  medicoId: '',
+                                  data: DateTime(1900, 1, 1),
+                                  horarios: [],
+                                  tipo: '',
+                                ),
+                              );
                           final temDisponibilidade =
                               disponibilidade.medicoId.isNotEmpty;
                           final tipoDisponibilidade = disponibilidade.tipo;
@@ -1019,10 +1093,13 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           // Isso garante compatibilidade com diferentes formatos (incluindo serie_serie_XXX)
                           String? serieIdExtraido;
                           if (disponibilidade.id.startsWith('serie_')) {
-                            serieIdExtraido = SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id);
+                            serieIdExtraido =
+                                SeriesHelper.extrairSerieIdDeDisponibilidade(
+                                    disponibilidade.id);
                             // Remover prefixo 'serie_' se estiver duplicado
                             if (serieIdExtraido.startsWith('serie_serie_')) {
-                              serieIdExtraido = serieIdExtraido.substring(7); // Remove primeiro 'serie_'
+                              serieIdExtraido = serieIdExtraido
+                                  .substring(7); // Remove primeiro 'serie_'
                             }
                           }
 
@@ -1035,7 +1112,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             try {
                               final dataNormalizada = DateTime(
                                   dataAlvo.year, dataAlvo.month, dataAlvo.day);
-                              final excecoes = await SerieService.carregarExcecoes(
+                              final excecoes =
+                                  await SerieService.carregarExcecoes(
                                 medicoId,
                                 unidade: widget.unidade,
                                 dataInicio: dataNormalizada,
@@ -1077,12 +1155,20 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             final aDate =
                                 DateTime(a.data.year, a.data.month, a.data.day);
                             return a.medicoId == medicoId &&
+                                (alocacaoArrastada != null
+                                    ? a.id == alocacaoArrastada.id
+                                    : disponibilidadeArrastada == null ||
+                                        _alocacaoPertenceDisponibilidade(
+                                            a, disponibilidadeArrastada)) &&
                                 a.gabineteId == gabinete.id &&
                                 aDate == dataAlvo;
                           });
                           // Se já está alocado no mesmo gabinete, desalocar (com pergunta)
                           if (jaEstaAlocadoNoMesmoGabinete) {
-                            await widget.onDesalocarMedicoComPergunta(medicoId);
+                            await widget.onDesalocarMedicoComPergunta(
+                              medicoId,
+                              alocacaoId: alocacaoArrastada?.id,
+                            );
                             return;
                           }
 
@@ -1104,10 +1190,16 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           // FASE 1: Verificar em widget.alocacoes PRIMEIRO (mais rápido)
                           // CORREÇÃO: Buscar TODAS as alocações deste médico neste dia primeiro
                           // para garantir que encontramos mesmo se o gabineteId não corresponder exatamente
-                          final todasAlocacoesMedico = widget.alocacoes.where((a) {
-                            final aDate = DateTime(
-                                a.data.year, a.data.month, a.data.day);
+                          final todasAlocacoesMedico =
+                              widget.alocacoes.where((a) {
+                            final aDate =
+                                DateTime(a.data.year, a.data.month, a.data.day);
                             return a.medicoId == medicoId &&
+                                (alocacaoArrastada != null
+                                    ? a.id == alocacaoArrastada.id
+                                    : disponibilidadeArrastada == null ||
+                                        _alocacaoPertenceDisponibilidade(
+                                            a, disponibilidadeArrastada)) &&
                                 aDate.year == dataAlvo.year &&
                                 aDate.month == dataAlvo.month &&
                                 aDate.day == dataAlvo.day;
@@ -1119,21 +1211,55 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             debugPrint(
                                 '   - Alocação: id=${a.id}, gabinete=${a.gabineteId}, data=${a.data.day}/${a.data.month}/${a.data.year}');
                           }
-                          
+
                           // #region agent log
                           try {
-                            final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
-                            await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:FASE1","message":"FASE 1 - Busca em widget.alocacoes","data":{"medicoId":medicoId,"gabineteDestino":gabinete.id,"dataAlvo":"${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}","totalAlocacoes":todasAlocacoesMedico.length,"alocacoes":todasAlocacoesMedico.map((a)=>({"id":a.id,"gabineteId":a.gabineteId,"data":"${a.data.year}-${a.data.month}-${a.data.day}"})).toList()},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
+                            final logFile = await File(
+                                    '/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log')
+                                .open(mode: FileMode.append);
+                            await logFile.writeString('${jsonEncode({
+                                  "id":
+                                      "log_${DateTime.now().millisecondsSinceEpoch}",
+                                  "timestamp":
+                                      DateTime.now().millisecondsSinceEpoch,
+                                  "location":
+                                      "gabinetes_section.dart:onAcceptWithDetails:FASE1",
+                                  "message":
+                                      "FASE 1 - Busca em widget.alocacoes",
+                                  "data": {
+                                    "medicoId": medicoId,
+                                    "gabineteDestino": gabinete.id,
+                                    "dataAlvo":
+                                        "${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}",
+                                    "totalAlocacoes":
+                                        todasAlocacoesMedico.length,
+                                    "alocacoes": todasAlocacoesMedico
+                                        .map((a) => ({
+                                              "id": a.id,
+                                              "gabineteId": a.gabineteId,
+                                              "data":
+                                                  "${a.data.year}-${a.data.month}-${a.data.day}"
+                                            }))
+                                        .toList()
+                                  },
+                                  "sessionId": "debug-session",
+                                  "runId": "run1",
+                                  "hypothesisId": "H3"
+                                })}\n');
                             await logFile.close();
                           } catch (e) {
-                            debugPrint('⚠️ Erro ao gravar debug log (FASE 1): $e');
+                            debugPrint(
+                                '⚠️ Erro ao gravar debug log (FASE 1): $e');
                           }
                           // #endregion
 
                           // Se encontrou alocações, verificar se alguma está em outro gabinete
                           if (todasAlocacoesMedico.isNotEmpty) {
-                            final alocacaoOutroGabinete = todasAlocacoesMedico.firstWhere(
-                              (a) => a.gabineteId != gabinete.id && a.gabineteId.isNotEmpty,
+                            final alocacaoOutroGabinete =
+                                todasAlocacoesMedico.firstWhere(
+                              (a) =>
+                                  a.gabineteId != gabinete.id &&
+                                  a.gabineteId.isNotEmpty,
                               orElse: () => Alocacao(
                                 id: '',
                                 medicoId: '',
@@ -1148,7 +1274,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               alocacaoEmOutroGabinete = alocacaoOutroGabinete;
                               debugPrint(
                                   '🟢 [DRAG-ACCEPT] Alocação encontrada em outro gabinete (widget.alocacoes): id=${alocacaoOutroGabinete.id}, gabinete=${alocacaoOutroGabinete.gabineteId}');
-                            } else if (todasAlocacoesMedico.any((a) => a.gabineteId == gabinete.id)) {
+                            } else if (todasAlocacoesMedico
+                                .any((a) => a.gabineteId == gabinete.id)) {
                               // Já está no mesmo gabinete - não fazer nada
                               debugPrint(
                                   '🟢 [DRAG-ACCEPT] Médico já está alocado neste gabinete');
@@ -1175,7 +1302,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               todasAlocacoesMedico.isNotEmpty) {
                             debugPrint(
                                 '🟢 [DRAG-ACCEPT] Não encontrado em widget.alocacoes, buscando série do Firestore...');
-                            
+
                             // Para séries, buscar diretamente do Firestore
                             final serieEncontrada =
                                 await _encontrarSerieCorrespondente(
@@ -1184,14 +1311,16 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               data: dataAlvo,
                             );
 
-                            if (serieEncontrada != null && serieEncontrada.id.isNotEmpty) {
+                            if (serieEncontrada != null &&
+                                serieEncontrada.id.isNotEmpty) {
                               // Se a série foi encontrada mas não tem gabineteId, buscar na exceção
-                              String? gabineteIdSerie = serieEncontrada.gabineteId;
-                              
+                              String? gabineteIdSerie =
+                                  serieEncontrada.gabineteId;
+
                               if (gabineteIdSerie == null) {
                                 // Buscar exceção para obter o gabineteId
-                                final dataNormalizada = DateTime(
-                                    dataAlvo.year, dataAlvo.month, dataAlvo.day);
+                                final dataNormalizada = DateTime(dataAlvo.year,
+                                    dataAlvo.month, dataAlvo.day);
                                 final excecoes =
                                     await SerieService.carregarExcecoes(
                                   medicoId,
@@ -1226,13 +1355,17 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               // CORREÇÃO CRÍTICA: Se encontrou série mas não tem gabineteId definido,
                               // verificar se há alocação em widget.alocacoes para esta série neste dia
                               // (pode ter sido gerada dinamicamente mas não está na série)
-                              if (gabineteIdSerie == null || gabineteIdSerie.isEmpty) {
+                              if (gabineteIdSerie == null ||
+                                  gabineteIdSerie.isEmpty) {
                                 // Buscar qualquer alocação desta série neste dia
-                                final alocacaoSerie = widget.alocacoes.firstWhere(
+                                final alocacaoSerie =
+                                    widget.alocacoes.firstWhere(
                                   (a) {
-                                    final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                                    final aDate = DateTime(
+                                        a.data.year, a.data.month, a.data.day);
                                     // Verificar se é alocação desta série (ID começa com serie_${serieId}_)
-                                    final serieIdPrefix = 'serie_${serieEncontrada.id}_';
+                                    final serieIdPrefix =
+                                        'serie_${serieEncontrada.id}_';
                                     return a.medicoId == medicoId &&
                                         a.id.startsWith(serieIdPrefix) &&
                                         aDate == dataAlvo;
@@ -1280,11 +1413,12 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                               .split('-')
                                               .first
                                           : '08:00',
-                                  horarioFim: serieEncontrada.horarios.isNotEmpty
-                                      ? serieEncontrada.horarios.first
-                                          .split('-')
-                                          .last
-                                      : '20:00',
+                                  horarioFim:
+                                      serieEncontrada.horarios.isNotEmpty
+                                          ? serieEncontrada.horarios.first
+                                              .split('-')
+                                              .last
+                                          : '20:00',
                                 );
                                 debugPrint(
                                     '🟢 [DRAG-ACCEPT] Série encontrada em outro gabinete via Firestore: id=${serieEncontrada.id}, gabinete=$gabineteIdSerie');
@@ -1295,23 +1429,34 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           // FASE 3: Se ainda não encontrou, verificar se o cartão está sendo renderizado em algum gabinete
                           // Se estiver, significa que há uma alocação que não foi encontrada nas buscas anteriores
                           // CORREÇÃO CRÍTICA: Verificar se há alocação em QUALQUER gabinete (não apenas diferente do destino)
-                          if (alocacaoEmOutroGabinete.id.isEmpty) {
+                          // Este recurso existe apenas para drags antigos que não
+                          // transportam o ID da disponibilidade. Quando o cartão
+                          // identifica a sua disponibilidade/sequência, procurar
+                          // "qualquer" alocação do médico mistura sequências
+                          // diferentes do mesmo dia.
+                          if (alocacaoEmOutroGabinete.id.isEmpty &&
+                              disponibilidadeArrastada == null &&
+                              alocacaoArrastada == null) {
                             debugPrint(
                                 '🟡 [DRAG-ACCEPT] FASE 3: Nenhuma alocação encontrada nas fases anteriores. Verificando se cartão está sendo renderizado em algum gabinete...');
-                            
+
                             // Buscar TODAS as alocações deste médico neste dia em QUALQUER gabinete
-                            final todasAlocacoesMedicoDia = widget.alocacoes.where((a) {
-                              final aDate = DateTime(a.data.year, a.data.month, a.data.day);
+                            final todasAlocacoesMedicoDia =
+                                widget.alocacoes.where((a) {
+                              final aDate = DateTime(
+                                  a.data.year, a.data.month, a.data.day);
                               return a.medicoId == medicoId &&
                                   aDate.year == dataAlvo.year &&
                                   aDate.month == dataAlvo.month &&
                                   aDate.day == dataAlvo.day &&
-                                  a.gabineteId.isNotEmpty; // Deve ter gabinete (não pode ser desalocado)
+                                  a.gabineteId
+                                      .isNotEmpty; // Deve ter gabinete (não pode ser desalocado)
                             }).toList();
 
                             if (todasAlocacoesMedicoDia.isNotEmpty) {
                               // Encontrou alocações - verificar se alguma está em outro gabinete
-                              final alocacaoOutroGabinete = todasAlocacoesMedicoDia.firstWhere(
+                              final alocacaoOutroGabinete =
+                                  todasAlocacoesMedicoDia.firstWhere(
                                 (a) => a.gabineteId != gabinete.id,
                                 orElse: () => Alocacao(
                                   id: '',
@@ -1328,7 +1473,8 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 alocacaoEmOutroGabinete = alocacaoOutroGabinete;
                                 debugPrint(
                                     '🟢 [DRAG-ACCEPT] FASE 3: Alocação encontrada em outro gabinete: id=${alocacaoOutroGabinete.id}, gabinete=${alocacaoOutroGabinete.gabineteId}');
-                              } else if (todasAlocacoesMedicoDia.any((a) => a.gabineteId == gabinete.id)) {
+                              } else if (todasAlocacoesMedicoDia
+                                  .any((a) => a.gabineteId == gabinete.id)) {
                                 // Já está no mesmo gabinete - não fazer nada
                                 debugPrint(
                                     '🟢 [DRAG-ACCEPT] FASE 3: Médico já está alocado neste gabinete');
@@ -1348,11 +1494,37 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                             // #region agent log
                             try {
-                              final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
-                              await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:ANTES_REALOCAR","message":"Antes de chamar _realocarMedicoEntreGabinetes","data":{"medicoId":medicoId,"gabineteOrigem":alocacaoEmOutroGabinete.gabineteId,"gabineteDestino":gabinete.id,"dataAlvo":"${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}","alocacaoId":alocacaoEmOutroGabinete.id,"eTipoSerie":eTipoSerie,"tipoDisponibilidade":tipoDisponibilidade},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
+                              final logFile = await File(
+                                      '/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log')
+                                  .open(mode: FileMode.append);
+                              await logFile.writeString('${jsonEncode({
+                                    "id":
+                                        "log_${DateTime.now().millisecondsSinceEpoch}",
+                                    "timestamp":
+                                        DateTime.now().millisecondsSinceEpoch,
+                                    "location":
+                                        "gabinetes_section.dart:onAcceptWithDetails:ANTES_REALOCAR",
+                                    "message":
+                                        "Antes de chamar _realocarMedicoEntreGabinetes",
+                                    "data": {
+                                      "medicoId": medicoId,
+                                      "gabineteOrigem":
+                                          alocacaoEmOutroGabinete.gabineteId,
+                                      "gabineteDestino": gabinete.id,
+                                      "dataAlvo":
+                                          "${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}",
+                                      "alocacaoId": alocacaoEmOutroGabinete.id,
+                                      "eTipoSerie": eTipoSerie,
+                                      "tipoDisponibilidade": tipoDisponibilidade
+                                    },
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "H3"
+                                  })}\n');
                               await logFile.close();
                             } catch (e) {
-                              debugPrint('⚠️ Erro ao gravar debug log (ANTES_REALOCAR): $e');
+                              debugPrint(
+                                  '⚠️ Erro ao gravar debug log (ANTES_REALOCAR): $e');
                             }
                             // #endregion
 
@@ -1362,18 +1534,40 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                   alocacaoEmOutroGabinete.gabineteId,
                               gabineteDestino: gabinete.id,
                               dataAlvo: dataAlvo,
+                              alocacaoId: alocacaoEmOutroGabinete.id,
                             );
-                            
+
                             // #region agent log
                             try {
-                              final logFile = await File('/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log').open(mode: FileMode.append);
-                              await logFile.writeString('${jsonEncode({"id":"log_${DateTime.now().millisecondsSinceEpoch}","timestamp":DateTime.now().millisecondsSinceEpoch,"location":"gabinetes_section.dart:onAcceptWithDetails:DEPOIS_REALOCAR","message":"Depois de chamar _realocarMedicoEntreGabinetes","data":{"medicoId":medicoId,"gabineteOrigem":alocacaoEmOutroGabinete.gabineteId,"gabineteDestino":gabinete.id},"sessionId":"debug-session","runId":"run1","hypothesisId":"H3"})}\n');
+                              final logFile = await File(
+                                      '/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log')
+                                  .open(mode: FileMode.append);
+                              await logFile.writeString('${jsonEncode({
+                                    "id":
+                                        "log_${DateTime.now().millisecondsSinceEpoch}",
+                                    "timestamp":
+                                        DateTime.now().millisecondsSinceEpoch,
+                                    "location":
+                                        "gabinetes_section.dart:onAcceptWithDetails:DEPOIS_REALOCAR",
+                                    "message":
+                                        "Depois de chamar _realocarMedicoEntreGabinetes",
+                                    "data": {
+                                      "medicoId": medicoId,
+                                      "gabineteOrigem":
+                                          alocacaoEmOutroGabinete.gabineteId,
+                                      "gabineteDestino": gabinete.id
+                                    },
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "H3"
+                                  })}\n');
                               await logFile.close();
                             } catch (e) {
-                              debugPrint('⚠️ Erro ao gravar debug log (DEPOIS_REALOCAR): $e');
+                              debugPrint(
+                                  '⚠️ Erro ao gravar debug log (DEPOIS_REALOCAR): $e');
                             }
                             // #endregion
-                            
+
                             debugPrint(
                                 '✅ [DRAG-ACCEPT] _realocarMedicoEntreGabinetes concluído');
 
@@ -1413,20 +1607,24 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             // CORREÇÃO: Validar horários ANTES de alocar série (mesma lógica do cadastro médico)
                             // Buscar série correspondente para verificar horários
                             SerieRecorrencia? serieParaValidar;
-                            if (serieIdExtraido != null && serieIdExtraido.isNotEmpty) {
-                              serieParaValidar = await _encontrarSerieCorrespondente(
+                            if (serieIdExtraido != null &&
+                                serieIdExtraido.isNotEmpty) {
+                              serieParaValidar =
+                                  await _encontrarSerieCorrespondente(
                                 medicoId: medicoId,
                                 tipo: tipoDisponibilidade,
                                 data: dataAlvo,
                               );
                               if (!context.mounted) return;
                             }
-                            
+
                             // Se não encontrou pelo ID extraído, tentar buscar na lista de séries carregadas
-                            if (serieParaValidar == null || serieParaValidar.id.isEmpty) {
+                            if (serieParaValidar == null ||
+                                serieParaValidar.id.isEmpty) {
                               // Tentar encontrar série que corresponde à data e tipo
                               try {
-                                final series = await SerieService.carregarSeries(
+                                final series =
+                                    await SerieService.carregarSeries(
                                   medicoId,
                                   unidade: widget.unidade,
                                   dataInicio: dataAlvo,
@@ -1434,13 +1632,15 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                   forcarServidor: false,
                                 );
                                 if (!context.mounted) return;
-                                
+
                                 serieParaValidar = series.firstWhere(
                                   (s) =>
                                       s.medicoId == medicoId &&
-                                      s.dataInicio.isBefore(dataAlvo.add(const Duration(days: 1))) &&
+                                      s.dataInicio.isBefore(dataAlvo
+                                          .add(const Duration(days: 1))) &&
                                       (s.dataFim == null ||
-                                          s.dataFim!.isAfter(dataAlvo.subtract(const Duration(days: 1)))) &&
+                                          s.dataFim!.isAfter(dataAlvo.subtract(
+                                              const Duration(days: 1)))) &&
                                       s.tipo == tipoDisponibilidade &&
                                       s.ativo,
                                   orElse: () => SerieRecorrencia(
@@ -1455,10 +1655,11 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                   ),
                                 );
                               } catch (e) {
-                                debugPrint('⚠️ Erro ao buscar série para validação: $e');
+                                debugPrint(
+                                    '⚠️ Erro ao buscar série para validação: $e');
                               }
                             }
-                            
+
                             // Validar horários antes de prosseguir
                             if (serieParaValidar != null &&
                                 serieParaValidar.id.isNotEmpty &&
@@ -1467,14 +1668,15 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Introduza as horas de inicio e fim primeiro!'),
+                                  content: Text(
+                                      'Introduza as horas de inicio e fim primeiro!'),
                                   backgroundColor: Colors.orange,
                                   duration: Duration(seconds: 3),
                                 ),
                               );
                               return;
                             }
-                            
+
                             // Usar função reutilizável para alocar cartão de série
                             // Iniciar progresso de alocação (será usado se escolher "serie")
                             if (!context.mounted) return;
@@ -1537,12 +1739,14 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 _horarioParaMinutos(a.horarioInicio).compareTo(
                                     _horarioParaMinutos(b.horarioInicio)));
 
-                          // CORREÇÃO CRÍTICA: Remover duplicados baseados em (medicoId, gabineteId, data)
+                          // Remover apenas duplicados do mesmo intervalo. O mesmo
+                          // médico pode ter duas sequências não sobrepostas no
+                          // mesmo gabinete e no mesmo dia.
                           // Isso previne que alocações duplicadas sejam renderizadas
                           final alocacoesUnicas = <String, Alocacao>{};
                           for (final aloc in alocacoesDoGabinete) {
                             final chave =
-                                '${aloc.medicoId}_${aloc.gabineteId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
+                                '${aloc.medicoId}_${aloc.gabineteId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.horarioInicio}_${aloc.horarioFim}';
                             if (!alocacoesUnicas.containsKey(chave)) {
                               alocacoesUnicas[chave] = aloc;
                             } else {
@@ -1584,11 +1788,10 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                           // Efeito hover: verificar se há um cartão sendo arrastado sobre este gabinete
                           final isHovering = candidateData.isNotEmpty;
-                          
+
                           // Aplicar cores e estilos de hover quando há um cartão sendo arrastado
-                          final corBordaHover = isHovering 
-                              ? MyAppTheme.azulEscuro 
-                              : corBorda;
+                          final corBordaHover =
+                              isHovering ? MyAppTheme.azulEscuro : corBorda;
                           final larguraBordaHover = isHovering ? 3.0 : 2.0;
                           final corFundoHover = isHovering
                               ? (corFundo == MyAppTheme.gabineteLivre
@@ -1622,118 +1825,132 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: sombraHover,
                                   ),
-                                child: SingleChildScrollView(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Nome do gabinete e especialidade na mesma linha com ícone de status
-                                      Row(
-                                        children: [
-                                          // Ícone de status (ocupado/livre/conflito)
-                                          Icon(
-                                            alocacoesDoGabineteUnicas.isEmpty
-                                                ? Icons.check_circle_outline
-                                                : Icons.check_circle,
-                                            size: 14,
-                                            color: temConflitoGabinete
-                                                ? Colors.red.shade300
-                                                : alocacoesDoGabineteUnicas
-                                                        .isEmpty
-                                                    ? Colors.grey[400]
-                                                    : MyAppTheme.azulEscuro,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Expanded(
-                                            child: Text(
-                                              '${gabinete.nome} ${gabinete.especialidadesPermitidas.join(", ")}',
-                                              style: MyAppTheme.bodyMedium
-                                                  .copyWith(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                                color: temConflitoGabinete
-                                                    ? Colors.red.shade700
-                                                    : alocacoesDoGabineteUnicas
-                                                            .isEmpty
-                                                        ? Colors.grey[700]
-                                                        : MyAppTheme.azulEscuro,
+                                  child: SingleChildScrollView(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // Nome do gabinete e especialidade na mesma linha com ícone de status
+                                        Row(
+                                          children: [
+                                            // Ícone de status (ocupado/livre/conflito)
+                                            Icon(
+                                              alocacoesDoGabineteUnicas.isEmpty
+                                                  ? Icons.check_circle_outline
+                                                  : Icons.check_circle,
+                                              size: 14,
+                                              color: temConflitoGabinete
+                                                  ? Colors.red.shade300
+                                                  : alocacoesDoGabineteUnicas
+                                                          .isEmpty
+                                                      ? Colors.grey[400]
+                                                      : MyAppTheme.azulEscuro,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                '${gabinete.nome} ${gabinete.especialidadesPermitidas.join(", ")}',
+                                                style: MyAppTheme.bodyMedium
+                                                    .copyWith(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: temConflitoGabinete
+                                                      ? Colors.red.shade700
+                                                      : alocacoesDoGabineteUnicas
+                                                              .isEmpty
+                                                          ? Colors.grey[700]
+                                                          : MyAppTheme
+                                                              .azulEscuro,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      // Lista de médicos alocados
-                                      // FILTRAR: Não mostrar alocações de médicos "Desconhecido" ou médicos não encontrados
-                                      // CORREÇÃO: Ocultar médico que está sendo realocado da origem
-                                      if (alocacoesDoGabineteUnicas.isNotEmpty)
-                                        ...alocacoesDoGabineteUnicas.where((a) {
-                                          // CORREÇÃO: Se o médico está sendo realocado, ocultar da origem
-                                          if (_isRealocando &&
-                                              _medicoIdEmRealocacao ==
-                                                  a.medicoId &&
-                                              _gabineteOrigemRealocacao ==
-                                                  gabinete.id) {
-                                            // Este é o gabinete de origem e o médico está sendo realocado
-                                            // Ocultar o cartão da origem durante a realocação
-                                            return false;
-                                          }
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        // Lista de médicos alocados
+                                        // FILTRAR: Não mostrar alocações de médicos "Desconhecido" ou médicos não encontrados
+                                        // CORREÇÃO: Ocultar médico que está sendo realocado da origem
+                                        if (alocacoesDoGabineteUnicas
+                                            .isNotEmpty)
+                                          ...alocacoesDoGabineteUnicas
+                                              .where((a) {
+                                            // CORREÇÃO: Se o médico está sendo realocado, ocultar da origem
+                                            if (_isRealocando &&
+                                                _alocacaoIdEmRealocacao ==
+                                                    a.id &&
+                                                _gabineteOrigemRealocacao ==
+                                                    gabinete.id) {
+                                              // Este é o gabinete de origem e o médico está sendo realocado
+                                              // Ocultar o cartão da origem durante a realocação
+                                              return false;
+                                            }
 
-                                          // Verificar se o médico existe e está ativo
-                                          final medico =
-                                              widget.medicos.firstWhere(
-                                            (m) => m.id == a.medicoId,
-                                            orElse: () => Medico(
-                                              id: '',
-                                              nome: 'Desconhecido',
-                                              especialidade: '',
-                                              disponibilidades: [],
-                                              ativo: false,
-                                            ),
-                                          );
-                                          return medico.id.isNotEmpty &&
-                                              medico.ativo &&
-                                              medico.nome != 'Desconhecido';
-                                        }).map((a) {
-                                          final medico =
-                                              widget.medicos.firstWhere(
-                                            (m) => m.id == a.medicoId,
-                                            orElse: () {
-                                              return Medico(
+                                            // Verificar se o médico existe e está ativo
+                                            final medico =
+                                                widget.medicos.firstWhere(
+                                              (m) => m.id == a.medicoId,
+                                              orElse: () => Medico(
                                                 id: '',
                                                 nome: 'Desconhecido',
                                                 especialidade: '',
                                                 disponibilidades: [],
                                                 ativo: false,
-                                              );
-                                            },
-                                          );
-                                          final horariosAlocacao = a
-                                                  .horarioFim.isNotEmpty
-                                              ? '${a.horarioInicio} - ${a.horarioFim}'
-                                              : a.horarioInicio;
+                                              ),
+                                            );
+                                            return medico.id.isNotEmpty &&
+                                                medico.ativo &&
+                                                medico.nome != 'Desconhecido';
+                                          }).map((a) {
+                                            final medico =
+                                                widget.medicos.firstWhere(
+                                              (m) => m.id == a.medicoId,
+                                              orElse: () {
+                                                return Medico(
+                                                  id: '',
+                                                  nome: 'Desconhecido',
+                                                  especialidade: '',
+                                                  disponibilidades: [],
+                                                  ativo: false,
+                                                );
+                                              },
+                                            );
+                                            final horariosAlocacao = a
+                                                    .horarioFim.isNotEmpty
+                                                ? '${a.horarioInicio} - ${a.horarioFim}'
+                                                : a.horarioInicio;
 
-                                          // Verificar se o médico está destacado pela pesquisa
-                                          final isDestacado = widget
-                                              .medicosDestacados
-                                              .contains(medico.id);
-                                          final corDestaque = isDestacado
-                                              ? Colors.orange.shade200
-                                              : null;
+                                            // Verificar se o médico está destacado pela pesquisa
+                                            final isDestacado = widget
+                                                .medicosDestacados
+                                                .contains(medico.id);
+                                            final corDestaque = isDestacado
+                                                ? Colors.orange.shade200
+                                                : null;
 
-                                          final medicoCard = widget.isAdmin
-                                              ? Draggable<String>(
-                                                  data: medico.id,
-                                                  feedback:
-                                                      MedicoCard.dragFeedback(
-                                                    medico,
-                                                    horariosAlocacao,
-                                                  ),
-                                                  childWhenDragging: Opacity(
-                                                    opacity: 0.5,
+                                            final medicoCard = widget.isAdmin
+                                                ? Draggable<String>(
+                                                    data:
+                                                        '${medico.id}|||alocacao:${a.id}',
+                                                    feedback:
+                                                        MedicoCard.dragFeedback(
+                                                      medico,
+                                                      horariosAlocacao,
+                                                    ),
+                                                    childWhenDragging: Opacity(
+                                                      opacity: 0.5,
+                                                      child: MedicoCard
+                                                          .buildSmallMedicoCard(
+                                                        medico,
+                                                        horariosAlocacao,
+                                                        Colors.white,
+                                                        true,
+                                                        corDestaque:
+                                                            corDestaque,
+                                                      ),
+                                                    ),
                                                     child: MedicoCard
                                                         .buildSmallMedicoCard(
                                                       medico,
@@ -1742,46 +1959,41 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                                       true,
                                                       corDestaque: corDestaque,
                                                     ),
-                                                  ),
-                                                  child: MedicoCard
-                                                      .buildSmallMedicoCard(
+                                                    onDragEnd: (details) {
+                                                      if (details.wasAccepted ==
+                                                          false) {}
+                                                    },
+                                                  )
+                                                : MedicoCard
+                                                    .buildSmallMedicoCard(
                                                     medico,
                                                     horariosAlocacao,
                                                     Colors.white,
                                                     true,
                                                     corDestaque: corDestaque,
-                                                  ),
-                                                  onDragEnd: (details) {
-                                                    if (details.wasAccepted ==
-                                                        false) {}
-                                                  },
-                                                )
-                                              : MedicoCard.buildSmallMedicoCard(
-                                                  medico,
-                                                  horariosAlocacao,
-                                                  Colors.white,
-                                                  true,
-                                                  corDestaque: corDestaque,
-                                                );
+                                                  );
 
-                                          // Adicionar GestureDetector para detectar tap (editar)
-                                          // Só permitir edição se for administrador
-                                          return widget.isAdmin && widget.onEditarMedico != null
-                                              ? GestureDetector(
-                                                  // Clique único para editar (só aciona se não houver drag)
-                                                  onTap: () {
-                                                    widget.onEditarMedico!(medico);
-                                                  },
-                                                  child: medicoCard,
-                                                )
-                                              : medicoCard;
-                                        }),
-                                    ],
+                                            // Adicionar GestureDetector para detectar tap (editar)
+                                            // Só permitir edição se for administrador
+                                            return widget.isAdmin &&
+                                                    widget.onEditarMedico !=
+                                                        null
+                                                ? GestureDetector(
+                                                    // Clique único para editar (só aciona se não houver drag)
+                                                    onTap: () {
+                                                      widget.onEditarMedico!(
+                                                          medico);
+                                                    },
+                                                    child: medicoCard,
+                                                  )
+                                                : medicoCard;
+                                          }),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
                           );
                         },
                       );

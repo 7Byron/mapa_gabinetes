@@ -10,8 +10,10 @@ class MedicosDisponiveisContainer extends StatelessWidget {
   final List<Medico> medicosDisponiveis;
   final List<Disponibilidade> disponibilidades;
   final List<Alocacao> alocacoes;
+  final Set<String> cartoesEmAlocacao;
   final DateTime selectedDate;
-  final Future<void> Function(String medicoId) onDesalocarMedicoComPergunta;
+  final Future<void> Function(String medicoId, {String? alocacaoId})
+      onDesalocarMedicoComPergunta;
   final Function(String) onDesalocarMedico;
   final Function(Medico)? onEditarMedico;
   final VoidCallback onMostrarMedicosNaoAlocadosAno;
@@ -22,6 +24,7 @@ class MedicosDisponiveisContainer extends StatelessWidget {
     required this.medicosDisponiveis,
     required this.disponibilidades,
     required this.alocacoes,
+    required this.cartoesEmAlocacao,
     required this.selectedDate,
     required this.onDesalocarMedicoComPergunta,
     required this.onDesalocarMedico,
@@ -30,84 +33,76 @@ class MedicosDisponiveisContainer extends StatelessWidget {
     required this.onMostrarConflitosAno,
   });
 
+  bool _podeDesalocar(String dados) {
+    final medicoId = dados.split('|||').first;
+    final dataAlvo =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    return alocacoes.any((a) {
+      final data = DateTime(a.data.year, a.data.month, a.data.day);
+      return a.medicoId == medicoId &&
+          a.gabineteId.isNotEmpty &&
+          data == dataAlvo;
+    });
+  }
+
+  Future<void> _desalocar(String dados) async {
+    final partes = dados.split('|||');
+    final medicoId = partes.first;
+    final identificador = partes.length > 1 ? partes[1] : '';
+    final alocacaoId = identificador.startsWith('alocacao:')
+        ? identificador.substring('alocacao:'.length)
+        : null;
+    await onDesalocarMedicoComPergunta(
+      medicoId,
+      alocacaoId: alocacaoId,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasMedicos = medicosDisponiveis.isNotEmpty;
+    final idsDisponiveis = medicosDisponiveis.map((m) => m.id).toSet();
+    final dataSelecionada =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final totalCartoes = disponibilidades.where((d) {
+      final data = DateTime(d.data.year, d.data.month, d.data.day);
+      return data == dataSelecionada && idsDisponiveis.contains(d.medicoId);
+    }).length;
     final containerHeight =
         MedicosDisponiveisLayoutUtils.calcularAlturaContainer(
-      totalMedicos: medicosDisponiveis.length,
+      totalMedicos: totalCartoes,
     );
 
-    return Container(
-      constraints: hasMedicos
-          ? BoxConstraints(
-              minHeight: containerHeight,
-              maxHeight: containerHeight,
-            )
-          : null,
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-      decoration: BoxDecoration(
-        color: MyAppTheme.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: MyAppTheme.shadowCard,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: DragTarget<String>(
-              onWillAcceptWithDetails: (details) {
-                final medicoId = details.data;
-                final dataAlvo = DateTime(
-                    selectedDate.year, selectedDate.month, selectedDate.day);
-                final estaAlocado = alocacoes.any((a) {
-                  final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-                  return a.medicoId == medicoId && aDate == dataAlvo;
-                });
-
-                if (!estaAlocado) {
-                  debugPrint(
-                      '❌ Médico $medicoId NÃO está alocado no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, ignorando desalocação.');
-                  return false;
-                }
-
-                final estaAlocadoEmAlgumGabinete = alocacoes.any((a) {
-                  final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-                  return a.medicoId == medicoId &&
-                      a.gabineteId.isNotEmpty &&
-                      aDate == dataAlvo;
-                });
-
-                if (estaAlocadoEmAlgumGabinete) {
-                  debugPrint(
-                      '✅ Médico $medicoId está alocado em um gabinete - aceitar para desalocar');
-                  return true;
-                }
-
-                debugPrint(
-                    '✅ Médico $medicoId está alocado no dia ${dataAlvo.day}/${dataAlvo.month}/${dataAlvo.year}, aceitando para desalocar.');
-                return true;
-              },
-              onAcceptWithDetails: (details) async {
-                final medicoId = details.data;
-                debugPrint(
-                    '🔄 onAcceptWithDetails chamado para desalocar médico $medicoId');
-                await onDesalocarMedicoComPergunta(medicoId);
-              },
-              builder: (context, candidateData, rejectedData) {
-                final isHovering = candidateData.isNotEmpty;
-                return Container(
-                  decoration: BoxDecoration(
-                    color:
-                        isHovering ? Colors.blue.shade50 : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: isHovering
-                        ? Border.all(color: Colors.blue, width: 2)
-                        : null,
-                  ),
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => _podeDesalocar(details.data),
+      onAcceptWithDetails: (details) => _desalocar(details.data),
+      builder: (context, candidateData, rejectedData) {
+        final isHovering = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          constraints: hasMedicos
+              ? BoxConstraints(
+                  minHeight: containerHeight,
+                  maxHeight: containerHeight,
+                )
+              : null,
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          decoration: BoxDecoration(
+            color: isHovering ? Colors.blue.shade50 : MyAppTheme.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+            border: isHovering
+                ? Border.all(color: MyAppTheme.azulEscuro, width: 3)
+                : null,
+            boxShadow: MyAppTheme.shadowCard,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Padding(
                   padding:
                       const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
                   child: Row(
@@ -141,7 +136,8 @@ class MedicosDisponiveisContainer extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: MyAppTheme.azulEscuro.withValues(alpha: 0.1),
+                              color:
+                                  MyAppTheme.azulEscuro.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(
@@ -174,27 +170,29 @@ class MedicosDisponiveisContainer extends StatelessWidget {
                       ),
                     ],
                   ),
-                );
-              },
-            ),
-          ),
-          if (hasMedicos)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: RepaintBoundary(
-                  child: MedicosDisponiveisSection(
-                    medicosDisponiveis: medicosDisponiveis,
-                    disponibilidades: disponibilidades,
-                    selectedDate: selectedDate,
-                    onDesalocarMedico: onDesalocarMedico,
-                    onEditarMedico: onEditarMedico,
-                  ),
                 ),
               ),
-            ),
-        ],
-      ),
+              if (hasMedicos)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: RepaintBoundary(
+                      child: MedicosDisponiveisSection(
+                        medicosDisponiveis: medicosDisponiveis,
+                        disponibilidades: disponibilidades,
+                        alocacoes: alocacoes,
+                        cartoesEmAlocacao: cartoesEmAlocacao,
+                        selectedDate: selectedDate,
+                        onDesalocarMedico: onDesalocarMedico,
+                        onEditarMedico: onEditarMedico,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

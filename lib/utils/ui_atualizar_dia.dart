@@ -80,14 +80,16 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     ]).timeout(
       const Duration(seconds: 2),
       onTimeout: () {
-        debugPrint('⚠️ [TIMEOUT] Timeout ao carregar dados de encerramento - assumindo clínica aberta');
+        debugPrint(
+            '⚠️ [TIMEOUT] Timeout ao carregar dados de encerramento - assumindo clínica aberta');
         return [
           <Map<String, String>>[],
           <Map<String, dynamic>>[],
           {
             'horarios': <int, List<String>>{},
             'encerraFeriados': false,
-            'nuncaEncerra': true, // Se timeout, assumir que nunca encerra para evitar bloqueios
+            'nuncaEncerra':
+                true, // Se timeout, assumir que nunca encerra para evitar bloqueios
             'encerraDias': {
               1: false,
               2: false,
@@ -105,15 +107,18 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
 
     // OTIMIZAÇÃO: Começar a carregar exceções canceladas em paralelo enquanto esperamos dados de encerramento
     final dataNormalizada = DateTime(data.year, data.month, data.day);
-    final excecoesFuture = logic.AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
+    final excecoesFuture =
+        logic.AlocacaoMedicosLogic.extrairExcecoesCanceladasParaDia(
       unidade.id,
       data,
     );
 
     // Aguardar dados de encerramento (com timeout curto)
     final encerramentoResults = await encerramentoFuture;
-    final tempoEncerramento = DateTime.now().difference(inicioEncerramento).inMilliseconds;
-    debugPrint('⏱️ [PERF] Tempo para carregar dados de encerramento: ${tempoEncerramento}ms');
+    final tempoEncerramento =
+        DateTime.now().difference(inicioEncerramento).inMilliseconds;
+    debugPrint(
+        '⏱️ [PERF] Tempo para carregar dados de encerramento: ${tempoEncerramento}ms');
 
     final feriados = encerramentoResults[0] as List<Map<String, String>>;
     final diasEncerramento =
@@ -124,7 +129,8 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     // Se houve timeout, assumir que a clínica está aberta (nuncaEncerra = true)
     final teveTimeout = horariosData['_timeout'] == true;
     if (teveTimeout) {
-      debugPrint('⚠️ [TIMEOUT] Dados de encerramento não carregados a tempo - assumindo clínica aberta');
+      debugPrint(
+          '⚠️ [TIMEOUT] Dados de encerramento não carregados a tempo - assumindo clínica aberta');
       // Continuar com o fluxo normal, mas com nuncaEncerra = true
     }
 
@@ -137,14 +143,14 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     // Se estiver fechada, retornar imediatamente sem carregar mais nada
     bool clinicaFechada = false;
     String mensagemClinicaFechada = '';
-    
+
     // Só verificar se nuncaEncerra foi definido E não houve timeout
     // Se houve timeout, nuncaEncerra já será true, então não precisamos verificar
     if (horariosData.containsKey('nuncaEncerra') && !teveTimeout) {
       try {
         // Converter encerraDias para Map normal antes de passar para evitar problemas de serialização
         final encerraDiasNormal = Map<int, bool>.from(encerraDias);
-        
+
         final clinicaFechadaData = _verificarClinicaFechada(
           data,
           feriados,
@@ -166,12 +172,14 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       }
     } else if (teveTimeout) {
       // Se houve timeout, assumir que a clínica está aberta
-      debugPrint('⚠️ [TIMEOUT] Assumindo clínica aberta devido a timeout no carregamento');
+      debugPrint(
+          '⚠️ [TIMEOUT] Assumindo clínica aberta devido a timeout no carregamento');
       clinicaFechada = false;
       mensagemClinicaFechada = '';
     } else {
       // Se os dados não foram carregados corretamente, assumir que a clínica está aberta
-      debugPrint('⚠️ Dados de encerramento não carregados corretamente - assumindo clínica aberta');
+      debugPrint(
+          '⚠️ Dados de encerramento não carregados corretamente - assumindo clínica aberta');
       clinicaFechada = false;
       mensagemClinicaFechada = '';
     }
@@ -182,12 +190,13 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       disponibilidades.clear();
       alocacoes.clear();
       medicosDisponiveis.clear();
-      
-      debugPrint('🚫 Clínica fechada - limpando dados e retornando: $mensagemClinicaFechada');
-      
+
+      debugPrint(
+          '🚫 Clínica fechada - limpando dados e retornando: $mensagemClinicaFechada');
+
       // Converter encerraDias para Map normal para evitar problemas de serialização
       final encerraDiasNormal = Map<int, bool>.from(encerraDias);
-      
+
       return {
         'success': true,
         'error': null,
@@ -202,24 +211,24 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       };
     }
 
-
     // NOTA: A verificação de clínica fechada já foi feita acima e retornou imediatamente se estiver fechada
     // Se chegou aqui, a clínica está aberta e podemos continuar com o carregamento
 
     // FASE 1: Aguardar exceções canceladas (já iniciadas em paralelo acima)
     onProgress?.call(0.05, 'A verificar configurações...');
-    
+
     // Invalidar cache se necessário (pode ser feito em paralelo)
     if (recarregarMedicos) {
       logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
       logic.AlocacaoMedicosLogic.invalidateCacheFromDate(
           DateTime(data.year, 1, 1));
     }
-    
+
     onProgress?.call(0.1, 'A verificar exceções...');
     final inicioExcecoes = DateTime.now();
     final datasComExcecoesCanceladas = await excecoesFuture;
-    final tempoExcecoes = DateTime.now().difference(inicioExcecoes).inMilliseconds;
+    final tempoExcecoes =
+        DateTime.now().difference(inicioExcecoes).inMilliseconds;
     // CORREÇÃO: Reduzir logs - apenas mostrar se demorar muito (> 500ms)
     if (tempoExcecoes > 500) {
       debugPrint('⏱️ [PERF] Exceções: ${tempoExcecoes}ms');
@@ -227,8 +236,7 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
 
     final cacheDisp = AlocacaoCacheStore.getDisponibilidades(dataNormalizada);
     final cacheAloc = AlocacaoCacheStore.getAlocacoes(dataNormalizada);
-    final podeUsarCache =
-        !recarregarMedicos &&
+    final podeUsarCache = !recarregarMedicos &&
         cacheDisp != null &&
         cacheAloc != null &&
         gabinetes.isNotEmpty &&
@@ -250,7 +258,8 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       // Timer para atualizar progresso continuamente durante carregamento (15% -> 70%)
       Timer? timerProgressoContinuo;
       double progressoAtual = 0.15;
-      bool carregamentoCompleto = false; // Flag para controlar quando o carregamento termina
+      bool carregamentoCompleto =
+          false; // Flag para controlar quando o carregamento termina
 
       const limiteProgresso = 0.85;
       timerProgressoContinuo =
@@ -270,84 +279,85 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
       try {
         // Carregar dados usando a lógica existente
         await logic.AlocacaoMedicosLogic.carregarDadosIniciais(
-        gabinetes: gabinetes,
-        medicos: medicos,
-        disponibilidades: disponibilidades,
-        alocacoes: alocacoes,
-        onGabinetes: (g) {
-          if (!recarregarMedicos && g.isEmpty && gabinetes.isNotEmpty) {
-            return;
-          }
-          gabinetes.clear();
-          gabinetes.addAll(g);
-        },
-        onMedicos: (m) {
-          if (!recarregarMedicos && m.isEmpty && medicos.isNotEmpty) {
-            return;
-          }
-          medicos.clear();
-          medicos.addAll(m);
-        },
-        onDisponibilidades: (d) {
-          disponibilidades.clear();
-          disponibilidades.addAll(d);
-        },
-        onAlocacoes: (a) {
-          // Preservar alocações otimistas durante recarregamento
-          final alocacoesMap = <String, Alocacao>{};
+          gabinetes: gabinetes,
+          medicos: medicos,
+          disponibilidades: disponibilidades,
+          alocacoes: alocacoes,
+          onGabinetes: (g) {
+            if (!recarregarMedicos && g.isEmpty && gabinetes.isNotEmpty) {
+              return;
+            }
+            gabinetes.clear();
+            gabinetes.addAll(g);
+          },
+          onMedicos: (m) {
+            if (!recarregarMedicos && m.isEmpty && medicos.isNotEmpty) {
+              return;
+            }
+            medicos.clear();
+            medicos.addAll(m);
+          },
+          onDisponibilidades: (d) {
+            disponibilidades.clear();
+            disponibilidades.addAll(d);
+          },
+          onAlocacoes: (a) {
+            // Preservar alocações otimistas durante recarregamento
+            final alocacoesMap = <String, Alocacao>{};
 
-          // Primeiro, adicionar alocações do servidor
-          for (final aloc in a) {
-            final chave =
-                '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-            alocacoesMap[chave] = aloc;
-          }
-
-          // Verificar se a alocação é do dia selecionado antes de preservar
-          final dataNormalized = DateTime(data.year, data.month, data.day);
-
-          // Preservar alocações otimistas do dia selecionado
-          for (final aloc in alocacoes) {
-            final alocDateNormalized = DateTime(
-              aloc.data.year,
-              aloc.data.month,
-              aloc.data.day,
-            );
-            if (alocDateNormalized != dataNormalized) {
-              continue;
+            // Primeiro, adicionar alocações do servidor
+            for (final aloc in a) {
+              final chave =
+                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+              alocacoesMap[chave] = aloc;
             }
 
-            if (aloc.id.startsWith('otimista_')) {
-              final chave =
-                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+            // Verificar se a alocação é do dia selecionado antes de preservar
+            final dataNormalized = DateTime(data.year, data.month, data.day);
 
-              if (!alocacoesMap.containsKey(chave)) {
-                alocacoesMap[chave] = aloc;
+            // Preservar alocações otimistas do dia selecionado
+            for (final aloc in alocacoes) {
+              final alocDateNormalized = DateTime(
+                aloc.data.year,
+                aloc.data.month,
+                aloc.data.day,
+              );
+              if (alocDateNormalized != dataNormalized) {
+                continue;
               }
-            } else if (aloc.id.startsWith('serie_')) {
-              final chave =
-                  '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
-              if (!alocacoesMap.containsKey(chave)) {
-                alocacoesMap[chave] = aloc;
+
+              if (aloc.id.startsWith('otimista_')) {
+                final chave =
+                    '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+
+                if (!alocacoesMap.containsKey(chave)) {
+                  alocacoesMap[chave] = aloc;
+                }
+              } else if (aloc.id.startsWith('serie_')) {
+                final chave =
+                    '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+                if (!alocacoesMap.containsKey(chave)) {
+                  alocacoesMap[chave] = aloc;
+                }
               }
             }
-          }
 
-          alocacoes.clear();
-          alocacoes.addAll(alocacoesMap.values);
-        },
-        unidade: unidade,
-        dataFiltroDia: data,
-        reloadStatic: recarregarMedicos,
-        excecoesCanceladas: datasComExcecoesCanceladas,
-      );
+            alocacoes.clear();
+            alocacoes.addAll(alocacoesMap.values);
+          },
+          unidade: unidade,
+          dataFiltroDia: data,
+          reloadStatic: recarregarMedicos,
+          excecoesCanceladas: datasComExcecoesCanceladas,
+        );
 
         // CORREÇÃO: Marcar carregamento como completo e cancelar timer imediatamente
         carregamentoCompleto = true;
         timerProgressoContinuo?.cancel();
         timerProgressoContinuo = null;
 
-        final tempoDados = DateTime.now().difference(inicioDados).inMilliseconds;
+        final tempoDados =
+            DateTime.now().difference(inicioDados).inMilliseconds;
         // Reduzir logs desnecessários - apenas mostrar se demorar muito
         if (tempoDados > 1000) {
           debugPrint('⏱️ [PERF] Dados Firestore: ${tempoDados}ms');
@@ -359,7 +369,7 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
         timerProgressoContinuo = null;
       }
     }
-    
+
     if (calcularMedicosDisponiveis) {
       // Garantir que o progresso esteja em 70% após carregar dados
       onProgress?.call(0.75, 'A processar médicos disponíveis...');
@@ -405,8 +415,7 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
         }
 
         // Verifica se tem exceção cancelada para esse dia
-        final dataKey =
-            '${m.id}_${data.year}-${data.month}-${data.day}';
+        final dataKey = '${m.id}_${data.year}-${data.month}-${data.day}';
         if (datasComExcecoesCanceladas.contains(dataKey)) {
           return false; // Não mostrar se tem exceção cancelada
         }
@@ -421,12 +430,12 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
     if (tempoTotal > 2000) {
       debugPrint('⏱️ [PERF] Total: ${tempoTotal}ms');
     }
-    
+
     onProgress?.call(0.85, 'A preparar alocações de séries...');
 
     // Converter encerraDias para Map normal para evitar problemas de serialização
     final encerraDiasNormal = Map<int, bool>.from(encerraDias);
-    
+
     return {
       'success': true,
       'error': null,
@@ -462,7 +471,8 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
 /// CORREÇÃO: Usar o mesmo caminho que alocacao_medicos_screen.dart
 /// Caminho correto: unidades/{id}/feriados/{ano}/registos
 /// OTIMIZAÇÃO: Usa cache para evitar buscar do Firestore toda vez
-Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade, {required DateTime data}) async {
+Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade,
+    {required DateTime data}) async {
   try {
     return await AlocacaoClinicaConfigService.carregarFeriados(
       unidadeId: unidade.id,
@@ -478,8 +488,8 @@ Future<List<Map<String, String>>> _carregarFeriados(Unidade unidade, {required D
 /// CORREÇÃO: Usar o mesmo caminho que alocacao_medicos_screen.dart
 /// Caminho correto: unidades/{id}/encerramentos/{ano}/registos
 /// OTIMIZAÇÃO: Usa cache para evitar buscar do Firestore toda vez
-Future<List<Map<String, dynamic>>> _carregarDiasEncerramento(
-    Unidade unidade, {required DateTime data}) async {
+Future<List<Map<String, dynamic>>> _carregarDiasEncerramento(Unidade unidade,
+    {required DateTime data}) async {
   try {
     return await AlocacaoClinicaConfigService.carregarDiasEncerramento(
       unidadeId: unidade.id,
@@ -544,7 +554,7 @@ Map<String, dynamic> _verificarClinicaFechada(
   // PRIMEIRO: Verificar se há um dia específico de encerramento configurado
   // CORREÇÃO: Usar o mesmo formato de data que alocacao_medicos_screen.dart (yyyy-MM-dd)
   final dataFormatada = DateFormat('yyyy-MM-dd').format(data);
-  
+
   for (final d in diasEncerramento) {
     final dataDia = d['data']?.toString() ?? '';
     if (dataDia.isEmpty) continue;
@@ -554,20 +564,23 @@ Map<String, dynamic> _verificarClinicaFechada(
       if (dataDia.contains('T')) {
         dataDiaNormalizada = dataDia.split('T')[0];
       }
-      
+
       // Comparar apenas a parte da data (yyyy-MM-dd)
       if (dataDiaNormalizada == dataFormatada) {
         return {
           'fechada': true,
-          'mensagem': d['descricao'] as String? ?? 'A clínica está encerrada neste dia.',
+          'mensagem': d['descricao'] as String? ??
+              'A clínica está encerrada neste dia.',
         };
       }
     } catch (e) {
       // Fallback: tentar comparar diretamente
-      if (dataDia.contains(dataFormatada) || dataFormatada.contains(dataDia.split('T')[0])) {
+      if (dataDia.contains(dataFormatada) ||
+          dataFormatada.contains(dataDia.split('T')[0])) {
         return {
           'fechada': true,
-          'mensagem': d['descricao'] as String? ?? 'A clínica está encerrada neste dia.',
+          'mensagem': d['descricao'] as String? ??
+              'A clínica está encerrada neste dia.',
         };
       }
     }
@@ -596,10 +609,10 @@ Map<String, dynamic> _verificarClinicaFechada(
   // TERCEIRO: Verificar se é feriado e se está configurado para encerrar em feriados
   // CORREÇÃO: Verificar tanto na lista de feriados quanto em diasEncerramento com motivo "Feriado"
   // CORREÇÃO: Usar o mesmo formato de data que alocacao_medicos_screen.dart (yyyy-MM-dd)
-  
+
   // Primeiro, verificar na lista de feriados
   Map<String, dynamic>? feriadoEncontrado;
-  
+
   final feriado = feriados.firstWhere(
     (f) {
       final dataFeriado = f['data']?.toString() ?? '';
@@ -641,13 +654,14 @@ Map<String, dynamic> _verificarClinicaFechada(
           return dataDiaNormalizada == dataFormatada;
         } catch (e) {
           // Fallback: tentar comparar diretamente
-          return dataDia.contains(dataFormatada) || dataFormatada.contains(dataDia.split('T')[0]);
+          return dataDia.contains(dataFormatada) ||
+              dataFormatada.contains(dataDia.split('T')[0]);
         }
       },
       orElse: () => <String, dynamic>{},
     );
 
-    if (feriadoEncerramento.containsKey('id') && 
+    if (feriadoEncerramento.containsKey('id') &&
         feriadoEncerramento['id']!.toString().isNotEmpty) {
       feriadoEncontrado = {
         'id': feriadoEncerramento['id'],

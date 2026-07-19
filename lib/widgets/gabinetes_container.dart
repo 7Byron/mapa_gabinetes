@@ -18,12 +18,18 @@ class GabinetesContainer extends StatelessWidget {
   final Future<void> Function(String medicoId, String gabineteId,
       {DateTime? dataEspecifica, List<String>? horarios}) onAlocarMedico;
   final Future<void> Function() onAtualizarEstado;
-  final Future<void> Function(String medicoId) onDesalocarMedicoComPergunta;
+  final Future<void> Function(String medicoId, {String? alocacaoId})
+      onDesalocarMedicoComPergunta;
   final Future<void> Function(String medicoId, String gabineteOrigem,
       String gabineteDestino, DateTime data) onRealocacaoOtimista;
   final VoidCallback onRealocacaoConcluida;
-  final void Function(String medicoId, String gabineteId, DateTime data)
-      onAlocacaoSerieOtimista;
+  final void Function(
+    String medicoId,
+    String gabineteId,
+    DateTime data,
+    List<String> horarios,
+    String? serieId,
+  ) onAlocacaoSerieOtimista;
   final void Function(Medico)? onEditarMedico;
 
   const GabinetesContainer({

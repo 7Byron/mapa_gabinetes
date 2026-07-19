@@ -169,12 +169,69 @@
         `;
       });
     } else {
-      // Para navegadores compatíveis, aguardar DOM e carregar Flutter normalmente
-      document.addEventListener('DOMContentLoaded', function() {
+      // Para navegadores compatíveis, verificar a versão publicada antes de
+      // carregar o Flutter. Esta verificação usa apenas um pequeno ficheiro
+      // estático do Hosting (não faz leituras ao Firebase/Firestore).
+      document.addEventListener('DOMContentLoaded', async function() {
+        const versionUrl = 'version.json';
+        const storageKey = 'alocmap_web_version';
+        let loadedVersion = localStorage.getItem(storageKey);
+
+        async function fetchPublishedVersion() {
+          const response = await fetch(
+            `${versionUrl}?t=${Date.now()}`,
+            { cache: 'no-store' }
+          );
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          return String(payload.version || '').trim();
+        }
+
+        async function activateNewVersion(version) {
+          const reloadKey = `alocmap_reloaded_${version}`;
+          if (sessionStorage.getItem(reloadKey) === '1') return;
+          sessionStorage.setItem(reloadKey, '1');
+          localStorage.setItem(storageKey, version);
+
+          // Retirar o service worker anterior antes da recarga para impedir
+          // que volte a servir o bundle antigo.
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((registration) => registration.unregister()));
+          }
+
+          const url = new URL(window.location.href);
+          url.searchParams.set('_appv', version);
+          window.location.replace(url.toString());
+        }
+
+        async function checkForUpdate({ reload = true } = {}) {
+          try {
+            const publishedVersion = await fetchPublishedVersion();
+            if (!publishedVersion) return null;
+            if (loadedVersion && loadedVersion !== publishedVersion && reload) {
+              await activateNewVersion(publishedVersion);
+              return publishedVersion;
+            }
+            loadedVersion = publishedVersion;
+            localStorage.setItem(storageKey, publishedVersion);
+            return publishedVersion;
+          } catch (error) {
+            // Sem rede ou Hosting temporariamente indisponível: abrir a app
+            // normalmente e voltar a tentar mais tarde.
+            console.warn('Não foi possível verificar a versão da aplicação:', error);
+            return null;
+          }
+        }
+
+        const publishedVersion = await checkForUpdate();
         var script = document.createElement('script');
-        script.src = 'flutter_bootstrap.js';
+        script.src = publishedVersion
+          ? `flutter_bootstrap.js?v=${encodeURIComponent(publishedVersion)}`
+          : 'flutter_bootstrap.js';
         script.defer = true; // garante execução após parse do HTML
         document.body.appendChild(script);
+
       });
     }
   </script>

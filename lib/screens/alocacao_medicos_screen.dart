@@ -56,8 +56,11 @@ import '../services/alocacao_progressao_service.dart';
 import '../services/alocacao_pos_carregamento_service.dart';
 import '../services/alocacao_finalizacao_ui_service.dart';
 import '../services/alocacao_estatisticas_service.dart';
+import '../services/alocacao_ano_alocacoes_service.dart';
 import '../utils/alocacao_date_change_handler.dart';
 import '../utils/alocacao_medicos_search_utils.dart';
+import '../utils/proxima_consulta_utils.dart';
+import '../utils/series_helper.dart';
 import '../utils/alocacao_cache_store.dart';
 import 'cadastro_medicos.dart';
 
@@ -175,6 +178,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   String? pesquisaEspecialidade;
   Set<String> medicosDestacados =
       {}; // IDs dos médicos destacados pela pesquisa
+  final Set<String> _cartoesEmAlocacao = {};
+  final Map<String, Timer> _timersCartoesEmAlocacao = {};
+
+  String? _proximaConsultaMedicoId;
+  String? _proximaConsultaEspecialidade;
+  List<Alocacao>? _alocacoesFuturas;
+  List<ProximaConsultaItem> _proximasConsultas = [];
+  bool _carregandoProximasConsultas = false;
+  String? _erroProximasConsultas;
+  int _versaoPesquisaProximaConsulta = 0;
 
   // (removido) alternância manual não utilizada
 
@@ -186,6 +199,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   @override
   void initState() {
     super.initState();
+    // O cache diário é válido apenas dentro da unidade que o criou. Ativar a
+    // unidade antes do primeiro carregamento evita mostrar dados vazios (ou de
+    // outra clínica) e dispensa o refresh manual.
+    logic.AlocacaoMedicosLogic.ativarCacheDaUnidade(widget.unidade.id);
     // Inicializar datas: usar dataInicial se fornecida, senão usar data atual
     selectedDate = widget.dataInicial ?? DateTime.now();
     _dataCalendarioVisualizada = selectedDate;
@@ -771,9 +788,23 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       ));
   }
 
-  // Obter especialidades únicas dos gabinetes
+  // Obter apenas as especialidades dos gabinetes visíveis segundo os
+  // restantes filtros. O filtro de especialidade não é aplicado aqui para
+  // permitir que o utilizador troque de especialidade.
   List<String> _getEspecialidadesGabinetes() {
-    return AlocacaoMedicosSearchUtils.especialidadesGabinetes(gabinetes);
+    final gabinetesVisiveis = logic.AlocacaoMedicosLogic.filtrarGabinetesPorUI(
+      gabinetes: gabinetes,
+      alocacoes: alocacoes,
+      selectedDate: selectedDate,
+      pisosSelecionados: pisosSelecionados,
+      filtroOcupacao: filtroOcupacao,
+      mostrarConflitos: mostrarConflitos,
+      filtroEspecialidadeGabinete: null,
+    );
+
+    return AlocacaoMedicosSearchUtils.especialidadesGabinetes(
+      gabinetesVisiveis,
+    );
   }
 
   // Limpar pesquisa
@@ -781,11 +812,85 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     _atualizarPesquisa();
   }
 
+  Future<void> _pesquisarProximasConsultas({
+    String? medicoId,
+    String? especialidade,
+  }) async {
+    final versaoPesquisa = ++_versaoPesquisaProximaConsulta;
+    _setStateSeMontado(() {
+      _proximaConsultaMedicoId = medicoId;
+      _proximaConsultaEspecialidade = especialidade;
+      _erroProximasConsultas = null;
+      _proximasConsultas = [];
+      if (medicoId == null && especialidade == null) {
+        _carregandoProximasConsultas = false;
+      }
+    });
+
+    if (medicoId == null && especialidade == null) return;
+
+    try {
+      if (_alocacoesFuturas == null) {
+        _setStateSeMontado(() => _carregandoProximasConsultas = true);
+        final hoje = DateTime.now();
+        final resultados = await Future.wait([
+          AlocacaoAnoAlocacoesService.carregar(
+            unidade: widget.unidade,
+            ano: hoje.year,
+            medicos: medicos,
+          ),
+          AlocacaoAnoAlocacoesService.carregar(
+            unidade: widget.unidade,
+            ano: hoje.year + 1,
+            medicos: medicos,
+          ),
+        ]);
+        _alocacoesFuturas = resultados.expand((lista) => lista).toList();
+      }
+
+      final encontrados = ProximaConsultaUtils.encontrar(
+        alocacoes: _alocacoesFuturas!,
+        medicos: medicos,
+        desde: DateTime.now(),
+        medicoId: medicoId,
+        especialidade: especialidade,
+      );
+      if (versaoPesquisa != _versaoPesquisaProximaConsulta) return;
+      _setStateSeMontado(() => _proximasConsultas = encontrados);
+    } catch (e) {
+      if (versaoPesquisa != _versaoPesquisaProximaConsulta) return;
+      _setStateSeMontado(() {
+        _erroProximasConsultas =
+            'Não foi possível carregar as próximas consultas.';
+      });
+    } finally {
+      if (versaoPesquisa == _versaoPesquisaProximaConsulta) {
+        _setStateSeMontado(() => _carregandoProximasConsultas = false);
+      }
+    }
+  }
+
+  void _selecionarMedicoProximaConsulta(String? medicoId) {
+    _pesquisarProximasConsultas(medicoId: medicoId);
+  }
+
+  void _selecionarEspecialidadeProximaConsulta(String? especialidade) {
+    _pesquisarProximasConsultas(especialidade: especialidade);
+  }
+
+  Future<void> _abrirConsultaNoMapa(ProximaConsultaItem item) async {
+    await _onDateChanged(item.alocacao.data);
+    if (!mounted) return;
+
+    _aplicarPesquisaNome(item.medico.nome);
+    _setMostrarColunaEsquerda(false);
+  }
+
   // Lock para prevenir múltiplas execuções simultâneas de _onDateChanged
   bool _isUpdatingDate = false;
   DateTime? _lastUpdateDate;
 
-  void _onDateChanged(DateTime newDate) async {
+  Future<void> _onDateChanged(DateTime newDate) async {
     if (!mounted) return;
 
     // Verificar se é a mesma data (evitar atualizações desnecessárias)
@@ -972,6 +1077,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   Future<void> _alocarMedico(String medicoId, String gabineteId,
       {DateTime? dataEspecifica, List<String>? horarios}) async {
     final dataAlvo = dataEspecifica ?? selectedDate;
+    final chaveTransicao = _chaveCartaoEmAlocacao(medicoId, horarios);
+    var sucesso = false;
+
+    _manterCartaoEmTransicao(chaveTransicao);
 
     try {
       await AlocacaoMedicoAlocacaoService.alocar(
@@ -987,12 +1096,37 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
         onStateUpdate: _aplicarAtualizacaoAlocacao,
         horarios: horarios,
       );
+      sucesso = true;
     } catch (e) {
       await _tratarErroAlocacao(e);
     } finally {
+      if (!sucesso) {
+        _removerCartaoEmTransicao(chaveTransicao);
+      }
       // Finalização concluída
       _logDebug('✅ [ALOCAÇÃO] FINALLY: Operação finalizada');
     }
+  }
+
+  String _chaveCartaoEmAlocacao(String medicoId, List<String>? horarios) {
+    final inicio =
+        horarios != null && horarios.isNotEmpty ? horarios.first : '';
+    final fim = horarios != null && horarios.length > 1 ? horarios[1] : '';
+    return '$medicoId|$inicio|$fim';
+  }
+
+  void _manterCartaoEmTransicao(String chave) {
+    _timersCartoesEmAlocacao.remove(chave)?.cancel();
+    _setStateSeMontado(() => _cartoesEmAlocacao.add(chave));
+    _timersCartoesEmAlocacao[chave] = Timer(
+      const Duration(seconds: 8),
+      () => _removerCartaoEmTransicao(chave),
+    );
+  }
+
+  void _removerCartaoEmTransicao(String chave) {
+    _timersCartoesEmAlocacao.remove(chave)?.cancel();
+    _setStateSeMontado(() => _cartoesEmAlocacao.remove(chave));
   }
 
   void _aplicarAtualizacaoAlocacao() {
@@ -1091,6 +1225,9 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   void _cancelarTimeoutFlagsTransicao() {
     // Cancelar timeout se ainda estiver ativo
     _timeoutFlagsTransicao?.cancel();
+    for (final timer in _timersCartoesEmAlocacao.values) {
+      timer.cancel();
+    }
     _timeoutFlagsTransicao = null;
   }
 
@@ -1110,11 +1247,20 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   /// Atualização otimista durante realocação - atualiza estado local imediatamente
   /// para feedback visual instantâneo antes das operações no Firestore
   void _alocacaoSerieOtimista(
-      String medicoId, String gabineteId, DateTime data) {
+    String medicoId,
+    String gabineteId,
+    DateTime data,
+    List<String> horarios,
+    String? serieId,
+  ) {
+    final chaveTransicao = _chaveCartaoEmAlocacao(medicoId, horarios);
+    _manterCartaoEmTransicao(chaveTransicao);
     AlocacaoSerieOtimistaService.aplicar(
       medicoId: medicoId,
       gabineteId: gabineteId,
       data: data,
+      horarios: horarios,
+      serieId: serieId,
       medicos: medicos,
       medicosDisponiveis: medicosDisponiveis,
       disponibilidades: disponibilidades,
@@ -1331,7 +1477,10 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
   }
 
-  Future<void> _desalocarMedicoComPergunta(String medicoId) async {
+  Future<void> _desalocarMedicoComPergunta(
+    String medicoId, {
+    String? alocacaoId,
+  }) async {
     // Encontrar todas as alocações do médico no dia selecionado
     final dataAlvo = _normalizarData(selectedDate);
     final alocacoesDoDia = alocacoes.where((a) {
@@ -1351,13 +1500,37 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     );
 
     String? escolha;
-    final tipoDisponibilidade = decisao.tipoDisponibilidade;
+    final alocacaoAlvo = alocacaoId == null
+        ? null
+        : alocacoes.where((a) => a.id == alocacaoId).firstOrNull;
+    final disponibilidadeAlvo = alocacaoAlvo == null
+        ? null
+        : disponibilidades.where((d) {
+            if (d.medicoId != medicoId || d.horarios.length < 2) return false;
+            if (d.id.startsWith('serie_')) {
+              final serieId =
+                  SeriesHelper.extrairSerieIdDeDisponibilidade(d.id);
+              return alocacaoAlvo.id.contains(serieId) &&
+                  d.horarios[0] == alocacaoAlvo.horarioInicio &&
+                  d.horarios[1] == alocacaoAlvo.horarioFim;
+            }
+            return d.horarios[0] == alocacaoAlvo.horarioInicio &&
+                d.horarios[1] == alocacaoAlvo.horarioFim;
+          }).firstOrNull;
+    final tipoDisponibilidade =
+        disponibilidadeAlvo?.tipo ?? decisao.tipoDisponibilidade;
+    final serieIdAlvo = disponibilidadeAlvo != null &&
+            disponibilidadeAlvo.id.startsWith('serie_')
+        ? SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidadeAlvo.id)
+        : null;
 
     if (decisao.desalocarDireto) {
       if (!mounted) return;
 
       final sucesso = await desalocarCartaoUnico(
         medicoId: medicoId,
+        alocacaoId: alocacaoId,
+        serieId: serieIdAlvo,
         data: selectedDate,
         alocacoes: alocacoes,
         disponibilidades: disponibilidades,
@@ -1401,38 +1574,44 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     );
 
     if (escolha == '1dia') {
-      await _desalocarMedicoDiaUnico(medicoId);
+      await _desalocarMedicoDiaUnico(
+        medicoId,
+        alocacaoId: alocacaoId,
+        serieId: serieIdAlvo,
+      );
     } else if (escolha == 'serie') {
-      await _desalocarMedicoSerie(medicoId, tipoDisponibilidade);
+      await _desalocarMedicoSerie(
+        medicoId,
+        tipoDisponibilidade,
+        serieId: serieIdAlvo,
+      );
     }
   }
 
-  Future<void> _desalocarMedicoDiaUnico(String medicoId) async {
+  Future<void> _desalocarMedicoDiaUnico(
+    String medicoId, {
+    String? alocacaoId,
+    String? serieId,
+  }) async {
     try {
-      final gabineteOrigem = await AlocacaoDesalocacaoDiaService.desalocar(
+      await AlocacaoDesalocacaoDiaService.desalocar(
         unidade: widget.unidade,
         data: selectedDate,
         medicoId: medicoId,
+        alocacaoId: alocacaoId,
+        serieId: serieId,
         alocacoes: alocacoes,
         disponibilidades: disponibilidades,
         medicos: medicos,
         medicosDisponiveis: medicosDisponiveis,
       );
 
-      // Aguardar um pouco para garantir que a desalocação foi processada
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // TESTE 3: Desalocar cartão - deve atualizar apenas gabinete de saída e caixa de desalocação
-      if (gabineteOrigem.isNotEmpty) {
-        // RELOAD FOCADO: Recarregar apenas o gabinete de saída (onde o cartão saiu) e desalocados (onde entrou)
-        await _recarregarAlocacoesGabinetes([gabineteOrigem]);
-        await _recarregarDesalocados();
-
-        _logDebug(
-            '✅ [DESALOCAÇÃO] Reload focado: gabinete $gabineteOrigem e desalocados atualizados');
-      } else {
-        await _recarregarDesalocados();
-      }
+      // A lista local já removeu apenas a alocação alvo. Não substituir agora
+      // todo o gabinete por uma leitura intermédia do servidor, pois isso pode
+      // ocultar temporariamente outros cartões do mesmo médico.
+      await _recarregarDesalocados();
+      _logDebug(
+          '✅ [DESALOCAÇÃO] Estado local mantido e cache do dia invalidado');
 
       // Forçar atualização da UI
       _rebuild();
@@ -1441,11 +1620,16 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
   }
 
-  Future<void> _desalocarMedicoSerie(String medicoId, String tipo) async {
+  Future<void> _desalocarMedicoSerie(
+    String medicoId,
+    String tipo, {
+    String? serieId,
+  }) async {
     await AlocacaoDesalocacaoSerieOrchestrator.executar(
       medicoId: medicoId,
       data: selectedDate,
       tipo: tipo,
+      serieId: serieId,
       alocacoes: alocacoes,
       disponibilidades: disponibilidades,
       medicos: medicos,
@@ -1610,6 +1794,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
             medicosDisponiveis: medicosDisponiveis,
             disponibilidades: disponibilidades,
             alocacoes: alocacoes,
+            cartoesEmAlocacao: _cartoesEmAlocacao,
             selectedDate: selectedDate,
             onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
             onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
@@ -1670,6 +1855,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
 
   void _togglePisoSelecionado(String setor, bool isSelected) {
     _setStateSeMontado(() {
+      filtroEspecialidadeGabinete = null;
       if (isSelected) {
         if (pisosSelecionados.isEmpty) {
           pisosSelecionados = [setor];
@@ -1683,11 +1869,17 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   }
 
   void _atualizarFiltroOcupacao(String novo) {
-    _setStateSeMontado(() => filtroOcupacao = novo);
+    _setStateSeMontado(() {
+      filtroOcupacao = novo;
+      filtroEspecialidadeGabinete = null;
+    });
   }
 
   void _atualizarMostrarConflitos(bool valor) {
-    _setStateSeMontado(() => mostrarConflitos = valor);
+    _setStateSeMontado(() {
+      mostrarConflitos = valor;
+      filtroEspecialidadeGabinete = null;
+    });
   }
 
   void _atualizarFiltroEspecialidadeGabinete(String? especialidade) {
@@ -1781,12 +1973,37 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
       filtroEspecialidadeGabinete: filtroEspecialidadeGabinete,
       opcoesNome: _getOpcoesPesquisaNome(),
       opcoesEspecialidade: _getOpcoesPesquisaEspecialidade(),
+      cartoesDestacados: AlocacaoMedicosSearchUtils.contarCartoesDestacados(
+        alocacoes: alocacoes,
+        medicosDestacados: medicosDestacados,
+        data: selectedDate,
+      ),
+      proximaConsultaMedicoId: _proximaConsultaMedicoId,
+      proximaConsultaEspecialidade: _proximaConsultaEspecialidade,
+      opcoesProximaConsultaMedicos: {
+        for (final medico in medicos.where((medico) => medico.ativo))
+          medico.id: medico.nome,
+      },
+      opcoesProximaConsultaEspecialidades: medicos
+          .where((medico) =>
+              medico.ativo && medico.especialidade.trim().isNotEmpty)
+          .map((medico) => medico.especialidade)
+          .toSet()
+          .toList()
+        ..sort(),
+      proximasConsultas: _proximasConsultas,
+      carregandoProximasConsultas: _carregandoProximasConsultas,
+      erroProximasConsultas: _erroProximasConsultas,
       especialidadesGabinetes: _getEspecialidadesGabinetes(),
       onDateSelected: _onDateChanged,
       onViewChanged: _atualizarDataCalendarioVisualizada,
       onPesquisaNomeChanged: _aplicarPesquisaNome,
       onPesquisaEspecialidadeChanged: _aplicarPesquisaEspecialidade,
       onLimparPesquisa: _limparPesquisa,
+      onProximaConsultaMedicoChanged: _selecionarMedicoProximaConsulta,
+      onProximaConsultaEspecialidadeChanged:
+          _selecionarEspecialidadeProximaConsulta,
+      onProximaConsultaTap: _abrirConsultaNoMapa,
       onTogglePiso: _togglePisoSelecionado,
       onFiltroOcupacaoChanged: _atualizarFiltroOcupacao,
       onMostrarConflitosChanged: _atualizarMostrarConflitos,

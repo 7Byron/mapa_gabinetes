@@ -1,5 +1,5 @@
 /// Serviço para alocação de série: dos desalocados para um gabinete (toda a série)
-/// 
+///
 /// Este serviço lida com a alocação de um médico que está nos desalocados
 /// para um gabinete específico em toda a série (não apenas um dia).
 library;
@@ -14,7 +14,7 @@ import '../services/serie_service.dart';
 
 class AlocacaoSerieService {
   /// Aloca um médico dos desalocados para um gabinete em toda a série
-  /// 
+  ///
   /// [medicoId] - ID do médico a ser alocado
   /// [gabineteId] - ID do gabinete de destino
   /// [data] - Data de referência da alocação
@@ -24,7 +24,7 @@ class AlocacaoSerieService {
   /// [onAtualizarEstado] - Callback para atualizar o estado após alocação
   /// [onProgresso] - Callback para atualizar progresso (progresso, mensagem)
   /// [context] - Contexto do Flutter para mostrar mensagens
-  /// 
+  ///
   /// Retorna true se a alocação foi bem-sucedida, false caso contrário
   static Future<bool> alocar({
     required String medicoId,
@@ -33,18 +33,29 @@ class AlocacaoSerieService {
     required Disponibilidade disponibilidade,
     required Unidade? unidade,
     required BuildContext context,
-    void Function(String medicoId, String gabineteId, DateTime data)? onAlocacaoSerieOtimista,
+    void Function(
+      String medicoId,
+      String gabineteId,
+      DateTime data,
+      List<String> horarios,
+      String? serieId,
+    )? onAlocacaoSerieOtimista,
     required VoidCallback onAtualizarEstado,
     required void Function(double progresso, String mensagem) onProgresso,
     String? serieIdExtraido,
   }) async {
-
     try {
       final dataRefNormalizada = DateTime(data.year, data.month, data.day);
 
       // ATUALIZAÇÃO OTIMISTA: Remover cartão dos desalocados e criar alocação temporária IMEDIATAMENTE
       if (onAlocacaoSerieOtimista != null) {
-        onAlocacaoSerieOtimista(medicoId, gabineteId, dataRefNormalizada);
+        onAlocacaoSerieOtimista(
+          medicoId,
+          gabineteId,
+          dataRefNormalizada,
+          disponibilidade.horarios,
+          serieIdExtraido,
+        );
         await Future.delayed(const Duration(milliseconds: 50));
       }
 
@@ -66,26 +77,23 @@ class AlocacaoSerieService {
 
       // Normalizar o tipo da série
       final tipoDisponibilidade = disponibilidade.tipo;
-      final tipoNormalizado =
-          tipoDisponibilidade.startsWith('Consecutivo')
-              ? 'Consecutivo'
-              : tipoDisponibilidade;
+      final tipoNormalizado = tipoDisponibilidade.startsWith('Consecutivo')
+          ? 'Consecutivo'
+          : tipoDisponibilidade;
 
       // Extrair número de dias para séries consecutivas
       int? numeroDiasConsecutivo;
       if (tipoNormalizado == 'Consecutivo') {
-        final match = RegExp(r'Consecutivo:(\d+)')
-            .firstMatch(tipoDisponibilidade);
-        numeroDiasConsecutivo = match != null
-            ? int.tryParse(match.group(1) ?? '') ?? 5
-            : 5;
+        final match =
+            RegExp(r'Consecutivo:(\d+)').firstMatch(tipoDisponibilidade);
+        numeroDiasConsecutivo =
+            match != null ? int.tryParse(match.group(1) ?? '') ?? 5 : 5;
       }
 
       // Usar horários da disponibilidade
-      final horariosRef =
-          disponibilidade.horarios.isNotEmpty
-              ? disponibilidade.horarios
-              : ['08:00', '15:00']; // Fallback
+      final horariosRef = disponibilidade.horarios.isNotEmpty
+          ? disponibilidade.horarios
+          : ['08:00', '15:00']; // Fallback
 
       // CORREÇÃO: Se temos o ID da série extraído do ID da disponibilidade,
       // usar diretamente em vez de procurar pela data/tipo
@@ -131,21 +139,18 @@ class AlocacaoSerieService {
       if (serieEncontrada != null &&
           tipoNormalizado == 'Consecutivo' &&
           numeroDiasConsecutivo != null) {
-        final numeroDiasSerie = serieEncontrada
-                .parametros['numeroDias'] as int? ??
-            5;
+        final numeroDiasSerie =
+            serieEncontrada.parametros['numeroDias'] as int? ?? 5;
         if (numeroDiasSerie != numeroDiasConsecutivo) {
           serieEncontrada = null; // Não corresponde
         }
       }
 
-      onProgresso(0.4, serieEncontrada == null
-          ? 'A criar série...'
-          : 'Série encontrada');
+      onProgresso(0.4,
+          serieEncontrada == null ? 'A criar série...' : 'Série encontrada');
 
       // Se não encontrou série, criar uma nova
       if (serieEncontrada == null || serieEncontrada.id.isEmpty) {
-        
         serieEncontrada = await DisponibilidadeSerieService.criarSerie(
           medicoId: medicoId,
           dataInicial: dataRefNormalizada,
@@ -159,7 +164,7 @@ class AlocacaoSerieService {
       onProgresso(0.6, 'A atualizar série no servidor...');
 
       // Verificar se a série já está alocada neste gabinete
-      
+
       if (serieEncontrada.gabineteId == gabineteId) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -226,18 +231,21 @@ class AlocacaoSerieService {
       // CORREÇÃO: Capturar o ID da série antes de usar no closure para evitar problemas de null safety
       final serieIdParaBuscar = serieEncontrada.id;
       SerieRecorrencia serieAtualizada = serieEncontrada;
-      
+
       try {
         final seriesAtualizadas = await SerieService.carregarSeries(
           medicoId,
           unidade: unidade,
-          forcarServidor: true, // Forçar servidor para garantir dados atualizados
+          forcarServidor:
+              true, // Forçar servidor para garantir dados atualizados
         );
-        
-        final seriesFiltradas = seriesAtualizadas.where(
-          (s) => s.id == serieIdParaBuscar,
-        ).toList();
-        
+
+        final seriesFiltradas = seriesAtualizadas
+            .where(
+              (s) => s.id == serieIdParaBuscar,
+            )
+            .toList();
+
         if (seriesFiltradas.isNotEmpty) {
           serieAtualizada = seriesFiltradas.first;
         }
@@ -245,9 +253,10 @@ class AlocacaoSerieService {
         debugPrint('⚠️ Erro ao buscar série atualizada do servidor: $e');
         // Continuar com a série original se houver erro
       }
-      
+
       // Invalidar cache para todos os dias que a série afeta
-      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada, unidade: unidade);
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieAtualizada,
+          unidade: unidade);
 
       await Future.delayed(const Duration(milliseconds: 800));
 
@@ -261,7 +270,6 @@ class AlocacaoSerieService {
 
       return true;
     } catch (e) {
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -358,4 +366,3 @@ class AlocacaoSerieService {
     return 1 + (dif ~/ 7);
   }
 }
-

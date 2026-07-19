@@ -8,6 +8,15 @@ class PasswordService {
   static const String _isFirstTimeKey = 'is_first_time';
   static const String _rememberPasswordKey = 'remember_password';
 
+  static String _projectPasswordKeyFor(String unidadeId) =>
+      '${_projectPasswordKey}_$unidadeId';
+  static String _adminPasswordKeyFor(String unidadeId) =>
+      '${_adminPasswordKey}_$unidadeId';
+  static String _cacheKey(String baseKey, String? unidadeId) =>
+      unidadeId != null && unidadeId.isNotEmpty
+          ? '${baseKey}_$unidadeId'
+          : baseKey;
+
   /// Verifica se é a primeira vez que o usuário acessa o app
   static Future<bool> isFirstTime() async {
     final prefs = await SharedPreferences.getInstance();
@@ -62,7 +71,8 @@ class PasswordService {
 
       // Também salva localmente para cache
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_projectPasswordKey, password);
+      await prefs.setString(
+          _cacheKey(_projectPasswordKey, unidadeId), password);
       debugPrint('✅ Password do projeto salva localmente');
     } catch (e) {
       debugPrint('❌ Erro ao salvar password do projeto: $e');
@@ -71,7 +81,8 @@ class PasswordService {
       // Em caso de erro no Firebase, ainda salva localmente
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_projectPasswordKey, password);
+        await prefs.setString(
+            _cacheKey(_projectPasswordKey, unidadeId), password);
         debugPrint(
             '✅ Password do projeto salva apenas localmente devido a erro no Firebase');
       } catch (localError) {
@@ -123,7 +134,7 @@ class PasswordService {
 
       // Também salva localmente para cache
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_adminPasswordKey, password);
+      await prefs.setString(_cacheKey(_adminPasswordKey, unidadeId), password);
       debugPrint('✅ Password do administrador salva localmente');
     } catch (e) {
       debugPrint('❌ Erro ao salvar password do administrador: $e');
@@ -132,7 +143,8 @@ class PasswordService {
       // Em caso de erro no Firebase, ainda salva localmente
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_adminPasswordKey, password);
+        await prefs.setString(
+            _cacheKey(_adminPasswordKey, unidadeId), password);
         debugPrint(
             '✅ Password do administrador salva apenas localmente devido a erro no Firebase');
       } catch (localError) {
@@ -158,7 +170,7 @@ class PasswordService {
           final password = doc.data()!['project_password'] as String;
           // Atualiza cache local
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_projectPasswordKey, password);
+          await prefs.setString(_projectPasswordKeyFor(unidadeId), password);
           debugPrint('✅ Password do projeto obtida do documento da unidade');
           return password;
         } else {
@@ -169,7 +181,10 @@ class PasswordService {
 
       // Se não conseguir do Firebase, tenta local
       final prefs = await SharedPreferences.getInstance();
-      final localPassword = prefs.getString(_projectPasswordKey);
+      // Com uma unidade explícita, nunca usar a antiga chave global: ela pode
+      // conter a password de outra clínica.
+      final localPassword =
+          prefs.getString(_cacheKey(_projectPasswordKey, unidadeId));
       if (localPassword != null) {
         debugPrint('✅ Password do projeto obtida do cache local');
       } else {
@@ -181,7 +196,8 @@ class PasswordService {
       // Em caso de erro, tenta local
       try {
         final prefs = await SharedPreferences.getInstance();
-        final localPassword = prefs.getString(_projectPasswordKey);
+        final localPassword =
+            prefs.getString(_cacheKey(_projectPasswordKey, unidadeId));
         debugPrint('✅ Password do projeto obtida do cache local (fallback)');
         return localPassword;
       } catch (localError) {
@@ -208,7 +224,7 @@ class PasswordService {
           final password = doc.data()!['admin_password'] as String;
           // Atualiza cache local
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_adminPasswordKey, password);
+          await prefs.setString(_adminPasswordKeyFor(unidadeId), password);
           debugPrint(
               '✅ Password do administrador obtida do documento da unidade');
           return password;
@@ -220,7 +236,8 @@ class PasswordService {
 
       // Se não conseguir do Firebase, tenta local
       final prefs = await SharedPreferences.getInstance();
-      final localPassword = prefs.getString(_adminPasswordKey);
+      final localPassword =
+          prefs.getString(_cacheKey(_adminPasswordKey, unidadeId));
       if (localPassword != null) {
         debugPrint('✅ Password do administrador obtida do cache local');
       } else {
@@ -232,7 +249,8 @@ class PasswordService {
       // Em caso de erro, tenta local
       try {
         final prefs = await SharedPreferences.getInstance();
-        final localPassword = prefs.getString(_adminPasswordKey);
+        final localPassword =
+            prefs.getString(_cacheKey(_adminPasswordKey, unidadeId));
         debugPrint(
             '✅ Password do administrador obtida do cache local (fallback)');
         return localPassword;
@@ -267,15 +285,15 @@ class PasswordService {
   }
 
   /// Limpa apenas a password do projeto (apenas local)
-  static Future<void> clearProjectPassword() async {
+  static Future<void> clearProjectPassword({String? unidadeId}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_projectPasswordKey);
+    await prefs.remove(_cacheKey(_projectPasswordKey, unidadeId));
   }
 
   /// Limpa apenas a password do administrador (apenas local)
-  static Future<void> clearAdminPassword() async {
+  static Future<void> clearAdminPassword({String? unidadeId}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_adminPasswordKey);
+    await prefs.remove(_cacheKey(_adminPasswordKey, unidadeId));
   }
 
   /// Verifica se as passwords estão configuradas
@@ -335,15 +353,17 @@ class PasswordService {
   }
 
   /// Salva a preferência de lembrar password (apenas local)
-  static Future<void> setRememberPassword(bool remember) async {
+  static Future<void> setRememberPassword(bool remember,
+      {String? unidadeId}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_rememberPasswordKey, remember);
+    await prefs.setBool(_cacheKey(_rememberPasswordKey, unidadeId), remember);
   }
 
   /// Obtém a preferência de lembrar password (apenas local)
-  static Future<bool> getRememberPassword() async {
+  static Future<bool> getRememberPassword({String? unidadeId}) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_rememberPasswordKey) ?? true; // Por defeito true
+    return prefs.getBool(_cacheKey(_rememberPasswordKey, unidadeId)) ??
+        true; // Por defeito true
   }
 
   /// Verifica se há alguma password guardada
@@ -366,6 +386,16 @@ class PasswordService {
     try {
       debugPrint('🔄 Carregando passwords do documento da unidade: $unidadeId');
 
+      final prefs = await SharedPreferences.getInstance();
+      final remember =
+          prefs.getBool(_cacheKey(_rememberPasswordKey, unidadeId)) ?? true;
+      if (!remember) {
+        await prefs.remove(_projectPasswordKeyFor(unidadeId));
+        await prefs.remove(_adminPasswordKeyFor(unidadeId));
+        debugPrint('ℹ️ Cache de passwords desativado para esta unidade');
+        return;
+      }
+
       final doc = await FirebaseFirestore.instance
           .collection('unidades')
           .doc(unidadeId)
@@ -373,15 +403,16 @@ class PasswordService {
 
       if (doc.exists) {
         final data = doc.data()!;
-        final prefs = await SharedPreferences.getInstance();
 
         if (data['project_password'] != null) {
-          await prefs.setString(_projectPasswordKey, data['project_password']);
+          await prefs.setString(
+              _projectPasswordKeyFor(unidadeId), data['project_password']);
           debugPrint('✅ Password do projeto carregada do documento da unidade');
         }
 
         if (data['admin_password'] != null) {
-          await prefs.setString(_adminPasswordKey, data['admin_password']);
+          await prefs.setString(
+              _adminPasswordKeyFor(unidadeId), data['admin_password']);
           debugPrint(
               '✅ Password do administrador carregada do documento da unidade');
         }

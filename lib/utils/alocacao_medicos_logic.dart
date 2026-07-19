@@ -21,6 +21,10 @@ import '../utils/conflict_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AlocacaoMedicosLogic {
+  static bool ativarCacheDaUnidade(String unidadeId) {
+    return AlocacaoCacheStore.ativarUnidade(unidadeId);
+  }
+
   static const String _unidadeFallbackId = 'fyEj6kOXvCuL65sMfCaR';
   static final Map<String, List<Gabinete>> _cacheGabinetesPorUnidade = {};
   static final Map<String, List<Medico>> _cacheMedicosPorUnidade = {};
@@ -73,22 +77,25 @@ class AlocacaoMedicosLogic {
   /// Esta função calcula todos os dias que uma série pode gerar disponibilidades/alocações
   /// e invalida o cache para cada um desses dias
   /// IMPORTANTE: Esta função deve ser chamada SEMPRE que uma série é criada, alocada, desalocada ou atualizada
-  static void invalidateCacheParaSerie(SerieRecorrencia serie, {Unidade? unidade}) {
+  static void invalidateCacheParaSerie(SerieRecorrencia serie,
+      {Unidade? unidade}) {
     if (!serie.ativo) return;
-    
+
     final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
     final medicoId = serie.medicoId;
-    
+
     // Invalidar cache de séries primeiro
     SerieService.invalidateCacheSeries(unidadeId, medicoId);
-    
+
     // Calcular período para invalidar
-    final dataInicio = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
+    final dataInicio = DateTime(
+        serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
     final anoAtual = DateTime.now().year;
     final anoLimite = anoAtual + _anosFuturoCache;
     final dataFimPadrao = DateTime(anoLimite, 12, 31);
     final dataFimSerie = serie.dataFim != null
-        ? DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day)
+        ? DateTime(
+            serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day)
         : dataFimPadrao;
     final dataFim =
         dataFimSerie.isAfter(dataFimPadrao) ? dataFimPadrao : dataFimSerie;
@@ -99,7 +106,7 @@ class AlocacaoMedicosLogic {
     for (int ano = anoInicio; ano <= anoFim; ano++) {
       invalidateCacheFromDate(DateTime(ano, 1, 1));
     }
-    
+
     // CORREÇÃO CRÍTICA: Invalidar também dias específicos baseado no tipo da série
     // Para garantir que TODOS os dias afetados sejam invalidados, não apenas o período
     final diasParaInvalidar = <DateTime>[];
@@ -107,12 +114,12 @@ class AlocacaoMedicosLogic {
     final dataInicioCache = dataInicio.isAfter(DateTime(anoInicio, 1, 1))
         ? dataInicio
         : DateTime(anoInicio, 1, 1);
-    
+
     switch (serie.tipo) {
       case 'Única':
         diasParaInvalidar.add(dataInicio);
         break;
-        
+
       case 'Semanal':
         // Invalidar todas as semanas: dataInicio, dataInicio+7, dataInicio+14, etc.
         DateTime dataAtual = dataInicioCache;
@@ -121,54 +128,63 @@ class AlocacaoMedicosLogic {
           dataAtual = dataAtual.add(Duration(days: diff));
         }
         int iteracoes = 0;
-        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1))) && 
-               iteracoes < 60) { // Limitar a ~1 ano
+        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1))) &&
+            iteracoes < 60) {
+          // Limitar a ~1 ano
           if (dataAtual.weekday == weekday) {
-            diasParaInvalidar.add(DateTime(dataAtual.year, dataAtual.month, dataAtual.day));
+            diasParaInvalidar
+                .add(DateTime(dataAtual.year, dataAtual.month, dataAtual.day));
           }
           dataAtual = dataAtual.add(const Duration(days: 7));
           iteracoes++;
         }
         break;
-        
+
       case 'Quinzenal':
         // CORREÇÃO CRÍTICA: Invalidar todas as quinzenas: dataInicio, dataInicio+14, dataInicio+28, etc.
         // Para uma série quinzenal que começa em 9/2, invalidar: 9/2, 23/2, 9/3, 23/3, etc.
         int diasDesdeInicio = dataInicioCache.difference(dataInicio).inDays;
         if (diasDesdeInicio < 0) diasDesdeInicio = 0;
         final resto = diasDesdeInicio % 14;
-        DateTime dataAtual = dataInicioCache
-            .add(Duration(days: resto == 0 ? 0 : 14 - resto));
+        DateTime dataAtual =
+            dataInicioCache.add(Duration(days: resto == 0 ? 0 : 14 - resto));
         int iteracoes = 0;
-        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1))) && 
-               iteracoes < 30) { // Limitar a ~1 ano
+        while (dataAtual.isBefore(dataFim.add(const Duration(days: 1))) &&
+            iteracoes < 30) {
+          // Limitar a ~1 ano
           // Verificar se é uma quinzena válida (múltiplo de 14 dias a partir do início)
           final diff = dataAtual.difference(dataInicio).inDays;
           if (diff >= 0 && diff % 14 == 0 && dataAtual.weekday == weekday) {
-            diasParaInvalidar.add(DateTime(dataAtual.year, dataAtual.month, dataAtual.day));
+            diasParaInvalidar
+                .add(DateTime(dataAtual.year, dataAtual.month, dataAtual.day));
           }
           dataAtual = dataAtual.add(const Duration(days: 14));
           iteracoes++;
         }
         break;
-        
+
       case 'Mensal':
         // Invalidar todas as ocorrências mensais
-        DateTime mesAtual = DateTime(dataInicioCache.year, dataInicioCache.month, 1);
+        DateTime mesAtual =
+            DateTime(dataInicioCache.year, dataInicioCache.month, 1);
         int iteracoes = 0;
-        while (mesAtual.isBefore(dataFim.add(const Duration(days: 1))) && 
-               iteracoes < 15) { // Limitar a ~1 ano
+        while (mesAtual.isBefore(dataFim.add(const Duration(days: 1))) &&
+            iteracoes < 15) {
+          // Limitar a ~1 ano
           // Calcular a data da ocorrência no mês
           final ocorrencia = _descobrirOcorrenciaNoMes(dataInicio);
           final data = _pegarNthWeekdayDoMes(
-            mesAtual.year, 
-            mesAtual.month, 
-            weekday, 
+            mesAtual.year,
+            mesAtual.month,
+            weekday,
             ocorrencia,
-            usarUltimoQuandoNaoExiste5: serie.parametros['usarUltimoQuandoNaoExiste5'] ?? false,
-            usarUltimoQuandoExiste5: serie.parametros['usarUltimoQuandoExiste5'] ?? false,
+            usarUltimoQuandoNaoExiste5:
+                serie.parametros['usarUltimoQuandoNaoExiste5'] ?? false,
+            usarUltimoQuandoExiste5:
+                serie.parametros['usarUltimoQuandoExiste5'] ?? false,
           );
-          if (data != null && data.isAfter(dataInicio.subtract(const Duration(days: 1))) && 
+          if (data != null &&
+              data.isAfter(dataInicio.subtract(const Duration(days: 1))) &&
               data.isBefore(dataFim.add(const Duration(days: 1)))) {
             diasParaInvalidar.add(DateTime(data.year, data.month, data.day));
           }
@@ -181,7 +197,7 @@ class AlocacaoMedicosLogic {
           iteracoes++;
         }
         break;
-        
+
       case 'Consecutivo':
         final numeroDias = serie.parametros['numeroDias'] as int? ?? 5;
         if (!dataInicio.isBefore(DateTime(anoInicio, 1, 1))) {
@@ -190,25 +206,25 @@ class AlocacaoMedicosLogic {
               i < numeroDias &&
                   dataAtual.isBefore(dataFim.add(const Duration(days: 1)));
               i++) {
-            diasParaInvalidar.add(
-                DateTime(dataAtual.year, dataAtual.month, dataAtual.day));
+            diasParaInvalidar
+                .add(DateTime(dataAtual.year, dataAtual.month, dataAtual.day));
             dataAtual = dataAtual.add(const Duration(days: 1));
           }
         }
         break;
-        
+
       default:
         // Para outros tipos, invalidar apenas o período (já feito acima)
         break;
     }
-    
+
     // CORREÇÃO CRÍTICA: Invalidar cache para cada dia específico calculado
     // Além de invalidar o período inteiro, invalidar também cada dia específico
     // para garantir máxima precisão
     for (final dia in diasParaInvalidar) {
       invalidateCacheForDay(dia);
     }
-    
+
     _log(
         '🗑️ [CACHE] Cache invalidado para série ${serie.id} (${serie.tipo}): ${diasParaInvalidar.length} dias específicos + período completo desde ${dataInicio.day}/${dataInicio.month}/${dataInicio.year} até ${dataFim.day}/${dataFim.month}/${dataFim.year}');
   }
@@ -278,14 +294,14 @@ class AlocacaoMedicosLogic {
   /// Obtém a source apropriada para buscar dados do Firestore
   // Flag para rastrear se o app está em foco
   static bool _appEmFoco = true;
-  
+
   /// Define se o app está em foco (chamado pelo lifecycle observer)
   static void setAppEmFoco(bool emFoco) {
     if (_appEmFoco == emFoco) return;
     _appEmFoco = emFoco;
     _log('ℹ️ [CACHE] App em foco: ${_appEmFoco ? 'sim' : 'não'}');
   }
-  
+
   /// Retorna Source.server se o cache foi invalidado, Source.serverAndCache caso contrário
   static Source _getSourceForDay(DateTime? day) {
     if (day == null) {
@@ -302,8 +318,7 @@ class AlocacaoMedicosLogic {
   /// OTIMIZAÇÃO: Usa cache de exceções quando disponível para evitar chamadas redundantes
   static Future<Set<String>> extrairExcecoesCanceladasParaDia(
       String unidadeId, DateTime data) async {
-    final cachePorDia =
-        AlocacaoCacheStore.getExcecoesCanceladasParaDia(data);
+    final cachePorDia = AlocacaoCacheStore.getExcecoesCanceladasParaDia(data);
     if (cachePorDia != null) {
       return Set<String>.from(cachePorDia);
     }
@@ -342,7 +357,7 @@ class AlocacaoMedicosLogic {
       // A busca do Firestore é muito lenta (busca todos os médicos e depois exceções)
       // Se o cache tem dados, podemos confiar nele para este dia específico
       // A busca do Firestore será feita apenas quando o cache estiver completamente vazio
-      
+
       // OTIMIZAÇÃO: Buscar do Firestore apenas se o cache estiver vazio
       // Isso evita queries desnecessárias que podem levar vários segundos
       if (AlocacaoCacheStore.cacheExcecoes.isEmpty) {
@@ -353,7 +368,7 @@ class AlocacaoMedicosLogic {
             .doc(unidadeId)
             .collection('ocupantes')
             .where('ativo', isEqualTo: true);
-        
+
         final medicosSnapshot = await medicosRef
             .limit(20) // Limitar drasticamente para melhor performance
             .get(const GetOptions(source: Source.serverAndCache));
@@ -377,7 +392,8 @@ class AlocacaoMedicosLogic {
                 .get(GetOptions(source: _getSourceForDay(data)));
 
             for (final doc in snapshot.docs) {
-              final excecao = ExcecaoSerie.fromMap({...doc.data(), 'id': doc.id});
+              final excecao =
+                  ExcecaoSerie.fromMap({...doc.data(), 'id': doc.id});
               if (excecao.cancelada &&
                   excecao.data.year == data.year &&
                   excecao.data.month == data.month &&
@@ -480,7 +496,6 @@ class AlocacaoMedicosLogic {
         _cacheMedicosPorUnidade[unidadeKey] = List<Medico>.from(meds);
       }
 
-
       // Usar cache quando disponível
       List<Disponibilidade> disps;
       List<Alocacao> alocs;
@@ -488,8 +503,10 @@ class AlocacaoMedicosLogic {
       if (dataFiltroDia != null) {
         final key = keyDia(dataFiltroDia);
         // Verificar cache primeiro
-        final temCacheDisp = AlocacaoCacheStore.cacheDispPorDia.containsKey(key);
-        final temCacheAloc = AlocacaoCacheStore.cacheAlocPorDia.containsKey(key);
+        final temCacheDisp =
+            AlocacaoCacheStore.cacheDispPorDia.containsKey(key);
+        final temCacheAloc =
+            AlocacaoCacheStore.cacheAlocPorDia.containsKey(key);
         final estaInvalidado =
             AlocacaoCacheStore.cacheInvalidadoPorDia.contains(key);
         if (temCacheDisp && temCacheAloc && !estaInvalidado) {
@@ -498,8 +515,7 @@ class AlocacaoMedicosLogic {
               '💾 [CACHE] Usando cache para dia $key (${dataFiltroDia.day}/${dataFiltroDia.month}/${dataFiltroDia.year})');
           disps = List<Disponibilidade>.from(
               AlocacaoCacheStore.cacheDispPorDia[key]!);
-          alocs =
-              List<Alocacao>.from(AlocacaoCacheStore.cacheAlocPorDia[key]!);
+          alocs = List<Alocacao>.from(AlocacaoCacheStore.cacheAlocPorDia[key]!);
         } else {
           AlocacaoCacheStore.registrarCacheMiss(
             key,
@@ -546,8 +562,7 @@ class AlocacaoMedicosLogic {
           final dataKey =
               '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
           final temExcecao = excecoesCanceladas.contains(dataKey);
-          if (temExcecao) {
-          }
+          if (temExcecao) {}
           return !temExcecao;
         }).toList();
         if (dispsAntes != disps.length) {
@@ -561,8 +576,7 @@ class AlocacaoMedicosLogic {
           final dataKey =
               '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
           final temExcecao = excecoesCanceladas.contains(dataKey);
-          if (temExcecao) {
-          }
+          if (temExcecao) {}
           return !temExcecao;
         }).toList();
         if (alocsAntes != alocs.length) {
@@ -704,14 +718,24 @@ class AlocacaoMedicosLogic {
     final dataAlvo =
         DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
 
-    // CORREÇÃO: Remover TODAS as alocações do mesmo médico no mesmo dia
-    // EXCETO alocações otimistas (que começam com "otimista_") - essas devem ser preservadas
+    String? horarioInicioForcado;
+    String? horarioFimForcado;
+    if (horariosForcados != null && horariosForcados.length >= 2) {
+      horarioInicioForcado = horariosForcados[0];
+      horarioFimForcado = horariosForcados[1];
+    }
+
+    // Substituir apenas a alocação correspondente ao cartão/intervalo. Outras
+    // sequências do mesmo médico no dia têm de permanecer independentes.
     final alocacoesAnteriores = alocacoes.where((a) {
       final alocDate = DateTime(a.data.year, a.data.month, a.data.day);
       // NÃO remover alocações otimistas - elas serão substituídas pela nova alocação real
-      return a.medicoId == medicoId && 
-             alocDate == dataAlvo &&
-             !a.id.startsWith('otimista_');
+      return a.medicoId == medicoId &&
+          alocDate == dataAlvo &&
+          (horarioInicioForcado == null ||
+              (a.horarioInicio == horarioInicioForcado &&
+                  a.horarioFim == horarioFimForcado)) &&
+          !a.id.startsWith('otimista_');
     }).toList();
 
     if (alocacoesAnteriores.isNotEmpty) {
@@ -767,8 +791,8 @@ class AlocacaoMedicosLogic {
       // Permitir alocar gabinete mesmo sem horários (será usado horário padrão)
       if (dispDoDia.isNotEmpty && dispDoDia.first.horarios.isNotEmpty) {
         horarioInicio = dispDoDia.first.horarios[0];
-        horarioFim = dispDoDia.first.horarios.length > 1 
-            ? dispDoDia.first.horarios[1] 
+        horarioFim = dispDoDia.first.horarios.length > 1
+            ? dispDoDia.first.horarios[1]
             : dispDoDia.first.horarios[0];
       } else {
         // Usar horários padrão quando não há horários configurados
@@ -828,7 +852,10 @@ class AlocacaoMedicosLogic {
     // O listener do Firestore vai atualizar depois, mas isso garante que o cartão apareça no gabinete
     final indexExistente = alocacoes.indexWhere((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-      return a.medicoId == medicoId && aDate == dataAlvo;
+      return a.medicoId == medicoId &&
+          aDate == dataAlvo &&
+          a.horarioInicio == horarioInicio &&
+          a.horarioFim == horarioFim;
     });
 
     if (indexExistente != -1) {
@@ -852,6 +879,8 @@ class AlocacaoMedicosLogic {
   static Future<void> desalocarMedicoDiaUnico({
     required DateTime selectedDate,
     required String medicoId,
+    String? alocacaoId,
+    String? serieId,
     required List<Alocacao> alocacoes,
     required List<Disponibilidade> disponibilidades,
     required List<Medico> medicos,
@@ -867,7 +896,9 @@ class AlocacaoMedicosLogic {
 
     final indexAloc = alocacoes.indexWhere((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-      return a.medicoId == medicoId && aDate == dataAlvo;
+      return a.medicoId == medicoId &&
+          aDate == dataAlvo &&
+          (alocacaoId == null || a.id == alocacaoId);
     });
     if (indexAloc == -1) {
       return;
@@ -881,30 +912,35 @@ class AlocacaoMedicosLogic {
 
     if (eAlocacaoDeSerie) {
       // Extrair ID da série
-      String? serieId;
+      String? serieIdAlvo = serieId;
       final partes = alocacaoRemovida.id.split('_');
 
-      if (partes.length >= 4 && partes[0] == 'serie' && partes[1] == 'serie') {
-        serieId = 'serie_${partes[2]}';
-      } else if (partes.length >= 3 && partes[0] == 'serie') {
-        serieId =
+      if (serieIdAlvo == null &&
+          partes.length >= 4 &&
+          partes[0] == 'serie' &&
+          partes[1] == 'serie') {
+        serieIdAlvo = 'serie_${partes[2]}';
+      } else if (serieIdAlvo == null &&
+          partes.length >= 3 &&
+          partes[0] == 'serie') {
+        serieIdAlvo =
             partes[1].startsWith('serie') ? partes[1] : 'serie_${partes[1]}';
       }
 
-      if (serieId != null) {
+      if (serieIdAlvo != null) {
         // Verificar se há exceção para esta série e data
         final excecoes = await SerieService.carregarExcecoes(
           medicoId,
           unidade: unidade,
           dataInicio: dataAlvo,
           dataFim: dataAlvo,
-          serieId: serieId,
+          serieId: serieIdAlvo,
           forcarServidor: true,
         );
 
         final excecaoExistente = excecoes.firstWhere(
           (e) =>
-              e.serieId == serieId &&
+              e.serieId == serieIdAlvo &&
               e.data.year == dataAlvo.year &&
               e.data.month == dataAlvo.month &&
               e.data.day == dataAlvo.day &&
@@ -926,9 +962,11 @@ class AlocacaoMedicosLogic {
             id: excecaoExistente.id,
             serieId: excecaoExistente.serieId,
             data: excecaoExistente.data,
-            cancelada: false, // IMPORTANTE: Não cancelada - é exceção de gabinete, não de disponibilidade
+            cancelada:
+                false, // IMPORTANTE: Não cancelada - é exceção de gabinete, não de disponibilidade
             horarios: excecaoExistente.horarios,
-            gabineteId: null, // Remover gabinete - médico fica sem gabinete mas disponível
+            gabineteId:
+                null, // Remover gabinete - médico fica sem gabinete mas disponível
           );
 
           await SerieService.salvarExcecao(excecaoAtualizada, medicoId,
@@ -972,7 +1010,7 @@ class AlocacaoMedicosLogic {
 
           // Criar exceção de gabinete removendo o gabinete deste dia específico
           await DisponibilidadeSerieService.removerGabineteDataSerie(
-            serieId: serieId,
+            serieId: serieIdAlvo,
             medicoId: medicoId,
             data: dataAlvo,
             unidade: unidade,
@@ -1062,7 +1100,7 @@ class AlocacaoMedicosLogic {
       _log('⚠️ [DESALOCAÇÃO] Médico já estava nos disponíveis: $medicoId');
     }
 
-      // Chamar onAlocacoesChanged() DEPOIS de invalidar cache e atualizar lista local
+    // Chamar onAlocacoesChanged() DEPOIS de invalidar cache e atualizar lista local
     onAlocacoesChanged();
   }
 
@@ -1070,6 +1108,7 @@ class AlocacaoMedicosLogic {
     required String medicoId,
     required DateTime dataRef,
     required String tipo,
+    String? serieId,
     required List<Disponibilidade> disponibilidades,
     required List<Alocacao> alocacoes,
     required List<Medico> medicos,
@@ -1096,6 +1135,7 @@ class AlocacaoMedicosLogic {
     // Encontrar a série correspondente
     SerieRecorrencia? serieEncontrada;
     for (final serie in series) {
+      if (serieId != null && serie.id != serieId) continue;
       if (!serie.ativo || serie.tipo != tipoNormalizado) continue;
 
       // Verificar se a data está dentro do período da série
@@ -1227,50 +1267,50 @@ class AlocacaoMedicosLogic {
         alocacoes.removeWhere((a) => a.id == alocacao.id);
       }
 
-        // CORREÇÃO: Deletar alocações antigas do Firestore (se existirem)
-        // Com a nova arquitetura, séries não criam mais alocações individuais
-        // Mas pode haver alocações antigas de versões anteriores que precisam ser limpas
-        // IMPORTANTE: Buscar TODAS as alocações da série do Firestore para limpeza
-        try {
-          final firestore = FirebaseFirestore.instance;
-          final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-          final batch = firestore.batch();
-          int totalParaDeletar = 0;
+      // CORREÇÃO: Deletar alocações antigas do Firestore (se existirem)
+      // Com a nova arquitetura, séries não criam mais alocações individuais
+      // Mas pode haver alocações antigas de versões anteriores que precisam ser limpas
+      // IMPORTANTE: Buscar TODAS as alocações da série do Firestore para limpeza
+      try {
+        final firestore = FirebaseFirestore.instance;
+        final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+        final batch = firestore.batch();
+        int totalParaDeletar = 0;
 
-          // Buscar alocações da série em todos os anos possíveis (ano atual + próximos 2 anos)
-          // porque quando aloca, cria alocações para 90 dias, mas séries infinitas podem cruzar anos
-          final anoAtual = dataRef.year;
-          final anoLimite = anoAtual + 2; // Buscar até 2 anos no futuro
+        // Buscar alocações da série em todos os anos possíveis (ano atual + próximos 2 anos)
+        // porque quando aloca, cria alocações para 90 dias, mas séries infinitas podem cruzar anos
+        final anoAtual = dataRef.year;
+        final anoLimite = anoAtual + 2; // Buscar até 2 anos no futuro
 
-          for (int ano = anoAtual; ano <= anoLimite; ano++) {
-            final alocacoesRef = firestore
-                .collection('unidades')
-                .doc(unidadeId)
-                .collection('alocacoes')
-                .doc(ano.toString())
-                .collection('registos');
+        for (int ano = anoAtual; ano <= anoLimite; ano++) {
+          final alocacoesRef = firestore
+              .collection('unidades')
+              .doc(unidadeId)
+              .collection('alocacoes')
+              .doc(ano.toString())
+              .collection('registos');
 
-            // Buscar todas as alocações do médico neste ano
-            final snapshot = await alocacoesRef
-                .where('medicoId', isEqualTo: medicoId)
-                .get(const GetOptions(source: Source.serverAndCache));
+          // Buscar todas as alocações do médico neste ano
+          final snapshot = await alocacoesRef
+              .where('medicoId', isEqualTo: medicoId)
+              .get(const GetOptions(source: Source.serverAndCache));
 
-            // Filtrar apenas as que têm ID começando com o prefixo da série
-            for (final doc in snapshot.docs) {
-              final alocId = doc.id;
-              if (alocId.startsWith(serieIdPrefix)) {
-                batch.delete(alocacoesRef.doc(alocId));
-                totalParaDeletar++;
-              }
+          // Filtrar apenas as que têm ID começando com o prefixo da série
+          for (final doc in snapshot.docs) {
+            final alocId = doc.id;
+            if (alocId.startsWith(serieIdPrefix)) {
+              batch.delete(alocacoesRef.doc(alocId));
+              totalParaDeletar++;
             }
           }
-
-          if (totalParaDeletar > 0) {
-            await batch.commit();
-          }
-        } catch (e) {
-          debugPrint('⚠️ Erro ao desalocar série (batch): $e');
         }
+
+        if (totalParaDeletar > 0) {
+          await batch.commit();
+        }
+      } catch (e) {
+        debugPrint('⚠️ Erro ao desalocar série (batch): $e');
+      }
 
       // Cache já foi invalidado acima após desalocar a série
     }
@@ -1431,31 +1471,32 @@ class AlocacaoMedicosLogic {
         dataInicio = DateTime(ano, 1, 1);
       }
 
-    // Carregar médicos ativos a partir do cache local quando possível
-    // (evita round-trip desnecessário ao Firestore).
-    final unidadeKey = _cacheUnidadeKey(unidade);
-    final cachedMedicos = _cacheMedicosPorUnidade[unidadeKey];
-    List<String> medicoIds = [];
-    if (cachedMedicos != null && cachedMedicos.isNotEmpty) {
-      medicoIds = cachedMedicos
-          .where((m) => m.ativo)
-          .map((m) => m.id)
-          .where((id) => id.isNotEmpty)
-          .toList();
-    }
-    
-    if (medicoIds.isEmpty) {
-      // Fallback: buscar do servidor apenas quando não há cache confiável
-      final medicosRef = firestore
-          .collection('unidades')
-          .doc(unidade.id)
-          .collection('ocupantes');
-      
-      final medicosSnapshot = await medicosRef
-          .where('ativo', isEqualTo: true)
-          .get(const GetOptions(source: Source.server)); // Forçar servidor para evitar cache
-      medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
-    }
+      // Carregar médicos ativos a partir do cache local quando possível
+      // (evita round-trip desnecessário ao Firestore).
+      final unidadeKey = _cacheUnidadeKey(unidade);
+      final cachedMedicos = _cacheMedicosPorUnidade[unidadeKey];
+      List<String> medicoIds = [];
+      if (cachedMedicos != null && cachedMedicos.isNotEmpty) {
+        medicoIds = cachedMedicos
+            .where((m) => m.ativo)
+            .map((m) => m.id)
+            .where((id) => id.isNotEmpty)
+            .toList();
+      }
+
+      if (medicoIds.isEmpty) {
+        // Fallback: buscar do servidor apenas quando não há cache confiável
+        final medicosRef = firestore
+            .collection('unidades')
+            .doc(unidade.id)
+            .collection('ocupantes');
+
+        final medicosSnapshot = await medicosRef
+            .where('ativo', isEqualTo: true)
+            .get(const GetOptions(
+                source: Source.server)); // Forçar servidor para evitar cache
+        medicoIds = medicosSnapshot.docs.map((d) => d.id).toList();
+      }
       if (medicoIds.isEmpty) {
         return disponibilidadesMap.values.toList();
       }
@@ -1526,7 +1567,7 @@ class AlocacaoMedicosLogic {
 //              };
 //              writeLogToFile(jsonEncode(logEntry));
 //            } catch (e) {}
-            
+
 // #endregion
 
             // CORREÇÃO CRÍTICA: Só forçar servidor quando estamos a carregar o ANO inteiro
@@ -1568,7 +1609,7 @@ class AlocacaoMedicosLogic {
 //              };
 //              writeLogToFile(jsonEncode(logEntry));
 //            } catch (e) {}
-            
+
 // #endregion
 
             if (series.isEmpty) {
@@ -1585,7 +1626,10 @@ class AlocacaoMedicosLogic {
               final dataFiltroNormalizada =
                   DateTime(dataFiltro.year, dataFiltro.month, dataFiltro.day);
               seriesRelevantes = series.where((serie) {
-                final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
+                final serieDataInicioNormalizada = DateTime(
+                    serie.dataInicio.year,
+                    serie.dataInicio.month,
+                    serie.dataInicio.day);
                 // Série começou depois do dia selecionado - não aplicável
                 if (serieDataInicioNormalizada.isAfter(dataFiltroNormalizada)) {
                   // #region agent log (COMENTADO - pode ser reativado se necessário)
@@ -1611,13 +1655,14 @@ class AlocacaoMedicosLogic {
 //                    };
 //                    writeLogToFile(jsonEncode(logEntry));
 //                  } catch (e) {}
-                  
+
 // #endregion
                   return false;
                 }
                 // Série terminou antes do dia selecionado - não aplicável
                 if (serie.dataFim != null) {
-                  final serieDataFimNormalizada = DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day);
+                  final serieDataFimNormalizada = DateTime(serie.dataFim!.year,
+                      serie.dataFim!.month, serie.dataFim!.day);
                   if (serieDataFimNormalizada.isBefore(dataFiltroNormalizada)) {
                     // #region agent log (COMENTADO - pode ser reativado se necessário)
 
@@ -1639,7 +1684,7 @@ class AlocacaoMedicosLogic {
 //                      };
 //                      writeLogToFile(jsonEncode(logEntry));
 //                    } catch (e) {}
-                    
+
 // #endregion
                     return false;
                   }
@@ -1668,11 +1713,10 @@ class AlocacaoMedicosLogic {
 //                  };
 //                  writeLogToFile(jsonEncode(logEntry));
 //                } catch (e) {}
-                
+
 // #endregion
                 return true;
               }).toList();
-
 
               // #region agent log (COMENTADO - pode ser reativado se necessário)
 
@@ -1694,7 +1738,7 @@ class AlocacaoMedicosLogic {
 //                };
 //                writeLogToFile(jsonEncode(logEntry));
 //              } catch (e) {}
-              
+
 // #endregion
 
               // Se nenhuma série é relevante, não precisa carregar exceções (ECONOMIZA 1 chamada ao Firestore)
@@ -1724,10 +1768,10 @@ class AlocacaoMedicosLogic {
             // CORREÇÃO CRÍTICA: Quando anoEspecifico é fornecido (ex: filtro de médicos não alocados),
             // SEMPRE forçar servidor para garantir dados completos do ano inteiro, independentemente do cache do dia atual.
             // O cache em memória pode estar incompleto se foi carregado para um dia específico.
-            final deveForcarServidorExcecoes = anoEspecifico != null 
-                ? true  // Sempre forçar servidor quando filtro de ano completo é usado
+            final deveForcarServidorExcecoes = anoEspecifico != null
+                ? true // Sempre forçar servidor quando filtro de ano completo é usado
                 : false; // Usar cache do Firestore quando filtro de dia é usado
-            
+
             // OTIMIZAÇÃO: Usar cache em memória APENAS quando não estamos forçando servidor
             // Chave do cache: medicoId_dataInicio_dataFim
             final cacheKey =
@@ -1762,13 +1806,11 @@ class AlocacaoMedicosLogic {
                     .toList()
                 : excecoes;
 
-
             // Mensagens de debug removidas para reduzir ruído no terminal
             // debugPrint('  📊 Exceções carregadas do Firestore para $medicoId: ${excecoes.length} (filtradas: ${excecoesFiltradas.length})');
             // for (final excecao in excecoesFiltradas) {
             //   debugPrint('    - Exceção: ${excecao.serieId} - ${excecao.data.day}/${excecao.data.month}/${excecao.data.year} - Cancelada: ${excecao.cancelada}');
             // }
-
 
             // Gerar disponibilidades dinamicamente
             // Determinar período para gerar disponibilidades
@@ -1783,12 +1825,10 @@ class AlocacaoMedicosLogic {
               // para garantir que séries que começaram em meses anteriores sejam capturadas
               // Exemplo: série começa em 9/2, navegamos para 15/3
               // Precisamos de período que inclua pelo menos 9/2 para calcular quinzenas válidas
-              dataInicioGeracao = DateTime(
-                  dataInicioGeracao.year,
-                  dataInicioGeracao.month,
-                  dataInicioGeracao.day - 28);
-              dataFimGeracao = DateTime(
-                  dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day + 1);
+              dataInicioGeracao = DateTime(dataInicioGeracao.year,
+                  dataInicioGeracao.month, dataInicioGeracao.day - 28);
+              dataFimGeracao = DateTime(dataFiltroDia.year, dataFiltroDia.month,
+                  dataFiltroDia.day + 1);
             } else {
               final ano = anoEspecifico != null
                   ? int.tryParse(anoEspecifico) ?? DateTime.now().year
@@ -1819,7 +1859,7 @@ class AlocacaoMedicosLogic {
 //              };
 //              writeLogToFile(jsonEncode(logEntry));
 //            } catch (e) {}
-            
+
 // #endregion
 
             final dispsGeradas = SerieGenerator.gerarDisponibilidades(
@@ -1849,16 +1889,18 @@ class AlocacaoMedicosLogic {
 //              };
 //              writeLogToFile(jsonEncode(logEntry));
 //            } catch (e) {}
-            
+
 // #endregion
-            
+
             // Filtrar apenas disponibilidades do dia selecionado se dataFiltroDia foi fornecido
             final dispsFiltradas = dataFiltroDia != null
                 ? dispsGeradas.where((d) {
-                    final dData = DateTime(d.data.year, d.data.month, d.data.day);
-                    final filtroData = DateTime(dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+                    final dData =
+                        DateTime(d.data.year, d.data.month, d.data.day);
+                    final filtroData = DateTime(dataFiltroDia.year,
+                        dataFiltroDia.month, dataFiltroDia.day);
                     final corresponde = dData == filtroData;
-                    
+
                     // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //                    try {
@@ -1880,16 +1922,15 @@ class AlocacaoMedicosLogic {
 //                        writeLogToFile(jsonEncode(logEntry));
 //                      }
 //                    } catch (e) {}
-                    
+
 // #endregion
-                    
+
                     return corresponde;
                   }).toList()
                 : dispsGeradas;
 
-            if (dataFiltroDia != null) {
-            }
-            
+            if (dataFiltroDia != null) {}
+
             // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //            try {
@@ -1911,9 +1952,8 @@ class AlocacaoMedicosLogic {
 //              };
 //              writeLogToFile(jsonEncode(logEntry));
 //            } catch (e) {}
-            
+
 // #endregion
-            
 
             medicosComSeries.add(medicoId);
 
@@ -1932,7 +1972,7 @@ class AlocacaoMedicosLogic {
 
       // Aguardar todas as cargas em paralelo e coletar resultados
       final resultados = await Future.wait(futures);
-      
+
       // Mesclar todos os resultados no Map para evitar duplicatas
       for (final resultado in resultados) {
         for (final disp in resultado) {
@@ -1942,7 +1982,6 @@ class AlocacaoMedicosLogic {
               disp; // Sobrescreve se já existir (evita duplicatas)
         }
       }
-
     } catch (e) {
       debugPrint('❌ Erro ao carregar disponibilidades: $e');
     } finally {
@@ -2031,12 +2070,13 @@ class AlocacaoMedicosLogic {
                   dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
               final fim = inicio.add(const Duration(days: 1));
               query = query
-                  .where('data', isGreaterThanOrEqualTo: inicio.toIso8601String())
+                  .where('data',
+                      isGreaterThanOrEqualTo: inicio.toIso8601String())
                   .where('data', isLessThan: fim.toIso8601String());
             }
             // OTIMIZAÇÃO CRÍTICA: Usar cache quando disponível em vez de forçar servidor
-            final registosSnapshot =
-                await query.get(GetOptions(source: _getSourceForDay(dataFiltroDia ?? DateTime.now())));
+            final registosSnapshot = await query.get(GetOptions(
+                source: _getSourceForDay(dataFiltroDia ?? DateTime.now())));
             final alocacoesDaColecao = <Alocacao>[];
             for (final doc in registosSnapshot.docs) {
               final data = doc.data();
@@ -2121,13 +2161,15 @@ class AlocacaoMedicosLogic {
           // CORREÇÃO CRÍTICA: Usar cache quando disponível - SerieService.invalidateCacheSeries
           // já é chamado quando há invalidação (em invalidateCacheParaSerie, desalocarSerie, etc.)
           // Só forçar servidor quando há cache invalidado para o período que estamos a carregar
-          final deveForcarServidor = dataFiltroDia != null && isCacheInvalidado(dataFiltroDia);
+          final deveForcarServidor =
+              dataFiltroDia != null && isCacheInvalidado(dataFiltroDia);
           series = await SerieService.carregarSeries(
             medicoId,
             unidade: unidade,
             dataInicio: dataInicioParaCarregarSeries,
             dataFim: dataFimParaCarregarSeries,
-            forcarServidor: deveForcarServidor, // Só forçar servidor quando necessário
+            forcarServidor:
+                deveForcarServidor, // Só forçar servidor quando necessário
           );
 
           // OTIMIZAÇÃO: Se não há séries relevantes para o dia, não precisa carregar exceções
@@ -2182,13 +2224,15 @@ class AlocacaoMedicosLogic {
           // CORREÇÃO CRÍTICA: Forçar servidor se o cache estiver invalidado para este dia
           // Isso garante que exceções recém-criadas (ex: exceção cancelada ao desalocar "apenas este dia")
           // sejam carregadas imediatamente
-          final cacheInvalidado = dataFiltroDia != null && isCacheInvalidado(dataFiltroDia);
+          final cacheInvalidado =
+              dataFiltroDia != null && isCacheInvalidado(dataFiltroDia);
           excecoes = await SerieService.carregarExcecoes(
             medicoId,
             unidade: unidade,
             dataInicio: dataInicioExcecoes,
             dataFim: dataFimExcecoes,
-            forcarServidor: cacheInvalidado, // Forçar servidor se cache invalidado
+            forcarServidor:
+                cacheInvalidado, // Forçar servidor se cache invalidado
           );
 
           // Filtrar exceções para o dia se necessário
@@ -2213,10 +2257,8 @@ class AlocacaoMedicosLogic {
             // para garantir que séries que começaram em meses anteriores sejam capturadas
             // Exemplo: série começa em 9/2, navegamos para 15/3
             // Precisamos de período que inclua pelo menos 9/2 para calcular quinzenas válidas
-            dataInicioAlocacoes = DateTime(
-                dataInicioAlocacoes.year,
-                dataInicioAlocacoes.month,
-                dataInicioAlocacoes.day - 28);
+            dataInicioAlocacoes = DateTime(dataInicioAlocacoes.year,
+                dataInicioAlocacoes.month, dataInicioAlocacoes.day - 28);
             dataFimAlocacoes = DateTime(
                 dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day + 1);
           } else {
@@ -2276,12 +2318,13 @@ class AlocacaoMedicosLogic {
       // Criar conjunto de médicos/datas que têm exceções ativas (não canceladas) com gabineteId
       // Estas datas devem manter alocações "Única" do Firestore se existirem
       // OTIMIZAÇÃO CRÍTICA: Processar em PARALELO em vez de sequencialmente
-      
+
       // Determinar período uma vez
       DateTime dataInicioExcecoes;
       DateTime dataFimExcecoes;
       if (dataFiltroDia != null) {
-        dataInicioExcecoes = DateTime(dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
+        dataInicioExcecoes = DateTime(
+            dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
         dataFimExcecoes = dataInicioExcecoes.add(const Duration(days: 1));
       } else {
         final ano = anoEspecifico != null
@@ -2290,7 +2333,7 @@ class AlocacaoMedicosLogic {
         dataInicioExcecoes = DateTime(ano, 1, 1);
         dataFimExcecoes = DateTime(ano + 1, 1, 1);
       }
-      
+
       // Processar todos os médicos em paralelo (cada future retorna uma lista de dataKeys)
       final futuresExcecoes = <Future<List<String>>>[];
       for (final medicoId in medicoIds) {
@@ -2306,7 +2349,8 @@ class AlocacaoMedicosLogic {
             );
             for (final excecao in excecoes) {
               if (!excecao.cancelada && excecao.gabineteId != null) {
-                final dataKey = '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+                final dataKey =
+                    '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
                 dataKeys.add(dataKey);
               }
             }
@@ -2316,7 +2360,7 @@ class AlocacaoMedicosLogic {
           return dataKeys;
         })());
       }
-      
+
       // Aguardar todas as exceções serem carregadas em paralelo e coletar resultados
       final resultadosExcecoes = await Future.wait(futuresExcecoes);
       final datasComExcecoesAtivas = <String>{};
@@ -2350,7 +2394,8 @@ class AlocacaoMedicosLogic {
         // CORREÇÃO: Se há série alocada para esta data (está em chavesSeriesParaRemover),
         // mas NÃO há exceção ativa, remover alocação "Única" do Firestore
         // porque será substituída pela alocação gerada da série
-        if (!aloc.id.startsWith('serie_') && chavesSeriesParaRemover.contains(dataKey)) {
+        if (!aloc.id.startsWith('serie_') &&
+            chavesSeriesParaRemover.contains(dataKey)) {
           if (!datasComExcecoesAtivas.contains(dataKey)) {
             // Há série alocada para esta data mas não há exceção ativa,
             // então a alocação "Única" será substituída pela alocação gerada da série
@@ -2360,7 +2405,7 @@ class AlocacaoMedicosLogic {
 
         // Adicionar apenas alocações "Única" (não são de séries)
         final chave =
-            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
         // Alocações "Única" do Firestore têm prioridade sobre alocações geradas (caso raro de conflito)
         alocacoesMap[chave] = aloc;
       }
@@ -2369,13 +2414,12 @@ class AlocacaoMedicosLogic {
       // Isso substitui qualquer alocação antiga da mesma série/data
       for (final aloc in alocacoesGeradas) {
         final chave =
-            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
         alocacoesMap[chave] = aloc;
       }
 
       alocacoes.clear();
       alocacoes.addAll(alocacoesMap.values);
-
     } catch (e) {
       // Em caso de erro, retornar apenas as alocações do Firestore
     }

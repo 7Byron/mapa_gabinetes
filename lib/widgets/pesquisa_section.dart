@@ -6,6 +6,7 @@ class PesquisaSection extends StatefulWidget {
   final String? pesquisaEspecialidade;
   final List<String> opcoesNome;
   final List<String> opcoesEspecialidade;
+  final int cartoesDestacados;
   final Function(String?) onPesquisaNomeChanged;
   final Function(String?) onPesquisaEspecialidadeChanged;
   final VoidCallback onLimparPesquisa;
@@ -16,6 +17,7 @@ class PesquisaSection extends StatefulWidget {
     required this.pesquisaEspecialidade,
     required this.opcoesNome,
     required this.opcoesEspecialidade,
+    required this.cartoesDestacados,
     required this.onPesquisaNomeChanged,
     required this.onPesquisaEspecialidadeChanged,
     required this.onLimparPesquisa,
@@ -50,13 +52,13 @@ class _PesquisaSectionState extends State<PesquisaSection> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.search,
+                Icons.highlight_alt,
                 color: Colors.blue.shade900,
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
-                'Pesquisa',
+                'Destacar',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -71,7 +73,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
           DropdownButtonFormField<String>(
             initialValue: widget.pesquisaNome,
             decoration: InputDecoration(
-              labelText: 'Pesquisar por Nome',
+              labelText: 'Destacar Médico',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
@@ -84,8 +86,9 @@ class _PesquisaSectionState extends State<PesquisaSection> {
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: Colors.blue.shade700, width: 1),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              suffixIcon: const Icon(Icons.person_search),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              suffixIcon: const Icon(Icons.person_pin_circle_outlined),
             ),
             isExpanded: true,
             items: [
@@ -109,7 +112,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
           DropdownButtonFormField<String>(
             initialValue: widget.pesquisaEspecialidade,
             decoration: InputDecoration(
-              labelText: 'Pesquisar por Especialidade',
+              labelText: 'Destacar Especialidade',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
@@ -122,8 +125,9 @@ class _PesquisaSectionState extends State<PesquisaSection> {
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: Colors.blue.shade700, width: 1),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              suffixIcon: const Icon(Icons.medical_services),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              suffixIcon: const Icon(Icons.local_hospital_outlined),
             ),
             isExpanded: true,
             items: [
@@ -152,7 +156,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
               child: ElevatedButton.icon(
                 onPressed: widget.onLimparPesquisa,
                 icon: const Icon(Icons.clear),
-                label: const Text('Limpar Pesquisa'),
+                label: const Text('Limpar Destaque'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.grey.shade200,
                   foregroundColor: Colors.grey.shade700,
@@ -173,6 +177,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
                 border: Border.all(color: Colors.orange.shade200),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
                     Icons.info_outline,
@@ -181,14 +186,28 @@ class _PesquisaSectionState extends State<PesquisaSection> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      widget.pesquisaNome != null
-                          ? 'Médico destacado: ${widget.pesquisaNome}'
-                          : 'Especialidade destacada: ${widget.pesquisaEspecialidade}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange.shade700,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.pesquisaNome != null
+                              ? 'Médico destacado: ${widget.pesquisaNome}'
+                              : 'Especialidade destacada: ${widget.pesquisaEspecialidade}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cartões destacados: ${widget.cartoesDestacados}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

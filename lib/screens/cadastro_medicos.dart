@@ -3449,21 +3449,23 @@ class CadastroMedicoState extends State<CadastroMedico> {
   }
 
   /// Remove data(s) do calendário, depois ordena a lista
-  Future<void> _removerData(DateTime date, {bool removeSerie = false}) async {
+  Future<void> _removerData(DateTime date,
+      {bool removeSerie = false, Disponibilidade? disponibilidadeAlvo}) async {
     // Encontrar a disponibilidade na data antes de remover
-    final disponibilidadeNaData = disponibilidades.firstWhere(
-      (d) =>
-          d.data.year == date.year &&
-          d.data.month == date.month &&
-          d.data.day == date.day,
-      orElse: () => Disponibilidade(
-        id: '',
-        medicoId: _medicoId,
-        data: date,
-        horarios: [],
-        tipo: 'Única',
-      ),
-    );
+    final disponibilidadeNaData = disponibilidadeAlvo ??
+        disponibilidades.firstWhere(
+          (d) =>
+              d.data.year == date.year &&
+              d.data.month == date.month &&
+              d.data.day == date.day,
+          orElse: () => Disponibilidade(
+            id: '',
+            medicoId: _medicoId,
+            data: date,
+            horarios: [],
+            tipo: 'Única',
+          ),
+        );
 
     final dataNormalizada = DateTime(date.year, date.month, date.day);
     List<ExcecaoSerie> excecoesCanceladasParaAtualizar = [];
@@ -3594,6 +3596,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 widget.unidade!.id,
                 _medicoId,
                 dataNormalizada,
+                serieId: serieEncontrada.id,
               );
             }
 
@@ -3620,12 +3623,20 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
 
       final removerComoSerie = removeSerie && serieParaRemover != null;
-      disponibilidades = removerDisponibilidade(
-        disponibilidades,
-        dataNormalizada,
-        removeSerie: removerComoSerie,
-        serie: serieParaRemover,
-      );
+      if (!removeSerie && disponibilidadeAlvo != null) {
+        // Podem existir vários cartões no mesmo dia. Remover apenas o cartão
+        // que originou a ação, mantendo as restantes séries desse dia.
+        disponibilidades = disponibilidades
+            .where((d) => d.id != disponibilidadeAlvo.id)
+            .toList();
+      } else {
+        disponibilidades = removerDisponibilidade(
+          disponibilidades,
+          dataNormalizada,
+          removeSerie: removerComoSerie,
+          serie: serieParaRemover,
+        );
+      }
       // Re-atualiza a lista de dias
       diasSelecionados = disponibilidades.map((d) => d.data).toList();
 
@@ -5398,6 +5409,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                           ),
                                           CalendarioDisponibilidades(
                                             diasSelecionados: diasSelecionados,
+                                            disponibilidades: disponibilidades,
                                             onAdicionarData: _adicionarData,
                                             onRemoverData: (date, removeSerie) {
                                               _removerData(date,
@@ -5466,9 +5478,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                   _anoVisualizado)
                                               .toList()
                                           : disponibilidades,
-                                      onRemoverData: (date, removeSerie) {
-                                        _removerData(date,
-                                            removeSerie: removeSerie);
+                                      onRemoverData: (disp, removeSerie) {
+                                        _removerData(disp.data,
+                                            removeSerie: removeSerie,
+                                            disponibilidadeAlvo: disp);
                                       },
                                       onChanged: _verificarMudancas,
                                       onAtualizarSerie: (disp, horarios) {
@@ -5957,6 +5970,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                     const SizedBox(height: 16),
                                     CalendarioDisponibilidades(
                                       diasSelecionados: diasSelecionados,
+                                      disponibilidades: disponibilidades,
                                       onAdicionarData: _adicionarData,
                                       onRemoverData: (date, removeSerie) {
                                         _removerData(date,
@@ -6018,9 +6032,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                                         _anoVisualizado)
                                                     .toList()
                                                 : disponibilidades,
-                                        onRemoverData: (date, removeSerie) {
-                                          _removerData(date,
-                                              removeSerie: removeSerie);
+                                        onRemoverData: (disp, removeSerie) {
+                                          _removerData(disp.data,
+                                              removeSerie: removeSerie,
+                                              disponibilidadeAlvo: disp);
                                         },
                                         onChanged: _verificarMudancas,
                                         onAtualizarSerie: (disp, horarios) {

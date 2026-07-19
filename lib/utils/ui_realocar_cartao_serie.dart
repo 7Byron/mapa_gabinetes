@@ -47,13 +47,15 @@ Future<bool> realocarCartaoSerie({
   required Unidade unidade,
   required BuildContext context,
   required VoidCallback setState,
-  void Function(String medicoId, String gabineteOrigem, String gabineteDestino, DateTime data)? onRealocacaoOtimista,
+  void Function(String medicoId, String gabineteOrigem, String gabineteDestino,
+          DateTime data)?
+      onRealocacaoOtimista,
   required Future<void> Function() onAtualizarEstado,
   required void Function(double progresso, String mensagem) onProgresso,
-  required bool Function(DateTime data, SerieRecorrencia serie) verificarSeDataCorrespondeSerie,
+  required bool Function(DateTime data, SerieRecorrencia serie)
+      verificarSeDataCorrespondeSerie,
 }) async {
   try {
-
     final dataNormalizada = DateTime(data.year, data.month, data.day);
 
     // FASE 1: Atualização otimista da UI (mover cartão da origem para o destino)
@@ -69,14 +71,16 @@ Future<bool> realocarCartaoSerie({
     }).toList();
 
     if (alocacoesParaMover.isEmpty) {
-      debugPrint('⚠️ [UI-REALOCAR-SERIE] Nenhuma alocação de série encontrada no gabinete origem para mover');
+      debugPrint(
+          '⚠️ [UI-REALOCAR-SERIE] Nenhuma alocação de série encontrada no gabinete origem para mover');
 
       return false;
     }
 
     // Remover alocações da origem e mover para o destino
     for (final aloc in alocacoesParaMover) {
-      debugPrint('   - Removendo alocação de série da origem: id=${aloc.id}, gabinete=${aloc.gabineteId}');
+      debugPrint(
+          '   - Removendo alocação de série da origem: id=${aloc.id}, gabinete=${aloc.gabineteId}');
       alocacoes.remove(aloc);
 
       // Criar nova alocação no destino (manter mesmo ID para atualização otimista)
@@ -90,7 +94,8 @@ Future<bool> realocarCartaoSerie({
       );
 
       alocacoes.add(novaAloc);
-      debugPrint('   - Adicionado no destino: id=${novaAloc.id}, novo gabinete=${novaAloc.gabineteId}');
+      debugPrint(
+          '   - Adicionado no destino: id=${novaAloc.id}, novo gabinete=${novaAloc.gabineteId}');
     }
 
     // Chamar callback de atualização otimista se fornecido
@@ -102,7 +107,8 @@ Future<bool> realocarCartaoSerie({
     // O setState deve ser chamado pelo widget pai, que deve criar nova referência da lista.
     // Exemplo no widget: setState(() { alocacoes = List<Alocacao>.from(alocacoes); });
     setState();
-    debugPrint('✅ [UI-REALOCAR-SERIE] FASE 1 completa: UI atualizada (otimista)');
+    debugPrint(
+        '✅ [UI-REALOCAR-SERIE] FASE 1 completa: UI atualizada (otimista)');
 
     // FASE 2: Chamar serviço apropriado para atualizar no Firebase
     debugPrint('🟢 [UI-REALOCAR-SERIE] FASE 2: Atualizando no Firebase');
@@ -139,10 +145,16 @@ Future<bool> realocarCartaoSerie({
         unidade: unidade,
         context: context,
         onRealocacaoOtimista: null, // Já chamado acima
-        onAlocarMedico: (String medicoId, String gabineteId, {DateTime? dataEspecifica}) async {
+        onAlocarMedico: (
+          String medicoId,
+          String gabineteId, {
+          DateTime? dataEspecifica,
+          List<String>? horarios,
+        }) async {
           // Esta função não será chamada para séries (o serviço cria exceção diretamente),
           // mas é obrigatória na assinatura do serviço
-          debugPrint('⚠️ [UI-REALOCAR-SERIE] onAlocarMedico chamado inesperadamente para série');
+          debugPrint(
+              '⚠️ [UI-REALOCAR-SERIE] onAlocarMedico chamado inesperadamente para série');
         },
         onAtualizarEstado: onAtualizarEstado,
         onProgresso: onProgresso,
@@ -151,13 +163,14 @@ Future<bool> realocarCartaoSerie({
 
     if (!sucesso) {
       debugPrint('❌ [UI-REALOCAR-SERIE] Serviço retornou false');
-      
+
       return false;
     }
 
     debugPrint('✅ [UI-REALOCAR-SERIE] FASE 2 completa: Firebase atualizado');
 
-    debugPrint('✅ [UI-REALOCAR-SERIE] Realocação concluída: cartão ${realocarTodaSerie ? "de série" : "único"} movido de $gabineteOrigem para $gabineteDestino');
+    debugPrint(
+        '✅ [UI-REALOCAR-SERIE] Realocação concluída: cartão ${realocarTodaSerie ? "de série" : "único"} movido de $gabineteOrigem para $gabineteDestino');
     return true;
   } catch (e, stackTrace) {
     debugPrint('❌ [UI-REALOCAR-SERIE] Erro ao realocar cartão de série: $e');
@@ -166,4 +179,3 @@ Future<bool> realocarCartaoSerie({
     return false;
   }
 }
-

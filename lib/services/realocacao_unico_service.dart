@@ -33,6 +33,9 @@ class RealocacaoUnicoService {
     required String gabineteOrigem,
     required String gabineteDestino,
     required DateTime data,
+    String? alocacaoId,
+    String? serieId,
+    List<String>? horarios,
     required List<Alocacao> alocacoes,
     required Unidade? unidade,
     required BuildContext context,
@@ -40,14 +43,12 @@ class RealocacaoUnicoService {
             String gabineteDestino, DateTime data)?
         onRealocacaoOtimista,
     required Future<void> Function(String medicoId, String gabineteId,
-            {DateTime? dataEspecifica})
+            {DateTime? dataEspecifica, List<String>? horarios})
         onAlocarMedico,
     required Future<void> Function() onAtualizarEstado,
     required void Function(double progresso, String mensagem) onProgresso,
   }) async {
-
     try {
-      
       // NOTA: A atualização otimista já foi feita em gabinetes_section.dart antes de chamar este serviço.
       // Não chamar onRealocacaoOtimista aqui novamente para evitar duplicação de alocações.
       // A segunda chamada causava duplicação porque _realocacaoOtimista procurava alocações no gabinete origem,
@@ -64,7 +65,8 @@ class RealocacaoUnicoService {
         alocacaoOrigem = alocacoes.firstWhere(
           (a) {
             final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-            return a.medicoId == medicoId &&
+            return (alocacaoId == null || a.id == alocacaoId) &&
+                a.medicoId == medicoId &&
                 a.gabineteId == gabineteDestino &&
                 aDate == dataNormalizada;
           },
@@ -74,14 +76,20 @@ class RealocacaoUnicoService {
           alocacaoOrigem = alocacoes.firstWhere(
             (a) {
               final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-              return a.medicoId == medicoId &&
+              return (alocacaoId == null || a.id == alocacaoId) &&
+                  a.medicoId == medicoId &&
                   a.gabineteId == gabineteOrigem &&
                   aDate == dataNormalizada;
             },
           );
         } catch (e2) {
           // Não encontrou alocação, criar nova
-          await onAlocarMedico(medicoId, gabineteDestino, dataEspecifica: data);
+          await onAlocarMedico(
+            medicoId,
+            gabineteDestino,
+            dataEspecifica: data,
+            horarios: horarios,
+          );
           return true;
         }
       }
@@ -90,26 +98,28 @@ class RealocacaoUnicoService {
       final eAlocacaoDeSerie = alocacaoOrigem.id.startsWith('serie_');
 
       if (eAlocacaoDeSerie) {
-
         // Extrair ID da série
-        String? serieId;
+        String? serieIdAlvo = serieId;
         final partes = alocacaoOrigem.id.split('_');
 
-        if (partes.length >= 4 &&
+        if (serieIdAlvo == null &&
+            partes.length >= 4 &&
             partes[0] == 'serie' &&
             partes[1] == 'serie') {
-          serieId = 'serie_${partes[2]}';
-        } else if (partes.length >= 3 && partes[0] == 'serie') {
-          serieId =
+          serieIdAlvo = 'serie_${partes[2]}';
+        } else if (serieIdAlvo == null &&
+            partes.length >= 3 &&
+            partes[0] == 'serie') {
+          serieIdAlvo =
               partes[1].startsWith('serie') ? partes[1] : 'serie_${partes[1]}';
         }
 
-        if (serieId != null) {
+        if (serieIdAlvo != null) {
           onProgresso(0.3, 'A criar/atualizar exceção...');
 
           // Criar ou atualizar exceção para modificar o gabinete deste dia específico
           await DisponibilidadeSerieService.modificarGabineteDataSerie(
-            serieId: serieId,
+            serieId: serieIdAlvo,
             medicoId: medicoId,
             data: dataNormalizada,
             novoGabineteId: gabineteDestino,
@@ -135,13 +145,13 @@ class RealocacaoUnicoService {
                 unidade: unidade,
                 dataInicio: dataNormalizada,
                 dataFim: dataNormalizada.add(const Duration(days: 1)),
-                serieId: serieId,
+                serieId: serieIdAlvo,
                 forcarServidor: true,
               );
 
               final excecao = excecoes.firstWhere(
                 (e) =>
-                    e.serieId == serieId &&
+                    e.serieId == serieIdAlvo &&
                     e.data.year == dataNormalizada.year &&
                     e.data.month == dataNormalizada.month &&
                     e.data.day == dataNormalizada.day &&
@@ -183,13 +193,18 @@ class RealocacaoUnicoService {
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
 
       // Criar nova alocação no destino
-      await onAlocarMedico(medicoId, gabineteDestino, dataEspecifica: data);
+      await onAlocarMedico(
+        medicoId,
+        gabineteDestino,
+        dataEspecifica: data,
+        horarios: horarios,
+      );
 
       // CORREÇÃO CRÍTICA: Invalidar cache novamente APÓS realocar
       // Garantir que o cache seja invalidado tanto antes quanto depois para máxima confiabilidade
       AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
-      
+
       // Invalidar também cache de séries se houver alguma série relacionada
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
       SerieService.invalidateCacheSeries(unidadeId, medicoId);
@@ -199,7 +214,6 @@ class RealocacaoUnicoService {
 
       return true;
     } catch (e) {
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

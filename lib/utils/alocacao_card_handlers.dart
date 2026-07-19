@@ -12,7 +12,8 @@ class AlocacaoCardHandlers {
   static Future<void> mostrarDialogoRemocao(
     BuildContext context,
     Disponibilidade disponibilidade, {
-    required Function(DateTime date, bool removeSerie) onRemoverData,
+    required Function(Disponibilidade disponibilidade, bool removeSerie)
+        onRemoverData,
   }) async {
     final isSerie = disponibilidade.tipo != 'Única';
 
@@ -45,9 +46,9 @@ class AlocacaoCardHandlers {
       );
 
       if (escolha == 'single') {
-        onRemoverData(disponibilidade.data, false);
+        onRemoverData(disponibilidade, false);
       } else if (escolha == 'all') {
-        onRemoverData(disponibilidade.data, true);
+        onRemoverData(disponibilidade, true);
       }
     } else {
       if (!context.mounted) return;
@@ -75,7 +76,7 @@ class AlocacaoCardHandlers {
       );
 
       if (confirmacao == true) {
-        onRemoverData(disponibilidade.data, false);
+        onRemoverData(disponibilidade, false);
       }
     }
   }
@@ -118,7 +119,8 @@ class AlocacaoCardHandlers {
     }
 
     // Obter gabinete atual (se houver)
-    final gabineteAtual = AlocacaoCardActions.getNomeGabineteParaDisponibilidade(
+    final gabineteAtual =
+        AlocacaoCardActions.getNomeGabineteParaDisponibilidade(
       disponibilidade,
       alocacoes,
       gabinetes,
@@ -206,7 +208,8 @@ class AlocacaoCardHandlers {
                     children: gabinetesDoSetor.map((gabinete) {
                       final isSelecionado =
                           alocacaoAtual?.gabineteId == gabinete.id;
-                      final nomeCompleto = gabinete.especialidadesPermitidas.isNotEmpty
+                      final nomeCompleto = gabinete
+                              .especialidadesPermitidas.isNotEmpty
                           ? '${gabinete.nome} (${gabinete.especialidadesPermitidas.join(', ')})'
                           : gabinete.nome;
                       return ListTile(
@@ -248,7 +251,8 @@ class AlocacaoCardHandlers {
 
     // Se um gabinete foi selecionado (ou 'DESALOCAR' para desalocar), notificar o callback
     if (gabineteEscolhido != null) {
-      final novoGabineteId = gabineteEscolhido == 'DESALOCAR' ? null : gabineteEscolhido;
+      final novoGabineteId =
+          gabineteEscolhido == 'DESALOCAR' ? null : gabineteEscolhido;
       // Só chamar se realmente mudou
       if (novoGabineteId != alocacaoAtual?.gabineteId) {
         onGabineteChanged(disponibilidade, novoGabineteId);
@@ -359,10 +363,11 @@ class AlocacaoCardHandlers {
           if (disponibilidadeEncontrada.horarios.length >= 2) {
             horariosCompletos.add(disponibilidadeEncontrada.horarios[1]);
           } else if (disponibilidadeEncontrada.horarios.length == 1) {
-            horariosCompletos
-                .add(disponibilidadeEncontrada.horarios[0]); // Usar o mesmo temporariamente
+            horariosCompletos.add(disponibilidadeEncontrada
+                .horarios[0]); // Usar o mesmo temporariamente
           } else {
-            horariosCompletos.add(horario); // Se não tinha horários, usar o mesmo
+            horariosCompletos
+                .add(horario); // Se não tinha horários, usar o mesmo
           }
         } else {
           // Editando horário de fim
@@ -377,24 +382,29 @@ class AlocacaoCardHandlers {
 
         // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
         // para atualizar apenas as disponibilidades da MESMA série específica
-        final serieIdDaDisponibilidade = disponibilidadeEncontrada.id.startsWith('serie_')
-            ? SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidadeEncontrada.id)
-            : null;
+        final serieIdDaDisponibilidade =
+            disponibilidadeEncontrada.id.startsWith('serie_')
+                ? SeriesHelper.extrairSerieIdDeDisponibilidade(
+                    disponibilidadeEncontrada.id)
+                : null;
 
         // Atualizar todos os cartões locais da mesma série ESPECÍFICA
         for (final disp in todasDisponibilidades) {
           // Verificar se pertence à mesma série específica
           bool pertenceMesmaSerie = false;
-          
-          if (serieIdDaDisponibilidade != null && disp.id.startsWith('serie_')) {
+
+          if (serieIdDaDisponibilidade != null &&
+              disp.id.startsWith('serie_')) {
             // Se ambas são séries, comparar os IDs das séries
-            final serieIdDaDisp = SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
+            final serieIdDaDisp =
+                SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
             pertenceMesmaSerie = serieIdDaDisp == serieIdDaDisponibilidade;
-          } else if (serieIdDaDisponibilidade == null && !disp.id.startsWith('serie_')) {
+          } else if (serieIdDaDisponibilidade == null &&
+              !disp.id.startsWith('serie_')) {
             // Se nenhuma é série (ambas são "Única"), verificar apenas o tipo
             pertenceMesmaSerie = disp.tipo == disponibilidadeEncontrada.tipo;
           }
-          
+
           if (pertenceMesmaSerie) {
             disp.horarios = List.from(horariosCompletos);
             onAtualizarLocal(disp);

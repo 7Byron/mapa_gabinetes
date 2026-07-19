@@ -6,19 +6,19 @@ import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart' as logic;
 
 /// Função reutilizável para desalocar um cartão único de um gabinete para a lista de desalocados
-/// 
+///
 /// Esta função:
 /// 1. Atualiza a UI localmente (otimista) - remove o cartão do gabinete e adiciona aos desalocados
 /// 2. Atualiza no Firebase - remove a alocação do gabinete
 /// 3. Recarrega apenas os gabinetes afetados (origem) e a lista de desalocados
-/// 
+///
 /// **IMPORTANTE:** Esta função é específica para cartões únicos (não séries).
 /// Para séries, use o serviço de desalocação de série.
-/// 
+///
 /// **IMPORTANTE:** Esta função NÃO mostra diálogo de confirmação.
 /// O gesto do utilizador de arrastar o cartão para a área de desalocados já é suficiente
 /// para confirmar a intenção de desalocação.
-/// 
+///
 /// Parâmetros:
 /// - [medicoId]: ID do médico a ser desalocado
 /// - [data]: Data da desalocação
@@ -30,12 +30,14 @@ import '../utils/alocacao_medicos_logic.dart' as logic;
 /// - [setState]: Função setState do widget para atualizar a UI
 /// - [recarregarAlocacoesGabinetes]: Função para recarregar apenas os gabinetes afetados
 /// - [recarregarDesalocados]: Função para recarregar a lista de médicos desalocados
-/// 
+///
 /// Retorna:
 /// - `true` se a desalocação foi bem-sucedida
 /// - `false` se houve algum problema
 Future<bool> desalocarCartaoUnico({
   required String medicoId,
+  String? alocacaoId,
+  String? serieId,
   required DateTime data,
   required List<Alocacao> alocacoes,
   required List<Disponibilidade> disponibilidades,
@@ -43,11 +45,11 @@ Future<bool> desalocarCartaoUnico({
   required List<Medico> medicosDisponiveis,
   required Unidade? unidade,
   required VoidCallback setState,
-  required Future<void> Function(List<String> gabineteIds) recarregarAlocacoesGabinetes,
+  required Future<void> Function(List<String> gabineteIds)
+      recarregarAlocacoesGabinetes,
   required Future<void> Function() recarregarDesalocados,
 }) async {
   try {
-
     final dataNormalizada = DateTime(data.year, data.month, data.day);
 
     // FASE 1: Encontrar gabinete de origem ANTES de desalocar
@@ -55,7 +57,9 @@ Future<bool> desalocarCartaoUnico({
     final alocacaoParaDesalocar = alocacoes.firstWhere(
       (a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-        return a.medicoId == medicoId && aDate == dataNormalizada;
+        return a.medicoId == medicoId &&
+            aDate == dataNormalizada &&
+            (alocacaoId == null || a.id == alocacaoId);
       },
       orElse: () => Alocacao(
         id: '',
@@ -68,8 +72,9 @@ Future<bool> desalocarCartaoUnico({
     );
 
     if (alocacaoParaDesalocar.id.isEmpty) {
-      debugPrint('⚠️ [UI-DESALOCAR] Nenhuma alocação encontrada para desalocar');
-      
+      debugPrint(
+          '⚠️ [UI-DESALOCAR] Nenhuma alocação encontrada para desalocar');
+
       return false;
     }
 
@@ -81,10 +86,10 @@ Future<bool> desalocarCartaoUnico({
 
     // FASE 3: Atualização otimista da UI (remover cartão do gabinete e adicionar aos desalocados)
     debugPrint('🟢 [UI-DESALOCAR] FASE 3: Atualização otimista da UI');
-    
+
     // NOTA: Não removemos a alocação localmente aqui porque desalocarMedicoDiaUnico
     // já faz isso. Apenas adicionamos o médico aos desalocados para feedback visual imediato.
-    
+
     // Adicionar médico de volta à lista de disponíveis (se ainda não estiver)
     final medico = medicos.firstWhere(
       (m) => m.id == medicoId,
@@ -99,9 +104,11 @@ Future<bool> desalocarCartaoUnico({
 
     if (!medicosDisponiveis.any((m) => m.id == medicoId)) {
       medicosDisponiveis.add(medico);
-      debugPrint('✅ [UI-DESALOCAR] Médico adicionado aos desalocados: ${medico.id}');
+      debugPrint(
+          '✅ [UI-DESALOCAR] Médico adicionado aos desalocados: ${medico.id}');
     } else {
-      debugPrint('⚠️ [UI-DESALOCAR] Médico já estava nos desalocados: ${medico.id}');
+      debugPrint(
+          '⚠️ [UI-DESALOCAR] Médico já estava nos desalocados: ${medico.id}');
     }
 
     // Atualizar UI imediatamente após atualização otimista
@@ -110,10 +117,12 @@ Future<bool> desalocarCartaoUnico({
 
     // FASE 4: Atualizar no Firebase
     debugPrint('🟢 [UI-DESALOCAR] FASE 4: Atualizando no Firebase');
-    
+
     await logic.AlocacaoMedicosLogic.desalocarMedicoDiaUnico(
       selectedDate: data,
       medicoId: medicoId,
+      alocacaoId: alocacaoParaDesalocar.id,
+      serieId: serieId,
       alocacoes: alocacoes,
       disponibilidades: disponibilidades,
       medicos: medicos,
@@ -132,102 +141,66 @@ Future<bool> desalocarCartaoUnico({
     // FASE 6: Verificar se a alocação foi realmente removida antes de recarregar
     // Isso previne que o recarregamento traga a alocação de volta se o Firestore
     // ainda não processou a remoção
-    debugPrint('🟢 [UI-DESALOCAR] FASE 6: Verificando se alocação foi removida...');
-    
+    debugPrint(
+        '🟢 [UI-DESALOCAR] FASE 6: Verificando se alocação foi removida...');
+
     // Verificar se ainda existe alocação local (não deveria existir após remoção)
     final alocacaoAindaExiste = alocacoes.any((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId &&
           a.gabineteId == gabineteOrigem &&
-          aDate == dataNormalizada;
+          aDate == dataNormalizada &&
+          a.id == alocacaoParaDesalocar.id;
     });
-    
+
     if (alocacaoAindaExiste) {
-      debugPrint('⚠️ [UI-DESALOCAR] Alocação ainda existe localmente, removendo novamente...');
+      debugPrint(
+          '⚠️ [UI-DESALOCAR] Alocação ainda existe localmente, removendo novamente...');
       alocacoes.removeWhere((a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
         return a.medicoId == medicoId &&
             a.gabineteId == gabineteOrigem &&
-            aDate == dataNormalizada;
+            aDate == dataNormalizada &&
+            a.id == alocacaoParaDesalocar.id;
       });
     }
 
-    // FASE 7: Aguardar um pouco para garantir que o Firestore processou a remoção
-    // antes de recarregar os dados do Firestore
-    debugPrint('🟢 [UI-DESALOCAR] FASE 7: Aguardando processamento do Firestore...');
-    await Future.delayed(const Duration(milliseconds: 800));
+    // Não fazer um reload focado aqui. A escrita da exceção/série pode já ter
+    // terminado, mas a leitura imediatamente seguinte ainda pode devolver uma
+    // visão parcial e substituir todos os cartões do gabinete. A lista local já
+    // contém a alteração exata; o cache ficou invalidado para a próxima leitura.
+    debugPrint(
+        '🟢 [UI-DESALOCAR] Mantendo estado local consolidado após invalidar cache');
 
-    // FASE 8: Recarregar apenas os gabinetes afetados (origem) e desalocados
-    debugPrint('🟢 [UI-DESALOCAR] FASE 8: Recarregando gabinetes afetados');
-    
-    // CRÍTICO: Recarregar os gabinetes para garantir que a UI está sincronizada
-    // Mas apenas após dar tempo suficiente ao Firestore processar a remoção
-    if (gabineteOrigem.isNotEmpty) {
-      await recarregarAlocacoesGabinetes([gabineteOrigem]);
-      
-      // Verificar novamente após recarregar se a alocação voltou
-      final alocacaoVoltou = alocacoes.any((a) {
-        final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-        return a.medicoId == medicoId &&
-            a.gabineteId == gabineteOrigem &&
-            aDate == dataNormalizada;
-      });
-      
-      if (alocacaoVoltou) {
-        debugPrint('⚠️ [UI-DESALOCAR] Alocação voltou após recarregar! Removendo novamente...');
-        alocacoes.removeWhere((a) {
-          final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-          return a.medicoId == medicoId &&
-              a.gabineteId == gabineteOrigem &&
-              aDate == dataNormalizada;
-        });
-        
-        // Garantir que o médico está nos desalocados
-        if (!medicosDisponiveis.any((m) => m.id == medicoId)) {
-          final medico = medicos.firstWhere(
-            (m) => m.id == medicoId,
-            orElse: () => Medico(
-              id: medicoId,
-              nome: 'Médico não identificado',
-              especialidade: '',
-              disponibilidades: [],
-              ativo: true,
-            ),
-          );
-          medicosDisponiveis.add(medico);
-        }
-        
-        setState();
-      }
-    }
-    
-    // Atualizar médicos desalocados (isso verifica se o médico ainda está alocado
-    // e o remove da lista se necessário)
+    // Recalcular apenas os cartões por alocar a partir do estado local.
     await recarregarDesalocados();
-    
+
     // FASE 9: Verificação final - garantir que o médico está nos desalocados
     // mesmo após recarregar (caso a alocação tenha voltado temporariamente)
     debugPrint('🟢 [UI-DESALOCAR] FASE 9: Verificação final');
-    
+
     // Verificar se a alocação ainda existe (não deveria)
     final alocacaoFinalExiste = alocacoes.any((a) {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId &&
           a.gabineteId == gabineteOrigem &&
-          aDate == dataNormalizada;
+          aDate == dataNormalizada &&
+          a.id == alocacaoParaDesalocar.id;
     });
-    
+
     // Se a alocação ainda existe, removê-la definitivamente
     if (alocacaoFinalExiste) {
-      debugPrint('⚠️ [UI-DESALOCAR] Alocação ainda existe na verificação final! Removendo definitivamente...');
+      debugPrint(
+          '⚠️ [UI-DESALOCAR] Alocação ainda existe na verificação final! Removendo definitivamente...');
       alocacoes.removeWhere((a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
         return a.medicoId == medicoId &&
             a.gabineteId == gabineteOrigem &&
-            aDate == dataNormalizada;
+            aDate == dataNormalizada &&
+            a.id == alocacaoParaDesalocar.id;
       });
     }
-    
+
     // Garantir que o médico está nos desalocados (independente de estar alocado ou não)
     if (!medicosDisponiveis.any((m) => m.id == medicoId)) {
       final medicoFinal = medicos.firstWhere(
@@ -241,21 +214,22 @@ Future<bool> desalocarCartaoUnico({
         ),
       );
       medicosDisponiveis.add(medicoFinal);
-      debugPrint('✅ [UI-DESALOCAR] Médico garantido nos desalocados na verificação final');
+      debugPrint(
+          '✅ [UI-DESALOCAR] Médico garantido nos desalocados na verificação final');
     }
-    
+
     // Atualizar UI final
     setState();
-    
+
     debugPrint('✅ [UI-DESALOCAR] FASE 9 completa: Verificação final concluída');
 
-    debugPrint('✅ [UI-DESALOCAR] Desalocação concluída: cartão removido de $gabineteOrigem e adicionado aos desalocados');
+    debugPrint(
+        '✅ [UI-DESALOCAR] Desalocação concluída: cartão removido de $gabineteOrigem e adicionado aos desalocados');
     return true;
   } catch (e, stackTrace) {
     debugPrint('❌ [UI-DESALOCAR] Erro ao desalocar cartão: $e');
     debugPrint('Stack trace: $stackTrace');
-    
+
     return false;
   }
 }
-

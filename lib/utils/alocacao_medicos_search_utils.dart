@@ -69,6 +69,29 @@ class AlocacaoMedicosSearchUtils {
     return destacados;
   }
 
+  static int contarCartoesDestacados({
+    required List<Alocacao> alocacoes,
+    required Set<String> medicosDestacados,
+    required DateTime data,
+  }) {
+    if (medicosDestacados.isEmpty) return 0;
+    final dataNormalizada = DateTime(data.year, data.month, data.day);
+    final cartoes = <String>{};
+    for (final alocacao in alocacoes) {
+      final dataAlocacao =
+          DateTime(alocacao.data.year, alocacao.data.month, alocacao.data.day);
+      if (dataAlocacao != dataNormalizada ||
+          !medicosDestacados.contains(alocacao.medicoId) ||
+          alocacao.gabineteId.isEmpty) {
+        continue;
+      }
+      cartoes.add(
+        '${alocacao.medicoId}_${alocacao.gabineteId}_${alocacao.horarioInicio}_${alocacao.horarioFim}',
+      );
+    }
+    return cartoes.length;
+  }
+
   static List<String> especialidadesGabinetes(List<Gabinete> gabinetes) {
     final especialidades = <String>{};
     for (final gabinete in gabinetes) {

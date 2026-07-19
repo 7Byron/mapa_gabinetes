@@ -13,6 +13,7 @@ typedef AtualizarUIAlocarCartaoUnico = Future<bool> Function({
   required List<Alocacao> alocacoes,
   required List<Medico> medicosDisponiveis,
   required List<Medico> medicos,
+  required List<Disponibilidade> disponibilidades,
   required VoidCallback setState,
   String horarioInicio,
   String horarioFim,
@@ -58,6 +59,8 @@ class AlocacaoMedicoAlocacaoService {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId &&
           a.gabineteId == gabineteId &&
+          a.horarioInicio == horarioInicio &&
+          a.horarioFim == horarioFim &&
           aDate == dataAlvoNormalizada;
     }).toList();
     final alocacaoJaExisteNoDestino = alocacoesNoDestino.isNotEmpty;
@@ -70,6 +73,8 @@ class AlocacaoMedicoAlocacaoService {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
         return a.medicoId == medicoId &&
             a.gabineteId == gabineteId &&
+            a.horarioInicio == horarioInicio &&
+            a.horarioFim == horarioFim &&
             aDate == dataAlvoNormalizada;
       });
 
@@ -105,6 +110,8 @@ class AlocacaoMedicoAlocacaoService {
       final aDate = DateTime(a.data.year, a.data.month, a.data.day);
       return a.medicoId == medicoId &&
           aDate == dataAlvoNormalizada &&
+          a.horarioInicio == horarioInicio &&
+          a.horarioFim == horarioFim &&
           a.gabineteId != gabineteId;
     });
 
@@ -115,13 +122,15 @@ class AlocacaoMedicoAlocacaoService {
       alocacoes: alocacoes,
       medicosDisponiveis: medicosDisponiveis,
       medicos: medicos,
+      disponibilidades: disponibilidades,
       setState: onStateUpdate,
       horarioInicio: horarioInicio,
       horarioFim: horarioFim,
     );
 
     if (!uiAtualizada) {
-      debugPrint('⚠️ [ALOCAÇÃO] Falha ao atualizar UI, continuando mesmo assim...');
+      debugPrint(
+          '⚠️ [ALOCAÇÃO] Falha ao atualizar UI, continuando mesmo assim...');
     }
 
     logic.AlocacaoMedicosLogic.invalidateCacheForDay(dataAlvoNormalizada);

@@ -5,13 +5,13 @@ import '../services/alocacao_unica_service.dart';
 import '../services/alocacao_serie_service.dart';
 
 /// Função reutilizável para alocar um cartão de série
-/// 
+///
 /// Esta função:
 /// 1. Mostra um diálogo perguntando se o usuário quer alocar apenas este dia ou toda a série
 /// 2. Processa a escolha:
 ///    - Se "1dia": aloca apenas este dia usando AlocacaoUnicaService
 ///    - Se "serie": aloca toda a série usando AlocacaoSerieService
-/// 
+///
 /// Parâmetros:
 /// - [context]: Contexto do Flutter para mostrar diálogos
 /// - [medicoId]: ID do médico a ser alocado
@@ -25,7 +25,7 @@ import '../services/alocacao_serie_service.dart';
 /// - [onProgresso]: Callback para atualizar progresso durante alocação de série (progresso, mensagem)
 /// - [unidade]: Unidade para buscar séries
 /// - [serieIdExtraido]: ID da série extraído (opcional)
-/// 
+///
 /// Retorna:
 /// - `true` se a alocação foi bem-sucedida ou o usuário cancelou (sem erro)
 /// - `false` se houve algum erro
@@ -43,16 +43,21 @@ Future<bool> alocarCartaoSerie({
     List<String>? horarios,
   }) onAlocarMedico,
   required Future<void> Function() onAtualizarEstado,
-  void Function(String medicoId, String gabineteId, DateTime data)? onAlocacaoSerieOtimista,
+  void Function(
+    String medicoId,
+    String gabineteId,
+    DateTime data,
+    List<String> horarios,
+    String? serieId,
+  )? onAlocacaoSerieOtimista,
   required void Function(double progresso, String mensagem) onProgresso,
   required Unidade? unidade,
   String? serieIdExtraido,
 }) async {
   try {
-
     // Mostrar diálogo perguntando se quer alocar apenas este dia ou toda a série
     if (!context.mounted) return false;
-    
+
     final escolha = await showDialog<String>(
       context: context,
       builder: (ctxDialog) {
@@ -136,7 +141,6 @@ Future<bool> alocarCartaoSerie({
 
     return true;
   } catch (e) {
-
     if (!context.mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -147,4 +151,3 @@ Future<bool> alocarCartaoSerie({
     return false;
   }
 }
-

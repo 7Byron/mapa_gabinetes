@@ -15,16 +15,20 @@ import '../services/disponibilidade_serie_service.dart';
 
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
-  final Function(DateTime, bool) onRemoverData;
+  final Function(Disponibilidade, bool) onRemoverData;
   final Function(Disponibilidade)? onEditarDisponibilidade;
   final VoidCallback? onChanged; // notifica alterações (horários etc.)
-  final Function(Disponibilidade, List<String>)? onAtualizarSerie; // callback para atualizar série quando horários são editados
+  final Function(Disponibilidade, List<String>)?
+      onAtualizarSerie; // callback para atualizar série quando horários são editados
   final List<Alocacao>? alocacoes; // Alocações para exibir número do gabinete
   final List<Gabinete>? gabinetes; // Lista de gabinetes para obter nomes
   final Unidade? unidade; // Unidade para navegação
-  final Function(Disponibilidade, String?)? onGabineteChanged; // Callback quando gabinete é alterado (null = desalocar)
-  final List<SerieRecorrencia>? series; // Lista de séries para validação de horários
-  final Future<bool> Function()? onNavegarParaMapa; // Callback para salvar antes de navegar para o mapa
+  final Function(Disponibilidade, String?)?
+      onGabineteChanged; // Callback quando gabinete é alterado (null = desalocar)
+  final List<SerieRecorrencia>?
+      series; // Lista de séries para validação de horários
+  final Future<bool> Function()?
+      onNavegarParaMapa; // Callback para salvar antes de navegar para o mapa
 
   const DisponibilidadesGrid({
     super.key,
@@ -74,22 +78,25 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 //      };
 //      writeLogToFile(jsonEncode(logEntry));
 //    } catch (e) {}
-    
+
 // #endregion
-    
+
     // CORREÇÃO: Detectar mudanças significativas nas alocações e forçar rebuild
-    final currentHashList = widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
+    final currentHashList =
+        widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
     final numAlocacoesAtual = widget.alocacoes?.length ?? 0;
     final numAlocacoesAntigo = oldWidget.alocacoes?.length ?? 0;
-    
+
     if (currentHashList != null) {
       currentHashList.sort();
       if (_lastAlocacoesHash != null) {
-        final hashChanged = currentHashList.join('|') != _lastAlocacoesHash!.join('|');
+        final hashChanged =
+            currentHashList.join('|') != _lastAlocacoesHash!.join('|');
         // CORREÇÃO CRÍTICA: Se o número de alocações diminuiu significativamente (desalocação de série),
         // forçar rebuild completo do GridView com UniqueKey
-        final desalocacaoSignificativa = numAlocacoesAtual < numAlocacoesAntigo - 5;
-        
+        final desalocacaoSignificativa =
+            numAlocacoesAtual < numAlocacoesAntigo - 5;
+
         if (hashChanged || desalocacaoSignificativa) {
           // #region agent log (COMENTADO - pode ser reativado se necessário)
 
@@ -112,7 +119,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 //            };
 //            writeLogToFile(jsonEncode(logEntry));
 //          } catch (e) {}
-          
+
 // #endregion
           _rebuildCounter++;
           _lastAlocacoesHash = currentHashList;
@@ -120,7 +127,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           // Isso força o Flutter a descartar completamente o GridView e criar um novo
           if (desalocacaoSignificativa || hashChanged) {
             _gridUniqueKey = UniqueKey();
-            _lastAlocacoesHashCode = null; // Resetar para forçar recálculo no build()
+            _lastAlocacoesHashCode =
+                null; // Resetar para forçar recálculo no build()
           }
           // Forçar rebuild
           if (mounted) {
@@ -131,14 +139,15 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         _lastAlocacoesHash = currentHashList;
       }
     }
-    
+
     // Atualizar contadores
   }
 
   @override
   void initState() {
     super.initState();
-    final initialHash = widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
+    final initialHash =
+        widget.alocacoes?.map((a) => '${a.id}_${a.gabineteId}').toList();
     if (initialHash != null) {
       initialHash.sort();
       _lastAlocacoesHash = initialHash;
@@ -157,8 +166,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     );
   }
 
-  Future<void> _selecionarHorario(
-      BuildContext context, DateTime data, bool isInicio) async {
+  Future<void> _selecionarHorario(BuildContext context,
+      Disponibilidade disponibilidade, bool isInicio) async {
     final TimeOfDay? time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
@@ -175,21 +184,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
       setState(() {
-        // Acha a disponibilidade do dia
-        final disponibilidade = widget.disponibilidades.firstWhere(
-          (d) => d.data == data,
-          orElse: () => Disponibilidade(
-            id: '',
-            medicoId: '',
-            data: DateTime(1900, 1, 1),
-            horarios: [],
-            tipo: 'Única',
-          ),
-        );
-
-        // Se não encontrou uma real, não faz nada
-        if (disponibilidade.data == DateTime(1900, 1, 1)) return;
-
         // Ajusta horário
         if (isInicio) {
           if (disponibilidade.horarios.isEmpty) {
@@ -238,7 +232,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             if (aplicarEmTodos == true) {
               // Construir lista completa de horários ANTES de atualizar os cartões
               final horariosCompletos = <String>[];
-              
+
               // Pegar horários atuais da disponibilidade
               if (isInicio) {
                 // Editando horário de início
@@ -247,9 +241,11 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 if (disponibilidade.horarios.length >= 2) {
                   horariosCompletos.add(disponibilidade.horarios[1]);
                 } else if (disponibilidade.horarios.length == 1) {
-                  horariosCompletos.add(disponibilidade.horarios[0]); // Usar o mesmo temporariamente
+                  horariosCompletos.add(disponibilidade
+                      .horarios[0]); // Usar o mesmo temporariamente
                 } else {
-                  horariosCompletos.add(horario); // Se não tinha horários, usar o mesmo
+                  horariosCompletos
+                      .add(horario); // Se não tinha horários, usar o mesmo
                 }
               } else {
                 // Editando horário de fim
@@ -257,39 +253,46 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 if (disponibilidade.horarios.isNotEmpty) {
                   horariosCompletos.add(disponibilidade.horarios[0]);
                 } else {
-                  horariosCompletos.add(''); // Se não tinha início, deixar vazio
+                  horariosCompletos
+                      .add(''); // Se não tinha início, deixar vazio
                 }
                 horariosCompletos.add(horario);
               }
-              
+
               // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
               // para atualizar apenas as disponibilidades da MESMA série específica
               // Tentar identificar a série correta mesmo quando o ID da disponibilidade
               // não tem o prefixo "serie_" (caso típico logo após criar a série).
               final serieEncontrada = widget.series != null
-                  ? DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+                  ? DisponibilidadeDataGestaoService
+                      .encontrarSeriePorDisponibilidade(
                       disponibilidade,
                       widget.series!,
                       disponibilidade.data,
                     )
                   : null;
-              final serieIdDaDisponibilidade = disponibilidade.id.startsWith('serie_')
-                  ? SeriesHelper.extrairSerieIdDeDisponibilidade(
-                      disponibilidade.id,
-                    )
-                  : serieEncontrada?.id;
+              final serieIdDaDisponibilidade =
+                  disponibilidade.id.startsWith('serie_')
+                      ? SeriesHelper.extrairSerieIdDeDisponibilidade(
+                          disponibilidade.id,
+                        )
+                      : serieEncontrada?.id;
 
               // Atualizar todos os cartões locais da mesma série ESPECÍFICA
               setState(() {
                 for (final disp in widget.disponibilidades) {
                   // Verificar se pertence à mesma série específica
                   bool pertenceMesmaSerie = false;
-                  
-                  if (serieIdDaDisponibilidade != null && disp.id.startsWith('serie_')) {
+
+                  if (serieIdDaDisponibilidade != null &&
+                      disp.id.startsWith('serie_')) {
                     // Se ambas são séries, comparar os IDs das séries
-                    final serieIdDaDisp = SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
-                    pertenceMesmaSerie = serieIdDaDisp == serieIdDaDisponibilidade;
-                  } else if (serieEncontrada != null && !disp.id.startsWith('serie_')) {
+                    final serieIdDaDisp =
+                        SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
+                    pertenceMesmaSerie =
+                        serieIdDaDisp == serieIdDaDisponibilidade;
+                  } else if (serieEncontrada != null &&
+                      !disp.id.startsWith('serie_')) {
                     // Se o cartão ainda não tem ID de série, validar pelo padrão da série
                     final dataDisp = DateTime(
                       disp.data.year,
@@ -298,8 +301,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                     );
                     final dentroPeriodo =
                         !dataDisp.isBefore(serieEncontrada.dataInicio) &&
-                        (serieEncontrada.dataFim == null ||
-                            !dataDisp.isAfter(serieEncontrada.dataFim!));
+                            (serieEncontrada.dataFim == null ||
+                                !dataDisp.isAfter(serieEncontrada.dataFim!));
                     if (disp.tipo == serieEncontrada.tipo &&
                         dentroPeriodo &&
                         SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
@@ -309,18 +312,19 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                       pertenceMesmaSerie = true;
                     }
                   }
-                  
+
                   if (pertenceMesmaSerie) {
                     disp.horarios = List.from(horariosCompletos);
                   }
                 }
               });
-              
+
               // Notificar para atualizar a série no Firestore
-              if (horariosCompletos.length >= 2 && widget.onAtualizarSerie != null) {
+              if (horariosCompletos.length >= 2 &&
+                  widget.onAtualizarSerie != null) {
                 widget.onAtualizarSerie!(disponibilidade, horariosCompletos);
               }
-              
+
               // notificar alterações em série
               widget.onChanged?.call();
             } else if (aplicarEmTodos == false) {
@@ -367,22 +371,23 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     }
   }
 
-
   void _verDisponibilidade(Disponibilidade disponibilidade) {
     // CORREÇÃO: Validar horários ANTES de abrir o diálogo
     // Se é uma série, verificar se tem horários configurados
     if (disponibilidade.tipo != 'Única' && widget.series != null) {
       // Encontrar a série correspondente
-      final serieEncontrada = DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+      final serieEncontrada =
+          DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
         disponibilidade,
         widget.series!,
         disponibilidade.data,
       );
-      
+
       // Se encontrou a série e não tem horários configurados, mostrar erro
-      if (serieEncontrada != null && 
+      if (serieEncontrada != null &&
           serieEncontrada.id.isNotEmpty &&
-          (serieEncontrada.horarios.isEmpty || serieEncontrada.horarios.length < 2)) {
+          (serieEncontrada.horarios.isEmpty ||
+              serieEncontrada.horarios.length < 2)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Introduza as horas de inicio e fim primeiro!'),
@@ -393,7 +398,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         return; // Não abrir o diálogo
       }
     }
-    
+
     // Ao clicar no cartão, mostrar diálogo para selecionar/desalocar gabinete
     AlocacaoCardHandlers.mostrarDialogoSelecaoGabinete(
       context,
@@ -417,7 +422,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         return;
       }
     }
-    
+
     AlocacaoCardActions.navegarParaMapa(
       context,
       data,
@@ -446,22 +451,29 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 //      };
 //      writeLogToFile(jsonEncode(logEntry));
 //    } catch (e) {}
-    
+
 // #endregion
-    
+
     // CORREÇÃO CRÍTICA: Forçar rebuild completo quando as alocações mudam drasticamente
     // Calcular hash das alocações ANTES do LayoutBuilder para garantir detecção precisa
     final numAlocacoes = widget.alocacoes?.length ?? 0;
     final alocacoesParaHash = widget.alocacoes != null
-        ? (widget.alocacoes!.map((a) => '${a.id}_${a.gabineteId}_${a.data.toString().substring(0, 10)}').toList()..sort())
+        ? (widget.alocacoes!
+            .map((a) =>
+                '${a.id}_${a.gabineteId}_${a.data.toString().substring(0, 10)}')
+            .toList()
+          ..sort())
         : <String>[];
     final alocacoesHashCode = alocacoesParaHash.join('|').hashCode;
-    final alocacoesComGabinete = widget.alocacoes?.where((a) => a.gabineteId.isNotEmpty).length ?? 0;
-    final alocacoesSemGabinete = (widget.alocacoes?.length ?? 0) - alocacoesComGabinete;
-    
+    final alocacoesComGabinete =
+        widget.alocacoes?.where((a) => a.gabineteId.isNotEmpty).length ?? 0;
+    final alocacoesSemGabinete =
+        (widget.alocacoes?.length ?? 0) - alocacoesComGabinete;
+
     // CORREÇÃO CRÍTICA: Se o hash das alocações mudou, sempre criar nova UniqueKey
     // Isso força o Flutter a descartar completamente o GridView e criar um novo
-    if (_lastAlocacoesHashCode != null && _lastAlocacoesHashCode != alocacoesHashCode) {
+    if (_lastAlocacoesHashCode != null &&
+        _lastAlocacoesHashCode != alocacoesHashCode) {
       // Sempre criar nova UniqueKey quando o hash muda (indica mudança nas alocações)
       _gridUniqueKey = UniqueKey();
       _rebuildCounter++;
@@ -470,7 +482,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
     if (_lastAlocacoesHashCode != alocacoesHashCode) {
       _lastAlocacoesHashCode = alocacoesHashCode;
     }
-    
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final int crossAxisCount = (constraints.maxWidth / 200).floor();
@@ -478,14 +490,17 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
         widget.disponibilidades.sort((a, b) => a.data.compareTo(b.data));
         // CORREÇÃO CRÍTICA: Usar UniqueKey quando disponível, senão usar ValueKey baseado em hash
         // Isso força rebuild completo do GridView quando as alocações mudam drasticamente
-        final gridKey = _gridUniqueKey ?? ValueKey('grid_${widget.disponibilidades.length}_${numAlocacoes}_${alocacoesComGabinete}_${alocacoesSemGabinete}_$alocacoesHashCode$_rebuildCounter');
+        final gridKey = _gridUniqueKey ??
+            ValueKey(
+                'grid_${widget.disponibilidades.length}_${numAlocacoes}_${alocacoesComGabinete}_${alocacoesSemGabinete}_$alocacoesHashCode$_rebuildCounter');
         return GridView.builder(
           key: gridKey,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             crossAxisSpacing: 8.0,
             mainAxisSpacing: 8.0,
-            childAspectRatio: 1.65, // Ajustado para dar mais altura aos cartões e evitar overflow
+            childAspectRatio:
+                1.65, // Ajustado para dar mais altura aos cartões e evitar overflow
           ),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -500,7 +515,8 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             if (widget.alocacoes != null && widget.alocacoes!.isNotEmpty) {
               alocacoesDoDia.addAll(widget.alocacoes!.where((a) {
                 final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-                final dDate = DateTime(disponibilidade.data.year, disponibilidade.data.month, disponibilidade.data.day);
+                final dDate = DateTime(disponibilidade.data.year,
+                    disponibilidade.data.month, disponibilidade.data.day);
                 return a.medicoId == disponibilidade.medicoId && aDate == dDate;
               }));
               if (alocacoesDoDia.isNotEmpty) {
@@ -531,14 +547,16 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 //              };
 //              writeLogToFile(jsonEncode(logEntry));
 //            } catch (e) {}
-            
+
 // #endregion
             // CORREÇÃO CRÍTICA: Incluir data na key para garantir que cada cartão tem uma key única
             // mesmo quando não há alocação (gabineteKey = 'sem_gabinete' para todos)
             // Isso força o Flutter a reconstruir todos os cartões quando as alocações mudam
-            final dataKey = '${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}';
+            final dataKey =
+                '${disponibilidade.data.year}-${disponibilidade.data.month}-${disponibilidade.data.day}';
             return AlocacaoCard(
-              key: ValueKey('card_${disponibilidade.id}_${dataKey}_$gabineteKey'),
+              key: ValueKey(
+                  'card_${disponibilidade.id}_${dataKey}_$gabineteKey'),
               disponibilidade: disponibilidade,
               alocacoes: widget.alocacoes,
               gabinetes: widget.gabinetes,
@@ -555,12 +573,12 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
               ),
               onSelecionarHorarioInicio: () => _selecionarHorario(
                 context,
-                disponibilidade.data,
+                disponibilidade,
                 true,
               ),
               onSelecionarHorarioFim: () => _selecionarHorario(
                 context,
-                disponibilidade.data,
+                disponibilidade,
                 false,
               ),
             );

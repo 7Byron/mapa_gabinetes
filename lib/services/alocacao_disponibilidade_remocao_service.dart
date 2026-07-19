@@ -8,11 +8,8 @@ class AlocacaoDisponibilidadeRemocaoService {
   /// Remove alocações e disponibilidades únicas do Firestore para um período de datas
   /// Retorna o número de alocações e disponibilidades removidas
   static Future<Map<String, int>> removerAlocacoesEDisponibilidades(
-    String unidadeId,
-    String medicoId,
-    DateTime dataInicio,
-    DateTime dataFim,
-  ) async {
+      String unidadeId, String medicoId, DateTime dataInicio, DateTime dataFim,
+      {String? serieId}) async {
     final firestore = FirebaseFirestore.instance;
     int alocacoesRemovidas = 0;
     int disponibilidadesRemovidas = 0;
@@ -38,6 +35,12 @@ class AlocacaoDisponibilidadeRemocaoService {
           final medicoIdAloc = data['medicoId']?.toString();
           final dataAloc = data['data']?.toString();
           if (medicoIdAloc != medicoId) return false;
+          if (serieId != null) {
+            final serieIdAloc = data['serieId']?.toString();
+            final pertenceSerie =
+                serieIdAloc == serieId || doc.id.contains(serieId);
+            if (!pertenceSerie) return false;
+          }
           if (dataAloc == null) return false;
           try {
             final dataAlocDateTime = DateTime.parse(dataAloc);
@@ -159,15 +162,14 @@ class AlocacaoDisponibilidadeRemocaoService {
 
   /// Remove alocações e disponibilidades únicas do Firestore para uma data específica
   static Future<Map<String, int>> removerAlocacoesEDisponibilidadesPorData(
-    String unidadeId,
-    String medicoId,
-    DateTime data,
-  ) async {
+      String unidadeId, String medicoId, DateTime data,
+      {String? serieId}) async {
     return removerAlocacoesEDisponibilidades(
       unidadeId,
       medicoId,
       data,
       data,
+      serieId: serieId,
     );
   }
 }

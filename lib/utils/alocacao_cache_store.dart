@@ -5,6 +5,7 @@ import '../models/excecao_serie.dart';
 import '../models/medico.dart';
 
 class AlocacaoCacheStore {
+  static String? _unidadeAtivaId;
   static final Map<String, List<Disponibilidade>> cacheDispPorDia = {};
   static final Map<String, List<Alocacao>> cacheAlocPorDia = {};
   static final Map<String, DateTime> cacheAtualizadoEmPorDia = {};
@@ -57,8 +58,7 @@ class AlocacaoCacheStore {
       cacheAtualizadoEmPorDia[key] = DateTime.now();
       _cacheWrites++;
     }
-    log(
-        '💾 [CACHE] Cache atualizado para dia $key: ${disponibilidades?.length ?? 0} disps, ${alocacoes?.length ?? 0} alocs (estava invalidado: $estavaInvalidado, forçar válido: $forcarValido, agora válido: ${!cacheInvalidadoPorDia.contains(key)})');
+    log('💾 [CACHE] Cache atualizado para dia $key: ${disponibilidades?.length ?? 0} disps, ${alocacoes?.length ?? 0} alocs (estava invalidado: $estavaInvalidado, forçar válido: $forcarValido, agora válido: ${!cacheInvalidadoPorDia.contains(key)})');
   }
 
   static List<Disponibilidade>? getDisponibilidades(DateTime day) {
@@ -130,6 +130,26 @@ class AlocacaoCacheStore {
     _cacheWrites = 0;
   }
 
+  /// Ativa o contexto de cache de uma unidade.
+  ///
+  /// As chaves do cache diário são baseadas na data. Por isso, quando o
+  /// utilizador muda de unidade, os dados diários da unidade anterior não
+  /// podem ser reutilizados. A limpeza só acontece numa mudança real de
+  /// unidade e não afeta os caches estáticos, que já são separados por unidade.
+  static bool ativarUnidade(String unidadeId) {
+    if (_unidadeAtivaId == unidadeId) return false;
+
+    final unidadeAnterior = _unidadeAtivaId;
+    _unidadeAtivaId = unidadeId;
+    clearAll();
+    resetResumo();
+
+    log('🏥 [CACHE] Unidade alterada: '
+        '${unidadeAnterior ?? "nenhuma"} → $unidadeId. '
+        'Cache diário isolado automaticamente.');
+    return true;
+  }
+
   static void invalidateCacheForDay(DateTime day) {
     final key = keyDia(day);
     final tinhaCache =
@@ -144,14 +164,9 @@ class AlocacaoCacheStore {
     cacheInvalidadoPorDia.add(key);
     cacheExcecoes.clear();
     if (kDebugMode && tinhaCache) {
-      final trace = StackTrace.current
-          .toString()
-          .split('\n')
-          .skip(1)
-          .take(5)
-          .join('\n');
-      log(
-          '🧹 [CACHE] invalidateCacheForDay $key (jaInvalidado=$jaInvalidado)\n$trace');
+      final trace =
+          StackTrace.current.toString().split('\n').skip(1).take(5).join('\n');
+      log('🧹 [CACHE] invalidateCacheForDay $key (jaInvalidado=$jaInvalidado)\n$trace');
     }
   }
 
@@ -190,14 +205,9 @@ class AlocacaoCacheStore {
     cacheExcecoes.clear();
     if (kDebugMode && keysToRemove.isNotEmpty) {
       final sample = keysToRemove.take(3).join(', ');
-      final trace = StackTrace.current
-          .toString()
-          .split('\n')
-          .skip(1)
-          .take(5)
-          .join('\n');
-      log(
-          '🧹 [CACHE] invalidateCacheFromDate $fromKey (total=${keysToRemove.length}, sample=$sample)\n$trace');
+      final trace =
+          StackTrace.current.toString().split('\n').skip(1).take(5).join('\n');
+      log('🧹 [CACHE] invalidateCacheFromDate $fromKey (total=${keysToRemove.length}, sample=$sample)\n$trace');
     }
   }
 

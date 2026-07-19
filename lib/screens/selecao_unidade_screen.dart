@@ -59,8 +59,11 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
     return unidades;
   }
 
-  void _selecionarUnidade(Unidade unidade) {
-    UnidadeSelecionadaService.salvarUnidadeSelecionada(unidade.id);
+  Future<void> _selecionarUnidade(Unidade unidade) async {
+    // Persistir a unidade antes de navegar evita uma corrida ao reiniciar ou
+    // recarregar a aplicação durante a transição.
+    await UnidadeSelecionadaService.salvarUnidadeSelecionada(unidade.id);
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(

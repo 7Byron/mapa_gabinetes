@@ -18,11 +18,13 @@ class DisponibilidadeDataGestaoService {
     List<DateTime> diasSelecionados,
   ) {
     for (final novaDisp in geradas) {
+      if (!disponibilidades.any((d) => d.id == novaDisp.id)) {
+        disponibilidades.add(novaDisp);
+      }
       if (!diasSelecionados.any((d) =>
           d.year == novaDisp.data.year &&
           d.month == novaDisp.data.month &&
           d.day == novaDisp.data.day)) {
-        disponibilidades.add(novaDisp);
         diasSelecionados.add(novaDisp.data);
       }
     }
@@ -248,7 +250,7 @@ class DisponibilidadeDataGestaoService {
       // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
       // Usar a função helper que calcula todos os dias corretamente baseado no tipo da série
       AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
-      
+
       // Também invalidar usando o método antigo para compatibilidade
       invalidarCachesRelacionados(date, medicoId);
 
@@ -260,7 +262,7 @@ class DisponibilidadeDataGestaoService {
         usarUltimoQuandoNaoExiste5: usarUltimoQuandoNaoExiste,
         usarUltimoQuandoExiste5: usarUltimoQuandoExiste5,
       );
-
+      _associarDisponibilidadesASerie(geradas, serie.id);
 
       return {
         'sucesso': true,
@@ -304,7 +306,7 @@ class DisponibilidadeDataGestaoService {
       // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
       // Usar a função helper que calcula todos os dias corretamente baseado no tipo da série
       AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
-      
+
       // Também invalidar usando o método antigo para compatibilidade
       invalidarCachesRelacionados(date, medicoId);
 
@@ -314,7 +316,7 @@ class DisponibilidadeDataGestaoService {
         medicoId: medicoId,
         limitarAoAno: true,
       );
-
+      _associarDisponibilidadesASerie(geradas, serie.id);
 
       return {
         'sucesso': true,
@@ -331,6 +333,19 @@ class DisponibilidadeDataGestaoService {
         );
       }
       return {'sucesso': false, 'erro': e.toString()};
+    }
+  }
+
+  static void _associarDisponibilidadesASerie(
+    List<Disponibilidade> disponibilidades,
+    String serieId,
+  ) {
+    for (final disponibilidade in disponibilidades) {
+      final data = disponibilidade.data;
+      final dataKey = '${data.year.toString().padLeft(4, '0')}-'
+          '${data.month.toString().padLeft(2, '0')}-'
+          '${data.day.toString().padLeft(2, '0')}';
+      disponibilidade.id = '${serieId}_$dataKey';
     }
   }
 

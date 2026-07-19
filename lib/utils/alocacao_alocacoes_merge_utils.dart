@@ -1,6 +1,9 @@
 import '../models/alocacao.dart';
 
 class AlocacaoAlocacoesMergeUtils {
+  static String _chaveComIntervalo(Alocacao aloc) =>
+      '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}_${aloc.horarioInicio}_${aloc.horarioFim}';
+
   static List<Alocacao> substituirSeriesNoDia({
     required List<Alocacao> alocacoes,
     required List<Alocacao> alocacoesSeriesRegeneradas,
@@ -23,9 +26,8 @@ class AlocacaoAlocacoesMergeUtils {
       }
       final chaveSemGabinete =
           '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
-      final remover =
-          aloc.id.startsWith('serie_') &&
-              chavesSeriesParaRemover.contains(chaveSemGabinete);
+      final remover = aloc.id.startsWith('serie_') &&
+          chavesSeriesParaRemover.contains(chaveSemGabinete);
       if (!remover) {
         resultado.add(aloc);
       }
@@ -64,6 +66,8 @@ class AlocacaoAlocacoesMergeUtils {
         final temAlocacaoReal = alocacoesSeriesRegeneradas.any((a) {
           return a.medicoId == aloc.medicoId &&
               a.gabineteId == aloc.gabineteId &&
+              a.horarioInicio == aloc.horarioInicio &&
+              a.horarioFim == aloc.horarioFim &&
               a.data.year == aloc.data.year &&
               a.data.month == aloc.data.month &&
               a.data.day == aloc.data.day;
@@ -99,10 +103,8 @@ class AlocacaoAlocacoesMergeUtils {
 
     for (final aloc in alocacoesAtuais) {
       final aDate = DateTime(aloc.data.year, aloc.data.month, aloc.data.day);
-      if (aDate != dataNormalizada ||
-          !gabineteIds.contains(aloc.gabineteId)) {
-        final chave =
-            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+      if (aDate != dataNormalizada || !gabineteIds.contains(aloc.gabineteId)) {
+        final chave = _chaveComIntervalo(aloc);
         preservadas[chave] = aloc;
       }
     }
@@ -113,8 +115,7 @@ class AlocacaoAlocacoesMergeUtils {
         return a.gabineteId == gabineteId && aDate == dataNormalizada;
       });
       for (final aloc in alocacoesDoGabinete) {
-        final chave =
-            '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+        final chave = _chaveComIntervalo(aloc);
         preservadas[chave] = aloc;
       }
     }
@@ -130,8 +131,7 @@ class AlocacaoAlocacoesMergeUtils {
   }) {
     final alocacoesMap = <String, Alocacao>{};
     for (final aloc in alocacoesServidor) {
-      final chave =
-          '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+      final chave = _chaveComIntervalo(aloc);
       alocacoesMap[chave] = aloc;
     }
 
@@ -147,8 +147,7 @@ class AlocacaoAlocacoesMergeUtils {
         continue;
       }
 
-      final chave =
-          '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}_${aloc.gabineteId}';
+      final chave = _chaveComIntervalo(aloc);
 
       if (aloc.id.startsWith('otimista_')) {
         if (alocacoesMap.containsKey(chave)) {

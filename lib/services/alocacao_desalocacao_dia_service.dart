@@ -10,6 +10,8 @@ class AlocacaoDesalocacaoDiaService {
     required Unidade unidade,
     required DateTime data,
     required String medicoId,
+    String? alocacaoId,
+    String? serieId,
     required List<Alocacao> alocacoes,
     required List<Disponibilidade> disponibilidades,
     required List<Medico> medicos,
@@ -20,7 +22,9 @@ class AlocacaoDesalocacaoDiaService {
     final alocacaoAntesRemover = alocacoes.firstWhere(
       (a) {
         final aDate = DateTime(a.data.year, a.data.month, a.data.day);
-        return a.medicoId == medicoId && aDate == dataNormalizada;
+        return a.medicoId == medicoId &&
+            aDate == dataNormalizada &&
+            (alocacaoId == null || a.id == alocacaoId);
       },
       orElse: () => Alocacao(
         id: '',
@@ -43,6 +47,8 @@ class AlocacaoDesalocacaoDiaService {
     await logic.AlocacaoMedicosLogic.desalocarMedicoDiaUnico(
       selectedDate: data,
       medicoId: medicoId,
+      alocacaoId: alocacaoAntesRemover.id,
+      serieId: serieId,
       alocacoes: alocacoes,
       disponibilidades: disponibilidades,
       medicos: medicos,

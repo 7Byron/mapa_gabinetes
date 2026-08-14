@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
+import 'searchable_dropdown_field.dart';
 
 class PesquisaSection extends StatefulWidget {
   final String? pesquisaNome;
@@ -70,80 +71,27 @@ class _PesquisaSectionState extends State<PesquisaSection> {
           const SizedBox(height: 20),
 
           // Pesquisa por Nome do Médico
-          DropdownButtonFormField<String>(
-            initialValue: widget.pesquisaNome,
-            decoration: InputDecoration(
-              labelText: 'Destacar Médico',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.blue.shade700, width: 1),
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              suffixIcon: const Icon(Icons.person_pin_circle_outlined),
-            ),
-            isExpanded: true,
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('Selecionar médico...'),
-              ),
-              ...widget.opcoesNome.map((nome) => DropdownMenuItem(
-                    value: nome,
-                    child: Text(
-                      nome,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  )),
-            ],
+          SearchableDropdownField<String>(
+            value: widget.pesquisaNome,
+            labelText: 'Destacar Médico',
+            hintText: 'Selecionar médico...',
+            searchHintText: 'Pesquisar médico',
+            icon: Icons.person_pin_circle_outlined,
+            items: widget.opcoesNome,
+            itemLabel: (nome) => nome,
             onChanged: widget.onPesquisaNomeChanged,
           ),
           const SizedBox(height: 12),
 
           // Pesquisa por Especialidade
-          DropdownButtonFormField<String>(
-            initialValue: widget.pesquisaEspecialidade,
-            decoration: InputDecoration(
-              labelText: 'Destacar Especialidade',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.grey.shade300, width: 0.5),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.blue.shade700, width: 1),
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              suffixIcon: const Icon(Icons.local_hospital_outlined),
-            ),
-            isExpanded: true,
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('Selecionar especialidade...'),
-              ),
-              ...widget.opcoesEspecialidade
-                  .map((especialidade) => DropdownMenuItem(
-                        value: especialidade,
-                        child: Text(
-                          especialidade,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )),
-            ],
+          SearchableDropdownField<String>(
+            value: widget.pesquisaEspecialidade,
+            labelText: 'Destacar Especialidade',
+            hintText: 'Selecionar especialidade...',
+            searchHintText: 'Pesquisar especialidade',
+            icon: Icons.local_hospital_outlined,
+            items: widget.opcoesEspecialidade,
+            itemLabel: (especialidade) => especialidade,
             onChanged: widget.onPesquisaEspecialidadeChanged,
           ),
 

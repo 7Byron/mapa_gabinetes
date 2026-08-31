@@ -9,6 +9,7 @@ import '../models/disponibilidade.dart';
 import '../models/unidade.dart';
 import 'serie_service.dart';
 import '../utils/alocacao_medicos_logic.dart';
+import '../utils/serie_numeracao_utils.dart';
 // import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 /// Serviço para criar séries de recorrência em vez de cartões individuais
@@ -35,14 +36,40 @@ class DisponibilidadeSerieService {
     // Criar ID único para a série
     final serieId = 'serie_${DateTime.now().millisecondsSinceEpoch}';
 
-    // Preparar parâmetros específicos
-    Map<String, dynamic> parametrosFinal = parametros ?? {};
+    // Preparar parâmetros específicos sem modificar o mapa recebido.
+    final parametrosFinal = Map<String, dynamic>.from(parametros ?? {});
     if (tipo.startsWith('Consecutivo:')) {
       final numeroDiasStr = tipo.split(':')[1];
       final numeroDias = int.tryParse(numeroDiasStr) ?? 5;
       parametrosFinal['numeroDias'] = numeroDias;
       tipo = 'Consecutivo';
     }
+
+    // Numerar também as séries antigas encontradas neste fluxo. Assim, séries
+    // criadas fora do ecrã "Editar Médico" recebem sempre o próximo número.
+    final seriesExistentes = await SerieService.carregarSeries(
+      medicoId,
+      unidade: unidade,
+      forcarServidor: true,
+    );
+    final seriesMigradas =
+        SerieNumeracaoUtils.numerarSeriesSemNumero(seriesExistentes);
+    if (seriesMigradas.isNotEmpty) {
+      try {
+        await SerieService.salvarNumeracaoSeries(
+          seriesMigradas,
+          unidade: unidade,
+        );
+      } catch (e) {
+        // A criação da nova série não deve ficar bloqueada se a migração das
+        // séries antigas falhar temporariamente. A abertura seguinte tenta de
+        // novo persistir os números em falta.
+        debugPrint('⚠️ Migração de numeração adiada: $e');
+      }
+    }
+
+    parametrosFinal['numeroNoTipo'] =
+        SerieNumeracaoUtils.proximoNumero(tipo, seriesExistentes);
 
     final dataInicialNormalizada =
         DateTime(dataInicial.year, dataInicial.month, dataInicial.day);
@@ -236,28 +263,53 @@ class DisponibilidadeSerieService {
   }
 
   /// Cria uma exceção para modificar horários de uma data específica
-  static Future<void> modificarHorariosDataSerie({
+  static Future<ExcecaoSerie> modificarHorariosDataSerie({
     required String serieId,
     required String medicoId,
     required DateTime data,
     required List<String> horarios,
     Unidade? unidade,
   }) async {
-    final excecaoId = 'excecao_${data.millisecondsSinceEpoch}';
+    final dataNormalizada = DateTime(data.year, data.month, data.day);
+
+    // Reutilizar a exceção da data, quando existir, para preservar uma eventual
+    // alteração de gabinete e evitar dois documentos concorrentes para o mesmo
+    // cartão.
+    final excecoesExistentes = await SerieService.carregarExcecoes(
+      medicoId,
+      unidade: unidade,
+      dataInicio: dataNormalizada,
+      dataFim: dataNormalizada,
+      serieId: serieId,
+      forcarServidor: true,
+    );
+    final excecoesDaData = excecoesExistentes
+        .where(
+          (e) =>
+              e.serieId == serieId &&
+              !e.cancelada &&
+              e.data.year == dataNormalizada.year &&
+              e.data.month == dataNormalizada.month &&
+              e.data.day == dataNormalizada.day,
+        )
+        .toList();
+    final excecaoExistente =
+        excecoesDaData.isEmpty ? null : excecoesDaData.first;
 
     final excecao = ExcecaoSerie(
-      id: excecaoId,
+      id: excecaoExistente?.id ??
+          'excecao_${serieId}_${dataNormalizada.millisecondsSinceEpoch}',
       serieId: serieId,
-      data: data,
+      data: dataNormalizada,
       cancelada: false,
-      horarios: horarios,
+      horarios: List<String>.from(horarios),
+      gabineteId: excecaoExistente?.gabineteId,
     );
 
     await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
 
     // CORREÇÃO CRÍTICA: Invalidar cache para o dia específico e do ano
     // SerieService.salvarExcecao já invalida, mas garantimos aqui também
-    final dataNormalizada = DateTime(data.year, data.month, data.day);
     AlocacaoMedicosLogic.invalidateCacheForDay(dataNormalizada);
     AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
 
@@ -267,6 +319,8 @@ class DisponibilidadeSerieService {
 
     debugPrint(
         '✅ Exceção criada: horários modificados para data ${data.day}/${data.month}/${data.year}');
+
+    return excecao;
   }
 
   /// Remove o gabinete de uma data específica de uma série (exceção de gabinete)

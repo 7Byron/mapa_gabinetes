@@ -15,6 +15,7 @@ import '../screens/scripts_screen.dart';
 import '../screens/relatorio_ocupacao_detalhe_screen.dart';
 import '../screens/relatorio_horas_especialidade_screen.dart';
 import '../services/unidade_selecionada_service.dart';
+import '../utils/app_version.dart';
 
 /// Drawer personalizado com menu de navegação
 /// Inclui opções separadas para configurar horários e dias de encerramento
@@ -273,11 +274,26 @@ class CustomDrawer extends StatelessWidget {
       child: Column(
         children: [
           DrawerHeader(
-            child: Center(
-              child: Image.asset(
-                'images/am_icon.png',
-                fit: BoxFit.contain,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Image.asset(
+                    'images/am_icon.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  appDisplayVersion,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
             ),
           ),
 

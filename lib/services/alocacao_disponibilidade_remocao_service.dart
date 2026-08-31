@@ -58,6 +58,30 @@ class AlocacaoDisponibilidadeRemocaoService {
           houveRemocaoNoDia = true;
         }
 
+        // A aplicação lê primeiro esta vista materializada. Se apenas o
+        // registo anual for apagado, a cópia diária pode reaparecer no mapa.
+        final keyDia =
+            '${inicio.year}-${inicio.month.toString().padLeft(2, '0')}-${inicio.day.toString().padLeft(2, '0')}';
+        final alocacoesDiaRef = firestore
+            .collection('unidades')
+            .doc(unidadeId)
+            .collection('dias')
+            .doc(keyDia)
+            .collection('alocacoes');
+        final todasAlocacoesDia = await alocacoesDiaRef.get();
+        final alocacoesDiaParaRemover = todasAlocacoesDia.docs.where((doc) {
+          final data = doc.data();
+          if (data['medicoId']?.toString() != medicoId) return false;
+          if (serieId == null) return true;
+          final serieIdAloc = data['serieId']?.toString();
+          return serieIdAloc == serieId || doc.id.contains(serieId);
+        }).toList();
+
+        for (final doc in alocacoesDiaParaRemover) {
+          await doc.reference.delete();
+          houveRemocaoNoDia = true;
+        }
+
         // 2. Remover disponibilidades únicas da coleção de ocupantes
         final disponibilidadesRef = firestore
             .collection('unidades')
@@ -99,8 +123,6 @@ class AlocacaoDisponibilidadeRemocaoService {
         }
 
         // 3. Remover da vista diária (dias/{dayKey}/disponibilidades)
-        final keyDia =
-            '${inicio.year}-${inicio.month.toString().padLeft(2, '0')}-${inicio.day.toString().padLeft(2, '0')}';
         final diasDisponibilidadesRef = firestore
             .collection('unidades')
             .doc(unidadeId)

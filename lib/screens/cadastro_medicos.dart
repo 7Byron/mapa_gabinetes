@@ -17,6 +17,7 @@ import '../services/disponibilidade_serie_service.dart';
 import '../services/serie_service.dart';
 import '../services/serie_generator.dart';
 import '../services/disponibilidade_unica_service.dart';
+import '../services/alocacao_horario_service.dart';
 import '../services/cadastro_medico_salvar_service.dart';
 import '../services/alocacao_disponibilidade_remocao_service.dart';
 import '../services/excecao_serie_criacao_service.dart';
@@ -37,6 +38,7 @@ import 'package:intl/intl.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/series_helper.dart';
+import '../utils/serie_numeracao_utils.dart';
 import '../utils/cadastro_medicos_helper.dart';
 import '../utils/alocacao_medicos_logic.dart';
 // import '../utils/ui_modificar_gabinete_cartao.dart'; // Comentado - não usado no momento
@@ -1416,6 +1418,28 @@ class CadastroMedicoState extends State<CadastroMedico> {
 //        } catch (e) {}
 
 // #endregion
+      }
+
+      // Migração retrocompatível: atribuir números estáveis às séries antigas
+      // antes de gerar os cartões. A UI usa os números imediatamente e apenas
+      // os documentos ainda sem número são atualizados no Firestore.
+      final seriesNumeradasAgora =
+          SerieNumeracaoUtils.numerarSeriesSemNumero(seriesCarregadas);
+      if (seriesNumeradasAgora.isNotEmpty) {
+        if (onProgressoExterno != null) {
+          onProgressoExterno(0.45, 'A identificar séries...');
+        }
+        try {
+          await SerieService.salvarNumeracaoSeries(
+            seriesNumeradasAgora,
+            unidade: widget.unidade,
+          );
+        } catch (e) {
+          // A numeração já está disponível em memória. Uma falha pontual de
+          // persistência não deve impedir a abertura dos cartões.
+          debugPrint(
+              '⚠️ Não foi possível persistir a numeração das séries: $e');
+        }
       }
 
       if (!seriesJaCarregadas) {
@@ -4054,7 +4078,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Série: ${serie.tipo}'),
+                  Text(
+                    'Série: ${SerieNumeracaoUtils.rotulo(serie, series)}',
+                  ),
                   Text(
                       'Início: ${DateFormat('dd/MM/yyyy').format(serie.dataInicio)}'),
                   const SizedBox(height: 16),
@@ -4579,11 +4605,79 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
   }
 
+  /// Guarda horários próprios para uma única data da série e mantém a exceção
+  /// local sincronizada com o documento acabado de gravar.
+  Future<ExcecaoSerie> _atualizarDataSerieComHorarios(
+    Disponibilidade disponibilidade,
+    List<String> horarios,
+  ) async {
+    final serieEncontrada =
+        DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+      disponibilidade,
+      series,
+      disponibilidade.data,
+    );
+    final serieId = serieEncontrada?.id ??
+        (disponibilidade.id.startsWith('serie_')
+            ? SeriesHelper.extrairSerieIdDeDisponibilidade(disponibilidade.id)
+            : null);
+
+    if (serieId == null || serieId.isEmpty) {
+      throw StateError('Não foi possível identificar a série deste cartão.');
+    }
+
+    final excecao =
+        await DisponibilidadeSerieService.modificarHorariosDataSerie(
+      serieId: serieId,
+      medicoId: disponibilidade.medicoId,
+      data: disponibilidade.data,
+      horarios: horarios,
+      unidade: widget.unidade,
+    );
+
+    if (mounted) {
+      setState(() {
+        final index = excecoes.indexWhere(
+          (e) =>
+              e.id == excecao.id ||
+              (e.serieId == excecao.serieId &&
+                  !e.cancelada &&
+                  e.data.year == excecao.data.year &&
+                  e.data.month == excecao.data.month &&
+                  e.data.day == excecao.data.day),
+        );
+        if (index == -1) {
+          excecoes.add(excecao);
+        } else {
+          excecoes[index] = excecao;
+        }
+      });
+    }
+
+    return excecao;
+  }
+
   /// Atualiza a série com os novos horários quando o usuário edita um cartão
   Future<void> _atualizarSerieComHorarios(
       Disponibilidade disponibilidade, List<String> horarios) async {
-    // CORREÇÃO: Se for série Única, salvar diretamente no Firestore
-    if (disponibilidade.tipo == 'Única') {
+    final serieVinculada =
+        DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+      disponibilidade,
+      series,
+      disponibilidade.data,
+    );
+    final pertenceASerie = serieVinculada != null &&
+        serieVinculada.id.isNotEmpty &&
+        disponibilidade.id.startsWith('serie_');
+
+    // Um cartão único já alocado tem de manter o mesmo documento e gabinete.
+    // Alterar só a disponibilidade faria a alocação antiga deixar de
+    // corresponder ao cartão e aparecer como uma cópia separada no mapa.
+    // Atenção: uma SerieRecorrencia de ocorrência única também apresenta o
+    // tipo "Única". Nesse caso a fonte a atualizar é a série, não uma
+    // disponibilidade avulsa.
+    if (disponibilidade.tipo == 'Única' && !pertenceASerie) {
+      final horariosAnteriores = List<String>.from(disponibilidade.horarios);
       try {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -4595,50 +4689,40 @@ class CadastroMedicoState extends State<CadastroMedico> {
           );
         }
 
-        // Salvar disponibilidade única diretamente no Firestore
-        final firestore = FirebaseFirestore.instance;
-        final unidadeId = CadastroMedicosHelper.obterUnidadeId(widget.unidade);
-        final ano = disponibilidade.data.year.toString();
-        final disponibilidadesRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('ocupantes')
-            .doc(_medicoId)
-            .collection('disponibilidades')
-            .doc(ano)
-            .collection('registos');
-
-        // Atualizar horários da disponibilidade
-        final dispAtualizada = Disponibilidade(
-          id: disponibilidade.id,
-          medicoId: disponibilidade.medicoId,
-          data: disponibilidade.data,
-          horarios: horarios,
-          tipo: disponibilidade.tipo,
+        final resultado = await AlocacaoHorarioService.atualizarCartaoUnico(
+          disponibilidade: disponibilidade,
+          horariosAnteriores: horariosAnteriores,
+          novosHorarios: horarios,
+          alocacoes: alocacoes,
+          unidade: widget.unidade,
         );
-
-        await disponibilidadesRef
-            .doc(disponibilidade.id)
-            .set(dispAtualizada.toMap());
+        final dispAtualizada = resultado.disponibilidade;
 
         debugPrint(
-            '✅ Disponibilidade única salva ao editar horários: ID=${disponibilidade.id}, data=${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
+            '✅ Cartão único e respetiva alocação sincronizados: ID=${disponibilidade.id}, data=${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year}');
 
-        // Atualizar na lista local
+        if (!mounted) return;
         setState(() {
-          final index =
-              disponibilidades.indexWhere((d) => d.id == disponibilidade.id);
-          if (index != -1) {
-            disponibilidades[index] = dispAtualizada;
-          }
-        });
+          final index = disponibilidades.indexWhere(
+            (d) => d.id == disponibilidade.id,
+          );
+          if (index != -1) disponibilidades[index] = dispAtualizada;
 
-        // Atualizar _disponibilidadesOriginal para evitar detecção de mudanças incorreta
-        setState(() {
           final indexOriginal = _disponibilidadesOriginal
               .indexWhere((d) => d.id == disponibilidade.id);
           if (indexOriginal != -1) {
-            _disponibilidadesOriginal[indexOriginal] = dispAtualizada;
+            _disponibilidadesOriginal[indexOriginal] =
+                Disponibilidade.fromMap(dispAtualizada.toMap());
+          }
+
+          final alocacaoAtualizada = resultado.alocacao;
+          if (alocacaoAtualizada != null) {
+            final indexAlocacao = alocacoes.indexWhere(
+              (a) => a.id == alocacaoAtualizada.id,
+            );
+            if (indexAlocacao != -1) {
+              alocacoes[indexAlocacao] = alocacaoAtualizada;
+            }
           }
         });
 
@@ -4746,7 +4830,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
           tipo: serieEncontrada.tipo,
           horarios: horarios,
           gabineteId: serieEncontrada.gabineteId,
-          parametros: serieEncontrada.parametros,
+          mudancasGabinete: List.from(serieEncontrada.mudancasGabinete),
+          parametros: Map<String, dynamic>.from(serieEncontrada.parametros),
           ativo: serieEncontrada.ativo,
         );
 
@@ -4768,6 +4853,16 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // Salvar no Firestore imediatamente
         await SerieService.salvarSerie(serieAtualizada,
             unidade: widget.unidade);
+
+        if (serieAtualizada.tipo == 'Única' &&
+            disponibilidade.id.startsWith('serie_')) {
+          await AlocacaoHorarioService.removerDisponibilidadeSombraDeSerie(
+            unidadeId: CadastroMedicosHelper.obterUnidadeId(widget.unidade),
+            medicoId: disponibilidade.medicoId,
+            disponibilidadeId: disponibilidade.id,
+            data: disponibilidade.data,
+          );
+        }
 
         // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que a série afeta
         // Isso garante que quando o utilizador navega para qualquer dia da série,
@@ -4805,6 +4900,30 @@ class CadastroMedicoState extends State<CadastroMedico> {
             }
             // Criar nova referência da lista para forçar detecção de mudança
             disponibilidades = List<Disponibilidade>.from(disponibilidades);
+
+            // A alocação de uma série Única é gerada dinamicamente. Atualizar
+            // a cópia local evita que o cartão mostre temporariamente o
+            // horário antigo até ao próximo carregamento do mapa.
+            if (serieAtualizada.tipo == 'Única') {
+              for (int i = 0; i < alocacoes.length; i++) {
+                final alocacao = alocacoes[i];
+                if (!alocacao.id.startsWith('serie_')) continue;
+                final serieIdDaAlocacao =
+                    SeriesHelper.extrairSerieIdDeDisponibilidade(
+                  alocacao.id,
+                );
+                if (serieIdDaAlocacao != serieAtualizada.id) continue;
+                alocacoes[i] = Alocacao(
+                  id: alocacao.id,
+                  medicoId: alocacao.medicoId,
+                  gabineteId: alocacao.gabineteId,
+                  data: alocacao.data,
+                  horarioInicio: horarios[0],
+                  horarioFim: horarios[1],
+                );
+              }
+              alocacoes = List<Alocacao>.from(alocacoes);
+            }
 
             progressoAtualizandoHorarios = 1.0;
             mensagemAtualizandoHorarios = 'Concluído!';
@@ -5484,10 +5603,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                             disponibilidadeAlvo: disp);
                                       },
                                       onChanged: _verificarMudancas,
-                                      onAtualizarSerie: (disp, horarios) {
-                                        _atualizarSerieComHorarios(
-                                            disp, horarios);
-                                      },
+                                      onAtualizarSerie:
+                                          _atualizarSerieComHorarios,
+                                      onAtualizarDataSerie:
+                                          _atualizarDataSerieComHorarios,
                                       alocacoes: _anoVisualizado != null
                                           ? alocacoes
                                               .where((a) =>
@@ -6038,10 +6157,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                               disponibilidadeAlvo: disp);
                                         },
                                         onChanged: _verificarMudancas,
-                                        onAtualizarSerie: (disp, horarios) {
-                                          _atualizarSerieComHorarios(
-                                              disp, horarios);
-                                        },
+                                        onAtualizarSerie:
+                                            _atualizarSerieComHorarios,
+                                        onAtualizarDataSerie:
+                                            _atualizarDataSerieComHorarios,
                                         alocacoes: _anoVisualizado != null
                                             ? alocacoes
                                                 .where((a) =>

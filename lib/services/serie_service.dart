@@ -22,17 +22,87 @@ class SerieService {
   // Esses dados mudam raramente, então podemos cacheá-los até serem invalidados
   static final Map<String, List<SerieRecorrencia>> _cacheSeries = {};
   static final Set<String> _cacheSeriesInvalidado = {};
+  static final Map<String, Future<void>> _carregamentosSeriesPorUnidade = {};
+  static final Map<String, List<ExcecaoSerie>> _cacheExcecoesPorAno = {};
+  static final Map<String, Future<List<ExcecaoSerie>>>
+      _carregamentosExcecoesPorAno = {};
+
+  static String _chaveSerie(String unidadeId, String medicoId) =>
+      '${unidadeId}_$medicoId';
+
+  static String _chaveExcecoesAno(String unidadeId, String medicoId, int ano) =>
+      '${unidadeId}_${medicoId}_$ano';
+
+  static List<SerieRecorrencia> _filtrarSeriesPorPeriodo(
+    List<SerieRecorrencia> series,
+    DateTime? dataInicio,
+    DateTime? dataFim,
+  ) {
+    return series.where((serie) {
+      if (dataFim != null) {
+        final inicioSerie = DateTime(
+          serie.dataInicio.year,
+          serie.dataInicio.month,
+          serie.dataInicio.day,
+        );
+        final fimFiltro = DateTime(
+          dataFim.year,
+          dataFim.month,
+          dataFim.day,
+        );
+        if (inicioSerie.isAfter(fimFiltro)) return false;
+      }
+
+      if (dataInicio != null && serie.dataFim != null) {
+        final fimSerie = DateTime(
+          serie.dataFim!.year,
+          serie.dataFim!.month,
+          serie.dataFim!.day,
+        );
+        final inicioFiltro = DateTime(
+          dataInicio.year,
+          dataInicio.month,
+          dataInicio.day,
+        );
+        if (fimSerie.isBefore(inicioFiltro)) return false;
+      }
+      return serie.ativo;
+    }).toList();
+  }
+
+  static void _invalidarCacheExcecoes(
+    String unidadeId, {
+    String? medicoId,
+    int? ano,
+  }) {
+    final prefixo =
+        medicoId == null ? '${unidadeId}_' : '${unidadeId}_${medicoId}_';
+    final chavesDisponiveis = <String>{
+      ..._cacheExcecoesPorAno.keys,
+      ..._carregamentosExcecoesPorAno.keys,
+    };
+    final chaves = chavesDisponiveis.where((chave) {
+      if (!chave.startsWith(prefixo)) return false;
+      return ano == null || chave.endsWith('_$ano');
+    }).toList();
+    for (final chave in chaves) {
+      _cacheExcecoesPorAno.remove(chave);
+      _carregamentosExcecoesPorAno.remove(chave);
+    }
+  }
 
   /// Obtém séries do cache ou retorna null se não estiver em cache
-  static List<SerieRecorrencia>? getSeriesFromCache(String unidadeId, String medicoId) {
-    final key = '${unidadeId}_$medicoId';
+  static List<SerieRecorrencia>? getSeriesFromCache(
+      String unidadeId, String medicoId) {
+    final key = _chaveSerie(unidadeId, medicoId);
     if (_cacheSeriesInvalidado.contains(key)) return null;
     return _cacheSeries[key];
   }
 
   /// Armazena séries no cache
-  static void setSeriesInCache(String unidadeId, String medicoId, List<SerieRecorrencia> series) {
-    final key = '${unidadeId}_$medicoId';
+  static void setSeriesInCache(
+      String unidadeId, String medicoId, List<SerieRecorrencia> series) {
+    final key = _chaveSerie(unidadeId, medicoId);
     _cacheSeries[key] = List.from(series);
     _cacheSeriesInvalidado.remove(key);
     _log(
@@ -43,20 +113,142 @@ class SerieService {
   static void invalidateCacheSeries(String unidadeId, [String? medicoId]) {
     if (medicoId == null) {
       // Invalidar todas as séries da unidade
-      final keysToInvalidate = _cacheSeries.keys.where((key) => key.startsWith('${unidadeId}_')).toList();
+      final keysToInvalidate = _cacheSeries.keys
+          .where((key) => key.startsWith('${unidadeId}_'))
+          .toList();
       for (final key in keysToInvalidate) {
         _cacheSeriesInvalidado.add(key);
         _cacheSeries.remove(key);
       }
+      _invalidarCacheExcecoes(unidadeId);
       _log(
           '🗑️ [CACHE] Cache de séries invalidado para unidade $unidadeId (todos os médicos)');
     } else {
       // Invalidar apenas para o médico específico
-      final key = '${unidadeId}_$medicoId';
+      final key = _chaveSerie(unidadeId, medicoId);
       _cacheSeriesInvalidado.add(key);
       _cacheSeries.remove(key);
+      _invalidarCacheExcecoes(unidadeId, medicoId: medicoId);
       _log('🗑️ [CACHE] Cache de séries invalidado para $key');
     }
+  }
+
+  /// Carrega as séries de vários médicos em lotes, evitando uma consulta por
+  /// médico. Se a consulta de grupo não estiver disponível, usa o percurso
+  /// individual existente apenas para o lote afetado.
+  static Future<Map<String, List<SerieRecorrencia>>> carregarSeriesDeMedicos(
+    List<String> medicoIds, {
+    Unidade? unidade,
+    DateTime? dataInicio,
+    DateTime? dataFim,
+    bool forcarServidor = false,
+  }) async {
+    final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+    final ids = medicoIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return {};
+
+    var aplicarForcarServidor = forcarServidor;
+    final carregamentoExistente = _carregamentosSeriesPorUnidade[unidadeId];
+    if (carregamentoExistente != null) {
+      await carregamentoExistente;
+      aplicarForcarServidor = false;
+    }
+
+    final idsPorCarregar = aplicarForcarServidor
+        ? ids
+        : ids.where((id) => getSeriesFromCache(unidadeId, id) == null).toList();
+
+    if (idsPorCarregar.isNotEmpty) {
+      final carregamento = _carregarSeriesEmLotes(
+        idsPorCarregar,
+        unidade: unidade,
+        forcarServidor: aplicarForcarServidor,
+      );
+      _carregamentosSeriesPorUnidade[unidadeId] = carregamento;
+      try {
+        await carregamento;
+      } finally {
+        if (identical(
+          _carregamentosSeriesPorUnidade[unidadeId],
+          carregamento,
+        )) {
+          _carregamentosSeriesPorUnidade.remove(unidadeId);
+        }
+      }
+    }
+
+    return {
+      for (final medicoId in ids)
+        medicoId: _filtrarSeriesPorPeriodo(
+          getSeriesFromCache(unidadeId, medicoId) ?? const [],
+          dataInicio,
+          dataFim,
+        ),
+    };
+  }
+
+  static Future<void> _carregarSeriesEmLotes(
+    List<String> medicoIds, {
+    required Unidade? unidade,
+    required bool forcarServidor,
+  }) async {
+    final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+    const tamanhoLote = 10;
+    final lotes = <List<String>>[];
+    for (var i = 0; i < medicoIds.length; i += tamanhoLote) {
+      final fim = (i + tamanhoLote).clamp(0, medicoIds.length);
+      lotes.add(medicoIds.sublist(i, fim));
+    }
+
+    final source = forcarServidor ? Source.server : Source.serverAndCache;
+    await Future.wait(lotes.map((lote) async {
+      final seriesPorMedico = {
+        for (final medicoId in lote) medicoId: <SerieRecorrencia>[],
+      };
+      try {
+        final snapshot = await _firestore
+            .collectionGroup('series')
+            .where('medicoId', whereIn: lote)
+            .get(GetOptions(source: source));
+
+        for (final doc in snapshot.docs) {
+          final segmentos = doc.reference.path.split('/');
+          final pertenceUnidade = segmentos.length >= 6 &&
+              segmentos[0] == 'unidades' &&
+              segmentos[1] == unidadeId &&
+              segmentos[2] == 'ocupantes' &&
+              segmentos[4] == 'series';
+          if (!pertenceUnidade) continue;
+
+          final data = doc.data();
+          final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
+          if (serie.ativo && seriesPorMedico.containsKey(serie.medicoId)) {
+            seriesPorMedico[serie.medicoId]!.add(serie);
+          }
+        }
+
+        for (final entry in seriesPorMedico.entries) {
+          final key = _chaveSerie(unidadeId, entry.key);
+          _cacheSeries[key] = List<SerieRecorrencia>.from(entry.value);
+          _cacheSeriesInvalidado.remove(key);
+        }
+      } catch (e) {
+        _log(
+          '⚠️ [SÉRIES-LOTE] Consulta agrupada falhou; a usar fallback para ${lote.length} médicos: $e',
+        );
+        await Future.wait(lote.map((medicoId) {
+          return carregarSeries(
+            medicoId,
+            unidade: unidade,
+            forcarServidor: forcarServidor,
+          );
+        }));
+      }
+    }));
+
+    _log(
+      '⚡ [SÉRIES-LOTE] ${medicoIds.length} médicos carregados em ${lotes.length} consulta(s) agrupada(s)',
+    );
   }
 
   /// Salva uma série de recorrência
@@ -77,7 +269,7 @@ class SerieService {
 
       final serieMap = serie.toMap();
       await serieRef.set(serieMap);
-      
+
       // #region agent log (COMENTADO - pode ser reativado se necessário)
       // try {
       //   final logEntry = {
@@ -97,7 +289,7 @@ class SerieService {
       //   writeLogToFile(jsonEncode(logEntry));
       // } catch (e) {}
       // #endregion
-      
+
       // Invalidar cache de séries após salvar
       invalidateCacheSeries(unidadeId, serie.medicoId);
       await CacheVersionService.bumpVersion(
@@ -107,6 +299,51 @@ class SerieService {
       _log('✅ Série salva: ${serie.id}');
     } catch (e) {
       debugPrint('❌ Erro ao salvar série: $e');
+      rethrow;
+    }
+  }
+
+  /// Persiste, numa única operação, apenas a numeração das séries antigas.
+  /// Não regrava os restantes campos e por isso não interfere com alterações
+  /// simultâneas de horários, gabinete ou período.
+  static Future<void> salvarNumeracaoSeries(
+    List<SerieRecorrencia> series, {
+    Unidade? unidade,
+  }) async {
+    final seriesNumeradas =
+        series.where((s) => s.numeroNoTipo != null).toList();
+    if (seriesNumeradas.isEmpty) return;
+
+    try {
+      final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+      final batch = _firestore.batch();
+
+      for (final serie in seriesNumeradas) {
+        final serieRef = _firestore
+            .collection('unidades')
+            .doc(unidadeId)
+            .collection('ocupantes')
+            .doc(serie.medicoId)
+            .collection('series')
+            .doc(serie.id);
+        batch.update(
+          serieRef,
+          {'parametros.numeroNoTipo': serie.numeroNoTipo},
+        );
+      }
+
+      await batch.commit();
+
+      for (final medicoId in seriesNumeradas.map((s) => s.medicoId).toSet()) {
+        invalidateCacheSeries(unidadeId, medicoId);
+      }
+      await CacheVersionService.bumpVersion(
+        unidadeId: unidadeId,
+        field: CacheVersionService.fieldSeries,
+      );
+      _log('✅ Numeração migrada em ${seriesNumeradas.length} série(s)');
+    } catch (e) {
+      debugPrint('❌ Erro ao migrar numeração das séries: $e');
       rethrow;
     }
   }
@@ -121,7 +358,6 @@ class SerieService {
     DateTime? dataFim,
     bool forcarServidor = false, // Novo parâmetro para forçar busca do servidor
   }) async {
-    
     try {
       final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
 
@@ -142,23 +378,29 @@ class SerieService {
             // Mesma lógica do código acima para garantir consistência
             if (dataFim != null && dataInicio != null) {
               // Apenas filtrar quando AMBOS estão definidos (período específico)
-              final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
-              final dataFimNormalizada = DateTime(dataFim.year, dataFim.month, dataFim.day);
+              final serieDataInicioNormalizada = DateTime(serie.dataInicio.year,
+                  serie.dataInicio.month, serie.dataInicio.day);
+              final dataFimNormalizada =
+                  DateTime(dataFim.year, dataFim.month, dataFim.day);
               if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
                 continue;
               }
             } else if (dataFim != null && dataInicio == null) {
               // Quando dataInicio é null mas dataFim está definido, apenas filtrar séries que começaram DEPOIS do dataFim
-              final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
-              final dataFimNormalizada = DateTime(dataFim.year, dataFim.month, dataFim.day);
+              final serieDataInicioNormalizada = DateTime(serie.dataInicio.year,
+                  serie.dataInicio.month, serie.dataInicio.day);
+              final dataFimNormalizada =
+                  DateTime(dataFim.year, dataFim.month, dataFim.day);
               if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
                 continue;
               }
             }
             if (dataInicio != null) {
               if (serie.dataFim != null) {
-                final serieDataFimNormalizada = DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day);
-                final dataInicioNormalizada = DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
+                final serieDataFimNormalizada = DateTime(serie.dataFim!.year,
+                    serie.dataFim!.month, serie.dataFim!.day);
+                final dataInicioNormalizada =
+                    DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
                 if (serieDataFimNormalizada.isBefore(dataInicioNormalizada)) {
                   continue;
                 }
@@ -187,7 +429,7 @@ class SerieService {
       // Caso contrário, buscar todas e filtrar localmente
       // Buscar apenas séries ativas (filtro na query para reduzir dados transferidos)
       // CORREÇÃO: Usar Source.server quando forçar servidor ou quando não há cache válido
-      
+
       // #region agent log (COMENTADO - pode ser reativado se necessário)
       // try {
       //   final logEntry = {
@@ -216,16 +458,14 @@ class SerieService {
       // Se falhar, usa a query original (fallback seguro)
       // CORREÇÃO: Só usar queries otimizadas quando AMBOS dataInicio E dataFim estão definidos
       // Caso contrário, usar query original para evitar loops infinitos
-      
-      
+
       if (dataInicio != null && dataFim != null) {
         // Calcular data mínima para filtrar séries que terminaram antes do período
         final dataMinimaFiltro = dataInicio;
-        
+
         _log(
             '⚡ [OTIMIZAÇÃO] Tentando usar queries otimizadas para período: ${dataInicio.toString()} até ${dataFim.toString()}');
-        
-        
+
         // #region agent log (COMENTADO - pode ser reativado se necessário)
         // try {
         //   final logEntry = {
@@ -247,18 +487,19 @@ class SerieService {
         //   writeLogToFile(jsonEncode(logEntry));
         // } catch (e) {}
         // #endregion
-        
+
         try {
           // Query 1: Séries com dataFim >= dataMinimaFiltro (séries que ainda estão ativas no período)
           // Isso exclui séries que já terminaram antes do período
           final snapshotComDataFim = await seriesRef
               .where('ativo', isEqualTo: true)
-              .where('dataFim', isGreaterThanOrEqualTo: Timestamp.fromDate(dataMinimaFiltro))
+              .where('dataFim',
+                  isGreaterThanOrEqualTo: Timestamp.fromDate(dataMinimaFiltro))
               .get(GetOptions(source: source));
-          
+
           _log(
               '📊 [OTIMIZAÇÃO] Query 1 (com dataFim): ${snapshotComDataFim.docs.length} séries encontradas');
-          
+
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
           //   final logEntry = {
@@ -276,7 +517,7 @@ class SerieService {
           //   writeLogToFile(jsonEncode(logEntry));
           // } catch (e) {}
           // #endregion
-          
+
           for (final doc in snapshotComDataFim.docs) {
             if (seriesIdsProcessados.contains(doc.id)) continue;
             final data = doc.data();
@@ -293,10 +534,10 @@ class SerieService {
               .where('ativo', isEqualTo: true)
               .where('dataFim', isNull: true)
               .get(GetOptions(source: source));
-          
+
           _log(
               '📊 [OTIMIZAÇÃO] Query 2 (infinitas): ${snapshotInfinitas.docs.length} séries encontradas');
-          
+
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
           //   final logEntry = {
@@ -314,7 +555,7 @@ class SerieService {
           //   writeLogToFile(jsonEncode(logEntry));
           // } catch (e) {}
           // #endregion
-          
+
           for (final doc in snapshotInfinitas.docs) {
             if (seriesIdsProcessados.contains(doc.id)) continue;
             final data = doc.data();
@@ -328,7 +569,7 @@ class SerieService {
           usarQueryOtimizada = true;
           _log(
               '✅ [OTIMIZAÇÃO] Queries otimizadas executadas com sucesso! Total: ${series.length} séries');
-          
+
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
           //   final logEntry = {
@@ -352,7 +593,7 @@ class SerieService {
           // Se as queries otimizadas falharem (ex: índice não existe), usar query original
           _log(
               '⚠️ [OTIMIZAÇÃO] Queries otimizadas falharam ($e), usando query original (fallback seguro)');
-          
+
           // #region agent log (COMENTADO - pode ser reativado se necessário)
           // try {
           //   final logEntry = {
@@ -370,7 +611,7 @@ class SerieService {
           //   writeLogToFile(jsonEncode(logEntry));
           // } catch (e2) {}
           // #endregion
-          
+
           series.clear();
           seriesIdsProcessados.clear();
           usarQueryOtimizada = false;
@@ -379,13 +620,12 @@ class SerieService {
 
       // Se não usou query otimizada (ou falhou), usar query original
       if (!usarQueryOtimizada) {
-        
-        _log('📊 [QUERY ORIGINAL] Buscando todas as séries ativas (sem filtro no Firestore)');
+        _log(
+            '📊 [QUERY ORIGINAL] Buscando todas as séries ativas (sem filtro no Firestore)');
         final snapshot = await seriesRef
             .where('ativo', isEqualTo: true)
             .get(GetOptions(source: source));
-        
-        
+
         // #region agent log (COMENTADO - pode ser reativado se necessário)
         // try {
         //   final logEntry = {
@@ -404,7 +644,7 @@ class SerieService {
         //   writeLogToFile(jsonEncode(logEntry));
         // } catch (e) {}
         // #endregion
-        
+
         for (final doc in snapshot.docs) {
           final data = doc.data();
           final serie = SerieRecorrencia.fromMap({...data, 'id': doc.id});
@@ -426,8 +666,10 @@ class SerieService {
         // Não filtrar por dataFim se dataInicio é null (queremos séries antigas também)
         if (dataFim != null && dataInicio != null) {
           // Apenas filtrar quando AMBOS estão definidos (período específico)
-          final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
-          final dataFimNormalizada = DateTime(dataFim.year, dataFim.month, dataFim.day);
+          final serieDataInicioNormalizada = DateTime(serie.dataInicio.year,
+              serie.dataInicio.month, serie.dataInicio.day);
+          final dataFimNormalizada =
+              DateTime(dataFim.year, dataFim.month, dataFim.day);
           if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
             // #region agent log (COMENTADO - pode ser reativado se necessário)
             // try {
@@ -454,8 +696,10 @@ class SerieService {
         } else if (dataFim != null && dataInicio == null) {
           // Quando dataInicio é null mas dataFim está definido, apenas filtrar séries que começaram DEPOIS do dataFim
           // Isso permite incluir séries que começaram antes (ex: fevereiro quando navegamos em março)
-          final serieDataInicioNormalizada = DateTime(serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
-          final dataFimNormalizada = DateTime(dataFim.year, dataFim.month, dataFim.day);
+          final serieDataInicioNormalizada = DateTime(serie.dataInicio.year,
+              serie.dataInicio.month, serie.dataInicio.day);
+          final dataFimNormalizada =
+              DateTime(dataFim.year, dataFim.month, dataFim.day);
           if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
             // #region agent log (COMENTADO - pode ser reativado se necessário)
             // try {
@@ -485,8 +729,10 @@ class SerieService {
         // Se dataFim é null, a série é infinita e deve ser incluída se começou antes ou no período
         if (dataInicio != null) {
           if (serie.dataFim != null) {
-            final serieDataFimNormalizada = DateTime(serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day);
-            final dataInicioNormalizada = DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
+            final serieDataFimNormalizada = DateTime(
+                serie.dataFim!.year, serie.dataFim!.month, serie.dataFim!.day);
+            final dataInicioNormalizada =
+                DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
             if (serieDataFimNormalizada.isBefore(dataInicioNormalizada)) {
               // #region agent log (COMENTADO - pode ser reativado se necessário)
               // try {
@@ -543,8 +789,7 @@ class SerieService {
 
       _log(
           '✅ [RESULTADO FINAL] Total de séries após filtros: ${seriesFiltradas.length} (de ${series.length} carregadas do Firestore)');
-      
-      
+
       // #region agent log (COMENTADO - pode ser reativado se necessário)
       // try {
       //   final logEntry = {
@@ -645,7 +890,7 @@ class SerieService {
         await serieRef.update({'ativo': false});
         _log('✅ Série desativada: $serieId');
       }
-      
+
       // Invalidar cache de séries após remover
       invalidateCacheSeries(unidadeId, medicoId);
       await CacheVersionService.bumpVersion(
@@ -679,14 +924,21 @@ class SerieService {
           .doc(excecao.id);
 
       await excecaoRef.set(excecao.toMap());
-      
+
+      _invalidarCacheExcecoes(
+        unidadeId,
+        medicoId: medicoId,
+        ano: excecao.data.year,
+      );
+
       // CORREÇÃO CRÍTICA: Invalidar cache quando uma exceção é salva
       AlocacaoMedicosLogic.invalidateCacheForDay(excecao.data);
-      AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(excecao.data.year, 1, 1));
+      AlocacaoMedicosLogic.invalidateCacheFromDate(
+          DateTime(excecao.data.year, 1, 1));
       // CORREÇÃO: O cache de exceções já é limpo em invalidateCacheForDay
       // (_cacheExcecoes.clear() é chamado lá)
       // NOTA: Não invalidar cache de séries aqui - exceções não mudam as séries em si
-      
+
       await CacheVersionService.bumpVersion(
         unidadeId: unidadeId,
         field: CacheVersionService.fieldSeries,
@@ -725,25 +977,14 @@ class SerieService {
 
       // Carregar exceções de cada ano
       for (final ano in anos) {
-        final excecoesRef = _firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('ocupantes')
-            .doc(medicoId)
-            .collection('excecoes')
-            .doc(ano.toString())
-            .collection('registos');
+        final excecoesAno = await _carregarExcecoesAno(
+          unidadeId: unidadeId,
+          medicoId: medicoId,
+          ano: ano,
+          forcarServidor: forcarServidor,
+        );
 
-        // Buscar todas as exceções e filtrar localmente para evitar índices compostos
-        // Usar cache do Firestore para melhor performance
-        // Só forçar servidor se realmente necessário (ex: após criar exceção)
-        final source = forcarServidor ? Source.server : Source.serverAndCache;
-        final snapshot = await excecoesRef.get(GetOptions(source: source));
-
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          final excecao = ExcecaoSerie.fromMap({...data, 'id': doc.id});
-
+        for (final excecao in excecoesAno) {
           // Filtrar por serieId se fornecido
           if (serieId != null && excecao.serieId != serieId) {
             continue;
@@ -769,6 +1010,51 @@ class SerieService {
     }
   }
 
+  static Future<List<ExcecaoSerie>> _carregarExcecoesAno({
+    required String unidadeId,
+    required String medicoId,
+    required int ano,
+    required bool forcarServidor,
+  }) async {
+    final key = _chaveExcecoesAno(unidadeId, medicoId, ano);
+    if (!forcarServidor) {
+      final cached = _cacheExcecoesPorAno[key];
+      if (cached != null) return List<ExcecaoSerie>.from(cached);
+    }
+
+    final emCurso = _carregamentosExcecoesPorAno[key];
+    if (emCurso != null) {
+      return List<ExcecaoSerie>.from(await emCurso);
+    }
+
+    final carregamento = (() async {
+      final excecoesRef = _firestore
+          .collection('unidades')
+          .doc(unidadeId)
+          .collection('ocupantes')
+          .doc(medicoId)
+          .collection('excecoes')
+          .doc(ano.toString())
+          .collection('registos');
+      final source = forcarServidor ? Source.server : Source.serverAndCache;
+      final snapshot = await excecoesRef.get(GetOptions(source: source));
+      return snapshot.docs
+          .map((doc) => ExcecaoSerie.fromMap({...doc.data(), 'id': doc.id}))
+          .toList();
+    })();
+
+    _carregamentosExcecoesPorAno[key] = carregamento;
+    try {
+      final resultado = await carregamento;
+      _cacheExcecoesPorAno[key] = List<ExcecaoSerie>.from(resultado);
+      return List<ExcecaoSerie>.from(resultado);
+    } finally {
+      if (identical(_carregamentosExcecoesPorAno[key], carregamento)) {
+        _carregamentosExcecoesPorAno.remove(key);
+      }
+    }
+  }
+
   /// Remove uma exceção
   static Future<void> removerExcecao(
     String excecaoId,
@@ -791,11 +1077,17 @@ class SerieService {
           .doc(excecaoId);
 
       await excecaoRef.delete();
-      
+
+      _invalidarCacheExcecoes(
+        unidadeId,
+        medicoId: medicoId,
+        ano: data.year,
+      );
+
       // CORREÇÃO CRÍTICA: Invalidar cache quando uma exceção é removida
       AlocacaoMedicosLogic.invalidateCacheForDay(data);
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(data.year, 1, 1));
-      
+
       await CacheVersionService.bumpVersion(
         unidadeId: unidadeId,
         field: CacheVersionService.fieldSeries,

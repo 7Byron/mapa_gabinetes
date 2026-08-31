@@ -135,17 +135,16 @@ class CadastroMedicosHelper {
     List<Disponibilidade> disponibilidades,
     String medicoId,
   ) {
-    // Fazer cópia PROFUNDA da lista para garantir que não seja afetada por modificações
-    final todasDisponibilidades =
-        criarCopiaProfundaDisponibilidades(disponibilidades);
-
-    // Filtrar e preparar disponibilidades únicas
-    return filtrarDisponibilidadesUnicas(todasDisponibilidades, medicoId)
-        .map((d) {
+    // O ID permanente tem de voltar ao objeto mantido pelo ecrã. Se apenas a
+    // cópia enviada ao Firestore recebesse o novo ID, o cartão continuaria
+    // localmente com `temp_...` e cada gravação seguinte criaria outro
+    // documento para a mesma data.
+    return filtrarDisponibilidadesUnicas(disponibilidades, medicoId).map((d) {
       // Se ID estiver vazio ou for temporário, gerar um novo permanente antes de salvar
       String idFinal = d.id;
       if (isIdTemporarioOuInvalido(idFinal)) {
         idFinal = gerarIdPermanenteParaDisponibilidade(d, medicoId);
+        d.id = idFinal;
       }
 
       return Disponibilidade(
@@ -179,12 +178,13 @@ class CadastroMedicosHelper {
         ativo: serie.ativo,
       );
       await SerieService.salvarSerie(serieComHorarios, unidade: unidade);
-      
+
       // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que esta série afeta
       // Isso garante que quando o utilizador navega para qualquer dia da série,
       // os dados serão recarregados do servidor e estarão atualizados
-      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieComHorarios, unidade: unidade);
-      
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieComHorarios,
+          unidade: unidade);
+
       salvas++;
     }
     return salvas;

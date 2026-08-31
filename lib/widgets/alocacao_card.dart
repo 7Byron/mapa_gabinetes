@@ -14,6 +14,7 @@ class AlocacaoCard extends StatelessWidget {
   final List<Alocacao>? alocacoes;
   final List<Gabinete>? gabinetes;
   final Unidade? unidade;
+  final String? rotuloSerie;
   final VoidCallback? onChanged;
   final VoidCallback onTap; // Abre diálogo de seleção de gabinete
   final VoidCallback onRemover; // Remove o cartão
@@ -27,6 +28,7 @@ class AlocacaoCard extends StatelessWidget {
     this.alocacoes,
     this.gabinetes,
     this.unidade,
+    this.rotuloSerie,
     this.onChanged,
     required this.onTap,
     required this.onRemover,
@@ -38,7 +40,8 @@ class AlocacaoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Traduzir dia da semana para português
-    final diaSemanaIngles = DateFormat('EEEE', 'en_US').format(disponibilidade.data);
+    final diaSemanaIngles =
+        DateFormat('EEEE', 'en_US').format(disponibilidade.data);
     final diaSemana = AlocacaoCardActions.traduzirDiaSemana(diaSemanaIngles);
 
     final horarioInicio = disponibilidade.horarios.isNotEmpty
@@ -66,7 +69,8 @@ class AlocacaoCard extends StatelessWidget {
       nomeGabinete = null;
     }
 
-    final corCartao = AlocacaoCardActions.determinarCorDoCartao(disponibilidade);
+    final corCartao =
+        AlocacaoCardActions.determinarCorDoCartao(disponibilidade);
 
     return InkWell(
       onTap: onTap,
@@ -100,13 +104,14 @@ class AlocacaoCard extends StatelessWidget {
                   IconButton(
                     icon: const Icon(Icons.delete, color: Colors.red, size: 16),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
                     onPressed: onRemover,
                   ),
                 ],
               ),
               Text(
-                'Série: ${disponibilidade.tipo}',
+                'Série: ${rotuloSerie ?? disponibilidade.tipo}',
                 style: TextStyle(
                   fontSize: 9,
                   color: SerieTipoColors.para(disponibilidade.tipo),
@@ -139,9 +144,11 @@ class AlocacaoCard extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.map, color: Colors.blue, size: 18),
+                        icon:
+                            const Icon(Icons.map, color: Colors.blue, size: 18),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                        constraints:
+                            const BoxConstraints(minWidth: 24, minHeight: 24),
                         tooltip: 'Ver no mapa',
                         onPressed: onNavegarParaMapa,
                       ),
@@ -170,9 +177,11 @@ class AlocacaoCard extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.map, color: Colors.blue, size: 18),
+                        icon:
+                            const Icon(Icons.map, color: Colors.blue, size: 18),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                        constraints:
+                            const BoxConstraints(minWidth: 24, minHeight: 24),
                         tooltip: 'Ver no mapa',
                         onPressed: onNavegarParaMapa,
                       ),
@@ -189,7 +198,8 @@ class AlocacaoCard extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue.shade100,
                         foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
                         minimumSize: const Size(55, 28),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         shape: RoundedRectangleBorder(
@@ -212,7 +222,8 @@ class AlocacaoCard extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue.shade100,
                         foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
                         minimumSize: const Size(55, 28),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         shape: RoundedRectangleBorder(

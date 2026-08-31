@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 // import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import '../models/disponibilidade.dart';
@@ -5,12 +7,14 @@ import '../models/alocacao.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
 import '../models/serie_recorrencia.dart';
+import '../models/excecao_serie.dart';
 import 'alocacao_card.dart';
 import '../utils/alocacao_card_actions.dart';
 import '../utils/alocacao_card_handlers.dart';
+import '../utils/horarios_disponibilidade_utils.dart';
+import '../utils/serie_numeracao_utils.dart';
 import '../utils/series_helper.dart';
 import '../services/disponibilidade_data_gestao_service.dart';
-import '../services/disponibilidade_serie_service.dart';
 // import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 class DisponibilidadesGrid extends StatefulWidget {
@@ -18,8 +22,10 @@ class DisponibilidadesGrid extends StatefulWidget {
   final Function(Disponibilidade, bool) onRemoverData;
   final Function(Disponibilidade)? onEditarDisponibilidade;
   final VoidCallback? onChanged; // notifica alterações (horários etc.)
-  final Function(Disponibilidade, List<String>)?
+  final FutureOr<void> Function(Disponibilidade, List<String>)?
       onAtualizarSerie; // callback para atualizar série quando horários são editados
+  final Future<ExcecaoSerie> Function(Disponibilidade, List<String>)
+      onAtualizarDataSerie; // callback para guardar uma exceção apenas nesta data
   final List<Alocacao>? alocacoes; // Alocações para exibir número do gabinete
   final List<Gabinete>? gabinetes; // Lista de gabinetes para obter nomes
   final Unidade? unidade; // Unidade para navegação
@@ -29,6 +35,8 @@ class DisponibilidadesGrid extends StatefulWidget {
       series; // Lista de séries para validação de horários
   final Future<bool> Function()?
       onNavegarParaMapa; // Callback para salvar antes de navegar para o mapa
+  final Future<TimeOfDay?> Function(BuildContext context)?
+      mostrarSeletorHorario;
 
   const DisponibilidadesGrid({
     super.key,
@@ -37,12 +45,14 @@ class DisponibilidadesGrid extends StatefulWidget {
     this.onEditarDisponibilidade,
     this.onChanged,
     this.onAtualizarSerie,
+    required this.onAtualizarDataSerie,
     this.alocacoes,
     this.gabinetes,
     this.unidade,
     this.onGabineteChanged,
     this.series,
     this.onNavegarParaMapa,
+    this.mostrarSeletorHorario,
   });
 
   @override
@@ -168,205 +178,175 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 
   Future<void> _selecionarHorario(BuildContext context,
       Disponibilidade disponibilidade, bool isInicio) async {
-    final TimeOfDay? time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-      builder: (context, child) {
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
-        );
-      },
-    );
+    final TimeOfDay? time = widget.mostrarSeletorHorario != null
+        ? await widget.mostrarSeletorHorario!(context)
+        : await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.now(),
+            builder: (context, child) {
+              return MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(alwaysUse24HourFormat: true),
+                child: child!,
+              );
+            },
+          );
 
     if (time != null) {
       final horario =
           '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+      final horariosEditados = HorariosDisponibilidadeUtils.comHorarioAlterado(
+        horariosAtuais: disponibilidade.horarios,
+        novoHorario: horario,
+        isInicio: isInicio,
+      );
 
-      setState(() {
-        // Ajusta horário
-        if (isInicio) {
-          if (disponibilidade.horarios.isEmpty) {
-            disponibilidade.horarios = [horario];
-          } else {
-            disponibilidade.horarios[0] = horario;
-          }
+      // Cartões únicos não têm âmbito de série: aplicar apenas ao próprio
+      // cartão. O callback persiste também a eventual alocação, mantendo o
+      // gabinete; só alteramos localmente quando não existe callback.
+      if (disponibilidade.tipo == 'Única') {
+        if (widget.onAtualizarSerie != null) {
+          await widget.onAtualizarSerie!(disponibilidade, horariosEditados);
         } else {
-          if (disponibilidade.horarios.length == 1) {
-            disponibilidade.horarios.add(horario);
-          } else if (disponibilidade.horarios.length == 2) {
-            disponibilidade.horarios[1] = horario;
-          } else if (disponibilidade.horarios.isEmpty) {
-            disponibilidade.horarios = isInicio ? [horario] : ['', horario];
-          }
-        }
-
-        // Se for série, pergunta se quer aplicar em todos
-        if (disponibilidade.tipo != 'Única') {
-          Future.delayed(Duration.zero, () async {
-            if (!context.mounted) return;
-            final aplicarEmTodos = await showDialog<bool>(
-              context: context,
-              builder: (context) {
-                return AlertDialog(
-                  title: const Text('Aplicar horário a toda a série?'),
-                  content: Text(
-                    'Deseja usar este horário de '
-                    '${isInicio ? 'início' : 'fim'} '
-                    'em todos os dias da série (${disponibilidade.tipo})?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Apenas este dia'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Toda a série'),
-                    ),
-                  ],
-                );
-              },
-            );
-
-            if (aplicarEmTodos == true) {
-              // Construir lista completa de horários ANTES de atualizar os cartões
-              final horariosCompletos = <String>[];
-
-              // Pegar horários atuais da disponibilidade
-              if (isInicio) {
-                // Editando horário de início
-                horariosCompletos.add(horario);
-                // Manter o horário de fim se existir, senão usar o mesmo
-                if (disponibilidade.horarios.length >= 2) {
-                  horariosCompletos.add(disponibilidade.horarios[1]);
-                } else if (disponibilidade.horarios.length == 1) {
-                  horariosCompletos.add(disponibilidade
-                      .horarios[0]); // Usar o mesmo temporariamente
-                } else {
-                  horariosCompletos
-                      .add(horario); // Se não tinha horários, usar o mesmo
-                }
-              } else {
-                // Editando horário de fim
-                // Manter o horário de início se existir
-                if (disponibilidade.horarios.isNotEmpty) {
-                  horariosCompletos.add(disponibilidade.horarios[0]);
-                } else {
-                  horariosCompletos
-                      .add(''); // Se não tinha início, deixar vazio
-                }
-                horariosCompletos.add(horario);
-              }
-
-              // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
-              // para atualizar apenas as disponibilidades da MESMA série específica
-              // Tentar identificar a série correta mesmo quando o ID da disponibilidade
-              // não tem o prefixo "serie_" (caso típico logo após criar a série).
-              final serieEncontrada = widget.series != null
-                  ? DisponibilidadeDataGestaoService
-                      .encontrarSeriePorDisponibilidade(
-                      disponibilidade,
-                      widget.series!,
-                      disponibilidade.data,
-                    )
-                  : null;
-              final serieIdDaDisponibilidade =
-                  disponibilidade.id.startsWith('serie_')
-                      ? SeriesHelper.extrairSerieIdDeDisponibilidade(
-                          disponibilidade.id,
-                        )
-                      : serieEncontrada?.id;
-
-              // Atualizar todos os cartões locais da mesma série ESPECÍFICA
-              setState(() {
-                for (final disp in widget.disponibilidades) {
-                  // Verificar se pertence à mesma série específica
-                  bool pertenceMesmaSerie = false;
-
-                  if (serieIdDaDisponibilidade != null &&
-                      disp.id.startsWith('serie_')) {
-                    // Se ambas são séries, comparar os IDs das séries
-                    final serieIdDaDisp =
-                        SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
-                    pertenceMesmaSerie =
-                        serieIdDaDisp == serieIdDaDisponibilidade;
-                  } else if (serieEncontrada != null &&
-                      !disp.id.startsWith('serie_')) {
-                    // Se o cartão ainda não tem ID de série, validar pelo padrão da série
-                    final dataDisp = DateTime(
-                      disp.data.year,
-                      disp.data.month,
-                      disp.data.day,
-                    );
-                    final dentroPeriodo =
-                        !dataDisp.isBefore(serieEncontrada.dataInicio) &&
-                            (serieEncontrada.dataFim == null ||
-                                !dataDisp.isAfter(serieEncontrada.dataFim!));
-                    if (disp.tipo == serieEncontrada.tipo &&
-                        dentroPeriodo &&
-                        SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
-                          dataDisp,
-                          serieEncontrada,
-                        )) {
-                      pertenceMesmaSerie = true;
-                    }
-                  }
-
-                  if (pertenceMesmaSerie) {
-                    disp.horarios = List.from(horariosCompletos);
-                  }
-                }
-              });
-
-              // Notificar para atualizar a série no Firestore
-              if (horariosCompletos.length >= 2 &&
-                  widget.onAtualizarSerie != null) {
-                widget.onAtualizarSerie!(disponibilidade, horariosCompletos);
-              }
-
-              // notificar alterações em série
-              widget.onChanged?.call();
-            } else if (aplicarEmTodos == false) {
-              // Salvar exceção de horários apenas para este dia
-              final horariosParaSalvar =
-                  List<String>.from(disponibilidade.horarios);
-              if (horariosParaSalvar.length >= 2 &&
-                  horariosParaSalvar[0].trim().isNotEmpty &&
-                  horariosParaSalvar[1].trim().isNotEmpty) {
-                final serieEncontrada = widget.series != null
-                    ? DisponibilidadeDataGestaoService
-                        .encontrarSeriePorDisponibilidade(
-                        disponibilidade,
-                        widget.series!,
-                        disponibilidade.data,
-                      )
-                    : null;
-                final serieId = serieEncontrada?.id ??
-                    (disponibilidade.id.startsWith('serie_')
-                        ? SeriesHelper.extrairSerieIdDeDisponibilidade(
-                            disponibilidade.id,
-                          )
-                        : null);
-
-                if (serieId != null && serieId.isNotEmpty) {
-                  await DisponibilidadeSerieService.modificarHorariosDataSerie(
-                    serieId: serieId,
-                    medicoId: disponibilidade.medicoId,
-                    data: disponibilidade.data,
-                    horarios: horariosParaSalvar,
-                    unidade: widget.unidade,
-                  );
-                }
-              }
-              // notificar alterações para o dia específico
-              widget.onChanged?.call();
-            }
+          setState(() {
+            disponibilidade.horarios = horariosEditados;
           });
         }
-      });
+        widget.onChanged?.call();
+        return;
+      }
 
-      // notificar alteração deste cartão
+      if (!context.mounted) return;
+      final aplicarEmTodos = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Aplicar horário a toda a série?'),
+            content: Text(
+              'Deseja usar este horário de '
+              '${isInicio ? 'início' : 'fim'} '
+              'em todos os dias da série (${disponibilidade.tipo})?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Apenas este dia'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Toda a série'),
+              ),
+            ],
+          );
+        },
+      );
+
+      // Fechar o diálogo sem escolher não altera o cartão nem a série.
+      if (aplicarEmTodos == null || !mounted) return;
+
+      if (aplicarEmTodos) {
+        final horariosCompletos = List<String>.from(horariosEditados);
+
+        // CORREÇÃO: Extrair o ID da série da disponibilidade que está sendo editada
+        // para atualizar apenas as disponibilidades da MESMA série específica
+        // Tentar identificar a série correta mesmo quando o ID da disponibilidade
+        // não tem o prefixo "serie_" (caso típico logo após criar a série).
+        final serieEncontrada = widget.series != null
+            ? DisponibilidadeDataGestaoService.encontrarSeriePorDisponibilidade(
+                disponibilidade,
+                widget.series!,
+                disponibilidade.data,
+              )
+            : null;
+        final serieIdDaDisponibilidade = disponibilidade.id.startsWith('serie_')
+            ? SeriesHelper.extrairSerieIdDeDisponibilidade(
+                disponibilidade.id,
+              )
+            : serieEncontrada?.id;
+
+        // Atualizar todos os cartões locais da mesma série ESPECÍFICA
+        setState(() {
+          for (final disp in widget.disponibilidades) {
+            // Verificar se pertence à mesma série específica
+            bool pertenceMesmaSerie = false;
+
+            if (serieIdDaDisponibilidade != null &&
+                disp.id.startsWith('serie_')) {
+              // Se ambas são séries, comparar os IDs das séries
+              final serieIdDaDisp =
+                  SeriesHelper.extrairSerieIdDeDisponibilidade(disp.id);
+              pertenceMesmaSerie = serieIdDaDisp == serieIdDaDisponibilidade;
+            } else if (serieEncontrada != null &&
+                !disp.id.startsWith('serie_')) {
+              // Se o cartão ainda não tem ID de série, validar pelo padrão da série
+              final dataDisp = DateTime(
+                disp.data.year,
+                disp.data.month,
+                disp.data.day,
+              );
+              final dentroPeriodo =
+                  !dataDisp.isBefore(serieEncontrada.dataInicio) &&
+                      (serieEncontrada.dataFim == null ||
+                          !dataDisp.isAfter(serieEncontrada.dataFim!));
+              if (disp.tipo == serieEncontrada.tipo &&
+                  dentroPeriodo &&
+                  SeriesHelper.verificarDataCorrespondeAoPadraoSerie(
+                    dataDisp,
+                    serieEncontrada,
+                  )) {
+                pertenceMesmaSerie = true;
+              }
+            }
+
+            if (pertenceMesmaSerie) {
+              // Toda a série usa a mesma lista-base. Edições futuras usam
+              // copy-on-write e nunca modificam esta lista diretamente.
+              disp.horarios = horariosCompletos;
+            }
+          }
+        });
+
+        // Notificar para atualizar a série no Firestore
+        if (horariosCompletos.length >= 2 && widget.onAtualizarSerie != null) {
+          await widget.onAtualizarSerie!(disponibilidade, horariosCompletos);
+        }
+
+        widget.onChanged?.call();
+        return;
+      }
+
+      // A alteração pontual só ganha uma lista própria depois de a exceção ser
+      // guardada com sucesso. A série e os restantes cartões permanecem com a
+      // lista-base partilhada.
+      if (horariosEditados.length >= 2 &&
+          horariosEditados[0].trim().isNotEmpty &&
+          horariosEditados[1].trim().isNotEmpty) {
+        ExcecaoSerie excecao;
+        try {
+          excecao = await widget.onAtualizarDataSerie(
+            disponibilidade,
+            horariosEditados,
+          );
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Erro ao guardar horário deste dia: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        if (!mounted) return;
+        setState(() {
+          // O cartão passa a partilhar apenas a lista da sua própria exceção,
+          // nunca a lista-base da série.
+          disponibilidade.horarios = excecao.horarios ?? horariosEditados;
+        });
+      }
+
       widget.onChanged?.call();
     }
   }
@@ -507,6 +487,20 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           itemCount: widget.disponibilidades.length,
           itemBuilder: (context, index) {
             final disponibilidade = widget.disponibilidades[index];
+            final serieDoCartao = widget.series == null
+                ? null
+                : DisponibilidadeDataGestaoService
+                    .encontrarSeriePorDisponibilidade(
+                    disponibilidade,
+                    widget.series!,
+                    disponibilidade.data,
+                  );
+            final rotuloSerie = serieDoCartao == null || widget.series == null
+                ? disponibilidade.tipo
+                : SerieNumeracaoUtils.rotulo(
+                    serieDoCartao,
+                    widget.series!,
+                  );
             // CORREÇÃO: Criar key baseada no gabineteId da alocação correspondente
             // para forçar reconstrução do cartão quando o gabinete muda ou é removido
             // Usar gabineteId diretamente da alocação em vez de nomeGabinete para garantir mudança
@@ -561,6 +555,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
               alocacoes: widget.alocacoes,
               gabinetes: widget.gabinetes,
               unidade: widget.unidade,
+              rotuloSerie: rotuloSerie,
               onChanged: widget.onChanged,
               onTap: () => _verDisponibilidade(disponibilidade),
               onRemover: () => _mostrarDialogoRemocaoSeries(

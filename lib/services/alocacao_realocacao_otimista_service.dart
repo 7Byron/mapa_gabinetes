@@ -57,16 +57,23 @@ class AlocacaoRealocacaoOtimistaService {
 
       debugPrint('🟢 [OTIMISTA] Criando alocação otimista no destino...');
 
-      String horarioInicio = '08:00';
-      String horarioFim = '15:00';
       final dispDoDia = disponibilidades.where((disp) {
         final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
-        return disp.medicoId == medicoId && dd == dataNormalizada;
+        return disp.medicoId == medicoId &&
+            dd == dataNormalizada &&
+            disp.horarios.length >= 2;
       }).toList();
-      if (dispDoDia.isNotEmpty && dispDoDia.first.horarios.length >= 2) {
-        horarioInicio = dispDoDia.first.horarios[0];
-        horarioFim = dispDoDia.first.horarios[1];
+      if (dispDoDia.length != 1) {
+        debugPrint(
+          '⚠️ [OTIMISTA] Não existe um único cartão válido para alocar; operação ignorada.',
+        );
+        return const AlocacaoRealocacaoOtimistaResult(
+          alocacoesAtualizadas: [],
+          ignorar: true,
+        );
       }
+      final horarioInicio = dispDoDia.first.horarios[0];
+      final horarioFim = dispDoDia.first.horarios[1];
 
       final timestamp = DateTime.now().microsecondsSinceEpoch;
       final dataStr =

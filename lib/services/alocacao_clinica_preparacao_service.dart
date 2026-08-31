@@ -45,22 +45,29 @@ class AlocacaoClinicaPreparacaoService {
     };
 
     try {
-      feriados = await AlocacaoClinicaConfigService.carregarFeriados(
-        unidadeId: unidadeId,
-        anoSelecionado: dataReferencia.year,
-        forcarServidor: forcarServidor,
-      );
-      diasEncerramento =
-          await AlocacaoClinicaConfigService.carregarDiasEncerramento(
-        unidadeId: unidadeId,
-        anoSelecionado: dataReferencia.year,
-        forcarServidor: forcarServidor,
-      );
-      final config =
-          await AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
-        unidadeId: unidadeId,
-        forcarServidor: forcarServidor,
-      );
+      await AlocacaoClinicaConfigService.sincronizarVersao(unidadeId);
+      final resultados = await Future.wait([
+        AlocacaoClinicaConfigService.carregarFeriados(
+          unidadeId: unidadeId,
+          anoSelecionado: dataReferencia.year,
+          forcarServidor: forcarServidor,
+          verificarVersao: false,
+        ),
+        AlocacaoClinicaConfigService.carregarDiasEncerramento(
+          unidadeId: unidadeId,
+          anoSelecionado: dataReferencia.year,
+          forcarServidor: forcarServidor,
+          verificarVersao: false,
+        ),
+        AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
+          unidadeId: unidadeId,
+          forcarServidor: forcarServidor,
+          verificarVersao: false,
+        ),
+      ]);
+      feriados = resultados[0] as List<Map<String, String>>;
+      diasEncerramento = resultados[1] as List<Map<String, dynamic>>;
+      final config = resultados[2] as ClinicaConfiguracoes;
       horariosClinica = config.horariosClinica;
       nuncaEncerra = config.nuncaEncerra;
       encerraFeriados = config.encerraFeriados;

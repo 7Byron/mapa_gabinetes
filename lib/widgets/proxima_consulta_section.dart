@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/app_theme.dart';
 import '../utils/proxima_consulta_utils.dart';
+import 'searchable_selection_field.dart';
 
 class ProximaConsultaSection extends StatelessWidget {
   final String? medicoId;
@@ -63,42 +64,37 @@ class ProximaConsultaSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
+          SearchableSelectionField<String>(
             key: ValueKey('proxima-medico-$medicoId'),
-            initialValue: medicoId,
-            isExpanded: true,
-            decoration: _decoracao('Médico', Icons.person_outline),
-            items: [
-              const DropdownMenuItem(
-                  value: null, child: Text('Selecionar médico...')),
-              ...opcoesMedicos.entries.map(
-                (item) => DropdownMenuItem(
-                  value: item.key,
-                  child: Text(item.value, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ],
+            value: medicoId,
+            label: 'Médico',
+            hint: 'Selecionar médico...',
+            dialogTitle: 'Médico',
+            searchHint: 'Pesquisar médico',
+            suffixIcon: Icons.person_outline,
+            options: opcoesMedicos.entries
+                .map((item) => SearchableSelectionOption(
+                      value: item.key,
+                      label: item.value,
+                    ))
+                .toList(),
             onChanged: onMedicoChanged,
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
+          SearchableSelectionField<String>(
             key: ValueKey('proxima-especialidade-$especialidade'),
-            initialValue: especialidade,
-            isExpanded: true,
-            decoration:
-                _decoracao('Especialidade', Icons.local_hospital_outlined),
-            items: [
-              const DropdownMenuItem(
-                value: null,
-                child: Text('Selecionar especialidade...'),
-              ),
-              ...opcoesEspecialidades.map(
-                (item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(item, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ],
+            value: especialidade,
+            label: 'Especialidade',
+            hint: 'Selecionar especialidade...',
+            dialogTitle: 'Especialidade',
+            searchHint: 'Pesquisar especialidade',
+            suffixIcon: Icons.local_hospital_outlined,
+            options: opcoesEspecialidades
+                .map((item) => SearchableSelectionOption(
+                      value: item,
+                      label: item,
+                    ))
+                .toList(),
             onChanged: onEspecialidadeChanged,
           ),
           if (carregando) ...[
@@ -155,15 +151,6 @@ class ProximaConsultaSection extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-
-  InputDecoration _decoracao(String label, IconData icon) {
-    return InputDecoration(
-      labelText: label,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      suffixIcon: Icon(icon),
     );
   }
 }

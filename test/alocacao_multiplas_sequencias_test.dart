@@ -9,6 +9,7 @@ import 'package:mapa_gabinetes/widgets/pesquisa_section.dart';
 import 'package:mapa_gabinetes/models/disponibilidade.dart';
 import 'package:mapa_gabinetes/models/medico.dart';
 import 'package:mapa_gabinetes/services/alocacao_serie_otimista_service.dart';
+import 'package:mapa_gabinetes/services/alocacao_realocacao_otimista_service.dart';
 
 Alocacao _alocacao({
   required String id,
@@ -128,6 +129,20 @@ void main() {
     expect(alocacoes, hasLength(1));
     expect(alocacoes.single.horarioInicio, '14:00');
     expect(alocacoes.single.horarioFim, '20:00');
+  });
+
+  test('não fabrica alocação otimista 08:00-15:00 sem disponibilidade', () {
+    final resultado = AlocacaoRealocacaoOtimistaService.atualizar(
+      alocacoes: const [],
+      disponibilidades: const [],
+      medicoId: 'medico-1',
+      gabineteOrigem: 'gab-origem',
+      gabineteDestino: 'gab-destino',
+      data: DateTime(2026, 9, 15),
+    );
+
+    expect(resultado.ignorar, isTrue);
+    expect(resultado.alocacoesAtualizadas, isEmpty);
   });
 
   testWidgets('secção mostra terminologia e contador de destaque',

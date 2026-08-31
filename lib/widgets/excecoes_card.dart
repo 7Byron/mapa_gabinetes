@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../utils/series_helper.dart';
+import '../utils/serie_numeracao_utils.dart';
 import '../utils/app_theme.dart';
 import 'dialogo_excecao_periodo.dart';
 import 'dialogo_excecao_serie.dart';
@@ -15,7 +16,7 @@ class ExcecoesCard extends StatelessWidget {
   final Future<void> Function(DateTime dataInicio, DateTime dataFim)
       onCriarExcecaoPeriodoGeral;
   final Future<void> Function(
-      SerieRecorrencia serie, DateTime dataInicio, DateTime dataFim)
+          SerieRecorrencia serie, DateTime dataInicio, DateTime dataFim)
       onCriarExcecaoPeriodo;
   final Future<void> Function(SerieRecorrencia serie, DateTime dataFim)?
       onCancelarSerie; // Novo: para cancelar série a partir de data
@@ -82,8 +83,8 @@ class ExcecoesCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   ),
                   onPressed: () => _mostrarDialogoCriarExcecao(context),
                 ),
@@ -119,15 +120,14 @@ class ExcecoesCard extends StatelessWidget {
                   ),
                 ),
                 ElevatedButton.icon(
-                  icon: const Icon(Icons.block,
-                      color: Colors.white, size: 16),
+                  icon: const Icon(Icons.block, color: Colors.white, size: 16),
                   label: const Text('Criar Exceção',
                       style: TextStyle(fontSize: 12)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   ),
                   onPressed: () => _mostrarDialogoCriarExcecaoMobile(context),
                 ),
@@ -257,7 +257,9 @@ class ExcecoesCard extends StatelessWidget {
                         ' (${diasSemana[serie.dataInicio.weekday - 1]})';
                   }
                   return ListTile(
-                    title: Text('${serie.tipo}$descricaoDia'),
+                    title: Text(
+                      '${SerieNumeracaoUtils.rotulo(serie, series)}$descricaoDia',
+                    ),
                     subtitle: Text(
                         'Desde ${DateFormat('dd/MM/yyyy').format(serie.dataInicio)}'),
                     onTap: () => Navigator.pop(context, serie),
@@ -347,7 +349,9 @@ class ExcecoesCard extends StatelessWidget {
                       ' (${diasSemana[serie.dataInicio.weekday - 1]})';
                 }
                 return ListTile(
-                  title: Text('${serie.tipo}$descricaoDia'),
+                  title: Text(
+                    '${SerieNumeracaoUtils.rotulo(serie, series)}$descricaoDia',
+                  ),
                   subtitle: Text(
                       'Desde ${DateFormat('dd/MM/yyyy').format(serie.dataInicio)}'),
                   onTap: () => Navigator.pop(context, serie),
@@ -381,8 +385,7 @@ class ExcecoesCard extends StatelessWidget {
       {required bool usarLote}) {
     final grupos = SeriesHelper.agruparExcecoesPorPeriodo(excecoes, series);
     return grupos.map((grupo) {
-      final excecoesGrupo =
-          grupo['excecoes'] as List<ExcecaoSerie>;
+      final excecoesGrupo = grupo['excecoes'] as List<ExcecaoSerie>;
       final serie = grupo['serie'] as SerieRecorrencia;
       final dataInicio = grupo['dataInicio'] as DateTime;
       final dataFim = grupo['dataFim'] as DateTime;
@@ -406,9 +409,7 @@ class ExcecoesCard extends StatelessWidget {
           excecoesGrupo.first.cancelada ? 'Cancelada' : 'Modificada',
           style: TextStyle(
             fontSize: 11,
-            color: excecoesGrupo.first.cancelada
-                ? Colors.red
-                : Colors.orange,
+            color: excecoesGrupo.first.cancelada ? Colors.red : Colors.orange,
           ),
         ),
         trailing: IconButton(

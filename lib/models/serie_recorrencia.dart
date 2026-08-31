@@ -14,7 +14,8 @@ class SerieRecorrencia {
   String tipo; // "Semanal", "Quinzenal", "Mensal", "Consecutivo"
   List<String> horarios; // Horários padrão da série
   String? gabineteId; // Gabinete padrão (usado antes da primeira mudança)
-  List<MudancaGabinete> mudancasGabinete; // Mudanças de gabinete por período (ordenadas por dataInicio)
+  List<MudancaGabinete>
+      mudancasGabinete; // Mudanças de gabinete por período (ordenadas por dataInicio)
   Map<String, dynamic> parametros; // Parâmetros específicos da série
   bool ativo; // Se a série está ativa
 
@@ -29,8 +30,27 @@ class SerieRecorrencia {
     List<MudancaGabinete>? mudancasGabinete,
     Map<String, dynamic>? parametros,
     this.ativo = true,
-  }) : parametros = parametros ?? {},
-       mudancasGabinete = mudancasGabinete ?? [];
+  })  : parametros = parametros ?? {},
+        mudancasGabinete = mudancasGabinete ?? [];
+
+  /// Número estável desta série dentro do respetivo tipo (Semanal I,
+  /// Semanal II, Mensal I, ...). Fica dentro de [parametros] para manter
+  /// compatibilidade com todos os documentos de séries já existentes.
+  int? get numeroNoTipo {
+    final valor = parametros['numeroNoTipo'];
+    if (valor is int && valor > 0) return valor;
+    if (valor is num && valor > 0) return valor.toInt();
+    final numero = int.tryParse(valor?.toString() ?? '');
+    return numero != null && numero > 0 ? numero : null;
+  }
+
+  set numeroNoTipo(int? valor) {
+    if (valor == null || valor <= 0) {
+      parametros.remove('numeroNoTipo');
+    } else {
+      parametros['numeroNoTipo'] = valor;
+    }
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -91,8 +111,7 @@ class SerieRecorrencia {
             dataInicioRaw.minute != 0 ||
             dataInicioRaw.second != 0 ||
             dataInicioRaw.millisecond != 0)) {
-      debugPrint(
-          '⚠️ [DIAGNOSTICO] Serie com hora nao normalizada: '
+      debugPrint('⚠️ [DIAGNOSTICO] Serie com hora nao normalizada: '
           'id=${map['id']}, medico=${map['medicoId']}, dataInicio=$dataInicioRaw');
     }
     final dataInicioNormalizada = DateTime(
@@ -137,7 +156,7 @@ class SerieRecorrencia {
   /// ou o gabineteId padrão da série se não houver mudanças aplicáveis
   String? obterGabineteParaData(DateTime data) {
     final dataNormalizada = DateTime(data.year, data.month, data.day);
-    
+
     // Se não há mudanças, retornar gabinete padrão
     if (mudancasGabinete.isEmpty) {
       return gabineteId;
@@ -167,13 +186,13 @@ class SerieRecorrencia {
   /// Adiciona ou atualiza uma mudança de gabinete a partir de uma data
   /// Remove mudanças futuras que ficam obsoletas
   void adicionarMudancaGabinete(DateTime dataInicio, String novoGabineteId) {
-    final dataNormalizada = DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
-    
+    final dataNormalizada =
+        DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
+
     // Remover mudanças futuras que ficam obsoletas
-    mudancasGabinete.removeWhere((m) => 
-      m.dataInicioNormalizada.isAfter(dataNormalizada) ||
-      m.dataInicioNormalizada.isAtSameMomentAs(dataNormalizada)
-    );
+    mudancasGabinete.removeWhere((m) =>
+        m.dataInicioNormalizada.isAfter(dataNormalizada) ||
+        m.dataInicioNormalizada.isAtSameMomentAs(dataNormalizada));
 
     // Adicionar nova mudança
     mudancasGabinete.add(MudancaGabinete(
@@ -185,4 +204,3 @@ class SerieRecorrencia {
     mudancasGabinete.sort((a, b) => a.dataInicio.compareTo(b.dataInicio));
   }
 }
-

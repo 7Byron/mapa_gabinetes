@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../services/password_service.dart';
 import '../services/unidade_selecionada_service.dart';
 import '../models/unidade.dart';
+import '../utils/app_version.dart';
 import 'alocacao_medicos_screen.dart';
 import 'selecao_unidade_screen.dart';
 
@@ -286,7 +287,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     height: 100,
                     fit: BoxFit.contain,
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 6),
+                  Text(
+                    appDisplayVersion,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[600],
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
 
                   // Título
                   const Text(

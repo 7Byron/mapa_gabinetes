@@ -50,6 +50,9 @@ class DisponibilidadeUnicaService {
         idParaSalvar =
             CadastroMedicosHelper.gerarIdPermanenteParaDisponibilidade(
                 disp, medicoId);
+        // Manter o objeto chamador sincronizado para que um segundo save faça
+        // upsert no mesmo documento em vez de criar uma cópia.
+        disp.id = idParaSalvar;
       }
 
       final ano = disp.data.year.toString();

@@ -5,6 +5,7 @@ import '../models/disponibilidade.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart' as logic;
+import '../utils/alocacao_disponibilidade_validacao_utils.dart';
 
 typedef AtualizarUIAlocarCartaoUnico = Future<bool> Function({
   required String medicoId,
@@ -39,8 +40,8 @@ class AlocacaoMedicoAlocacaoService {
     debugPrint(
         '🟢 [ALOCAÇÃO] Executando atualização otimista: médico=$medicoId, gabinete=$gabineteId');
 
-    String horarioInicio = '00:00';
-    String horarioFim = '00:00';
+    String horarioInicio;
+    String horarioFim;
     if (horarios != null && horarios.length >= 2) {
       horarioInicio = horarios[0];
       horarioFim = horarios[1];
@@ -49,10 +50,28 @@ class AlocacaoMedicoAlocacaoService {
         final dd = DateTime(disp.data.year, disp.data.month, disp.data.day);
         return disp.medicoId == medicoId && dd == dataAlvoNormalizada;
       }).toList();
-      if (dispDoDia.isNotEmpty) {
-        horarioInicio = dispDoDia.first.horarios[0];
-        horarioFim = dispDoDia.first.horarios[1];
+      if (dispDoDia.length != 1 || dispDoDia.first.horarios.length < 2) {
+        throw StateError(
+          'Não foi possível identificar de forma segura o horário do cartão.',
+        );
       }
+      horarioInicio = dispDoDia.first.horarios[0];
+      horarioFim = dispDoDia.first.horarios[1];
+    }
+
+    final horarioExiste = disponibilidades.any((disp) {
+      return AlocacaoDisponibilidadeValidacaoUtils.disponibilidadeCorresponde(
+        disponibilidade: disp,
+        medicoId: medicoId,
+        data: dataAlvoNormalizada,
+        horarioInicio: horarioInicio,
+        horarioFim: horarioFim,
+      );
+    });
+    if (!horarioExiste) {
+      throw StateError(
+        'O cartão selecionado já não existe ou o seu horário foi alterado.',
+      );
     }
 
     final alocacoesNoDestino = alocacoes.where((a) {

@@ -28,14 +28,16 @@ class AlocacaoClinicaConfigService {
   static Future<void> _sincronizarVersao(String unidadeId) async {
     final versoes =
         await CacheVersionService.fetchVersions(unidadeId: unidadeId);
-    final versaoRemota =
-        versoes[CacheVersionService.fieldClinicaConfig] ?? 0;
+    final versaoRemota = versoes[CacheVersionService.fieldClinicaConfig] ?? 0;
     final versaoLocal = _versaoClinicaPorUnidade[unidadeId];
     if (versaoLocal != null && versaoLocal != versaoRemota) {
       invalidateCache(unidadeId);
     }
     _versaoClinicaPorUnidade[unidadeId] = versaoRemota;
   }
+
+  static Future<void> sincronizarVersao(String unidadeId) =>
+      _sincronizarVersao(unidadeId);
 
   static void invalidateCache([String? unidadeId, int? ano]) {
     if (unidadeId == null || unidadeId.isEmpty) {
@@ -81,14 +83,15 @@ class AlocacaoClinicaConfigService {
     required String unidadeId,
     required int anoSelecionado,
     bool forcarServidor = false,
+    bool verificarVersao = true,
   }) async {
     final feriadosRef = FirebaseFirestore.instance
         .collection('unidades')
         .doc(unidadeId)
         .collection('feriados');
 
-    final cacheKey = '${unidadeId}_$anoSelecionado';
-    await _sincronizarVersao(unidadeId);
+    final cacheKey = '${unidadeId}_feriados_$anoSelecionado';
+    if (verificarVersao) await _sincronizarVersao(unidadeId);
     final cache = _cacheFeriados[cacheKey];
     final cacheInvalidado = _cacheInvalidado.contains(cacheKey);
     if (!forcarServidor && cache != null && !cacheInvalidado) {
@@ -100,9 +103,9 @@ class AlocacaoClinicaConfigService {
     final feriadosTemp = <Map<String, String>>[];
     try {
       final anoRef = feriadosRef.doc(anoSelecionado.toString());
-      final registosSnapshot = await anoRef
-          .collection('registos')
-          .get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+      final registosSnapshot = await anoRef.collection('registos').get(
+          GetOptions(
+              source: forcarServidor ? Source.server : Source.serverAndCache));
       for (final doc in registosSnapshot.docs) {
         final data = doc.data();
         feriadosTemp.add(<String, String>{
@@ -116,13 +119,14 @@ class AlocacaoClinicaConfigService {
       return feriadosTemp;
     } catch (_) {
       // Fallback: carregar todos os anos
-      final anosSnapshot =
-          await feriadosRef.get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+      final anosSnapshot = await feriadosRef.get(GetOptions(
+          source: forcarServidor ? Source.server : Source.serverAndCache));
       for (final anoDoc in anosSnapshot.docs) {
-        final registosSnapshot =
-            await anoDoc.reference
-                .collection('registos')
-                .get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+        final registosSnapshot = await anoDoc.reference
+            .collection('registos')
+            .get(GetOptions(
+                source:
+                    forcarServidor ? Source.server : Source.serverAndCache));
         for (final doc in registosSnapshot.docs) {
           final data = doc.data();
           feriadosTemp.add(<String, String>{
@@ -142,14 +146,15 @@ class AlocacaoClinicaConfigService {
     required String unidadeId,
     required int anoSelecionado,
     bool forcarServidor = false,
+    bool verificarVersao = true,
   }) async {
     final encerramentosRef = FirebaseFirestore.instance
         .collection('unidades')
         .doc(unidadeId)
         .collection('encerramentos');
 
-    final cacheKey = '${unidadeId}_$anoSelecionado';
-    await _sincronizarVersao(unidadeId);
+    final cacheKey = '${unidadeId}_encerramentos_$anoSelecionado';
+    if (verificarVersao) await _sincronizarVersao(unidadeId);
     final cache = _cacheEncerramentos[cacheKey];
     final cacheInvalidado = _cacheInvalidado.contains(cacheKey);
     if (!forcarServidor && cache != null && !cacheInvalidado) {
@@ -161,9 +166,9 @@ class AlocacaoClinicaConfigService {
     final diasTemp = <Map<String, dynamic>>[];
     try {
       final anoRef = encerramentosRef.doc(anoSelecionado.toString());
-      final registosSnapshot = await anoRef
-          .collection('registos')
-          .get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+      final registosSnapshot = await anoRef.collection('registos').get(
+          GetOptions(
+              source: forcarServidor ? Source.server : Source.serverAndCache));
       for (final doc in registosSnapshot.docs) {
         final data = doc.data();
         diasTemp.add(<String, dynamic>{
@@ -173,19 +178,19 @@ class AlocacaoClinicaConfigService {
           'motivo': data['motivo'] as String? ?? 'Encerramento',
         });
       }
-      _cacheEncerramentos[cacheKey] =
-          List<Map<String, dynamic>>.from(diasTemp);
+      _cacheEncerramentos[cacheKey] = List<Map<String, dynamic>>.from(diasTemp);
       _cacheInvalidado.remove(cacheKey);
       return diasTemp;
     } catch (_) {
       // Fallback: carregar todos os anos
-      final anosSnapshot =
-          await encerramentosRef.get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+      final anosSnapshot = await encerramentosRef.get(GetOptions(
+          source: forcarServidor ? Source.server : Source.serverAndCache));
       for (final anoDoc in anosSnapshot.docs) {
-        final registosSnapshot =
-            await anoDoc.reference
-                .collection('registos')
-                .get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+        final registosSnapshot = await anoDoc.reference
+            .collection('registos')
+            .get(GetOptions(
+                source:
+                    forcarServidor ? Source.server : Source.serverAndCache));
         for (final doc in registosSnapshot.docs) {
           final data = doc.data();
           diasTemp.add({
@@ -196,8 +201,7 @@ class AlocacaoClinicaConfigService {
           });
         }
       }
-      _cacheEncerramentos[cacheKey] =
-          List<Map<String, dynamic>>.from(diasTemp);
+      _cacheEncerramentos[cacheKey] = List<Map<String, dynamic>>.from(diasTemp);
       _cacheInvalidado.remove(cacheKey);
       return diasTemp;
     }
@@ -206,13 +210,14 @@ class AlocacaoClinicaConfigService {
   static Future<ClinicaConfiguracoes> carregarHorariosEConfiguracoes({
     required String unidadeId,
     bool forcarServidor = false,
+    bool verificarVersao = true,
   }) async {
     final horariosRef = FirebaseFirestore.instance
         .collection('unidades')
         .doc(unidadeId)
         .collection('horarios_clinica');
 
-    await _sincronizarVersao(unidadeId);
+    if (verificarVersao) await _sincronizarVersao(unidadeId);
     final cache = _cacheHorarios[unidadeId];
     final cacheInvalidado = _cacheInvalidado.contains('${unidadeId}_horarios');
     if (!forcarServidor && cache != null && !cacheInvalidado) {
@@ -221,8 +226,8 @@ class AlocacaoClinicaConfigService {
     }
     _cacheMisses++;
 
-    final horariosSnapshot =
-        await horariosRef.get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+    final horariosSnapshot = await horariosRef.get(GetOptions(
+        source: forcarServidor ? Source.server : Source.serverAndCache));
     final horariosTemp = <int, List<String>>{};
     for (final doc in horariosSnapshot.docs) {
       final data = doc.data();
@@ -247,9 +252,8 @@ class AlocacaoClinicaConfigService {
     };
 
     try {
-      final configDoc = await horariosRef
-          .doc('config')
-          .get(GetOptions(source: forcarServidor ? Source.server : Source.serverAndCache));
+      final configDoc = await horariosRef.doc('config').get(GetOptions(
+          source: forcarServidor ? Source.server : Source.serverAndCache));
       if (configDoc.exists) {
         final configData = configDoc.data() as Map<String, dynamic>;
         nuncaEncerra = configData['nuncaEncerra'] as bool? ?? false;
@@ -273,8 +277,7 @@ class AlocacaoClinicaConfigService {
 
   static void logResumo() {
     if (!kDebugMode) return;
-    debugPrint(
-        '📊 [CACHE-CLINICA] hits=$_cacheHits, misses=$_cacheMisses');
+    debugPrint('📊 [CACHE-CLINICA] hits=$_cacheHits, misses=$_cacheMisses');
   }
 
   static void resetResumo() {

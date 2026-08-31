@@ -28,6 +28,16 @@ void main() {
     expect(identical(fimEditado, horariosDaSerie), isFalse);
   });
 
+  test('só considera completo um intervalo com início e fim preenchidos', () {
+    expect(HorariosDisponibilidadeUtils.temInicioEFim([]), isFalse);
+    expect(HorariosDisponibilidadeUtils.temInicioEFim(['08:00']), isFalse);
+    expect(HorariosDisponibilidadeUtils.temInicioEFim(['', '13:00']), isFalse);
+    expect(
+      HorariosDisponibilidadeUtils.temInicioEFim(['08:00', '13:00']),
+      isTrue,
+    );
+  });
+
   testWidgets('Apenas este dia não altera a série nem os cartões seguintes',
       (tester) async {
     final cenario = _CenarioSerie();
@@ -244,6 +254,120 @@ void main() {
     expect(horarioAnteriorRecebido, ['08:00', '13:00']);
     expect(novoHorarioRecebido, ['08:00', '13:30']);
     expect(cartao.horarios, ['08:00', '13:00']);
+  });
+
+  testWidgets(
+      'cartão único novo aceita início e só sincroniza depois de escolher fim',
+      (tester) async {
+    final cartao = Disponibilidade(
+      id: 'temp_cartao_inicio_primeiro',
+      medicoId: 'cristina',
+      data: DateTime(2026, 9, 5),
+      horarios: [],
+      tipo: 'Única',
+    );
+    final horasEscolhidas = <TimeOfDay>[
+      const TimeOfDay(hour: 8, minute: 0),
+      const TimeOfDay(hour: 13, minute: 0),
+    ];
+    final sincronizacoes = <List<String>>[];
+    List<String>? horarioAnteriorRecebido;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 399,
+            height: 500,
+            child: DisponibilidadesGrid(
+              disponibilidades: [cartao],
+              onRemoverData: (_, __) {},
+              onAtualizarSerie: (disponibilidade, horarios) async {
+                horarioAnteriorRecebido =
+                    List<String>.from(disponibilidade.horarios);
+                sincronizacoes.add(List<String>.from(horarios));
+              },
+              onAtualizarDataSerie: (_, __) async {
+                throw StateError('Não deve criar exceção para cartão único');
+              },
+              mostrarSeletorHorario: (_) async => horasEscolhidas.removeAt(0),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Início'));
+    await tester.pumpAndSettle();
+
+    expect(cartao.horarios, ['08:00']);
+    expect(sincronizacoes, isEmpty);
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Fim'));
+    await tester.pumpAndSettle();
+
+    expect(horarioAnteriorRecebido, ['08:00']);
+    expect(sincronizacoes, [
+      ['08:00', '13:00'],
+    ]);
+  });
+
+  testWidgets(
+      'cartão único novo aceita fim e só sincroniza depois de escolher início',
+      (tester) async {
+    final cartao = Disponibilidade(
+      id: 'temp_cartao_fim_primeiro',
+      medicoId: 'cristina',
+      data: DateTime(2026, 9, 5),
+      horarios: [],
+      tipo: 'Única',
+    );
+    final horasEscolhidas = <TimeOfDay>[
+      const TimeOfDay(hour: 13, minute: 0),
+      const TimeOfDay(hour: 8, minute: 0),
+    ];
+    final sincronizacoes = <List<String>>[];
+    List<String>? horarioAnteriorRecebido;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 399,
+            height: 500,
+            child: DisponibilidadesGrid(
+              disponibilidades: [cartao],
+              onRemoverData: (_, __) {},
+              onAtualizarSerie: (disponibilidade, horarios) async {
+                horarioAnteriorRecebido =
+                    List<String>.from(disponibilidade.horarios);
+                sincronizacoes.add(List<String>.from(horarios));
+              },
+              onAtualizarDataSerie: (_, __) async {
+                throw StateError('Não deve criar exceção para cartão único');
+              },
+              mostrarSeletorHorario: (_) async => horasEscolhidas.removeAt(0),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Fim'));
+    await tester.pumpAndSettle();
+
+    expect(cartao.horarios, ['', '13:00']);
+    expect(sincronizacoes, isEmpty);
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Início'));
+    await tester.pumpAndSettle();
+
+    expect(horarioAnteriorRecebido, ['', '13:00']);
+    expect(sincronizacoes, [
+      ['08:00', '13:00'],
+    ]);
   });
 }
 

@@ -44,10 +44,12 @@ class AlocacaoCard extends StatelessWidget {
         DateFormat('EEEE', 'en_US').format(disponibilidade.data);
     final diaSemana = AlocacaoCardActions.traduzirDiaSemana(diaSemanaIngles);
 
-    final horarioInicio = disponibilidade.horarios.isNotEmpty
+    final horarioInicio = disponibilidade.horarios.isNotEmpty &&
+            disponibilidade.horarios[0].trim().isNotEmpty
         ? disponibilidade.horarios[0]
         : 'Início';
-    final horarioFim = disponibilidade.horarios.length == 2
+    final horarioFim = disponibilidade.horarios.length >= 2 &&
+            disponibilidade.horarios[1].trim().isNotEmpty
         ? disponibilidade.horarios[1]
         : 'Fim';
 

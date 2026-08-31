@@ -6,6 +6,7 @@ import '../models/unidade.dart';
 import '../utils/alocacao_cache_store.dart';
 import '../utils/alocacao_disponibilidade_validacao_utils.dart';
 import '../utils/cadastro_medicos_helper.dart';
+import '../utils/horarios_disponibilidade_utils.dart';
 import '../utils/series_helper.dart';
 import 'cache_version_service.dart';
 
@@ -38,21 +39,27 @@ class AlocacaoHorarioService {
     required List<Alocacao> alocacoes,
     required Unidade? unidade,
   }) async {
-    if (novosHorarios.length < 2 || horariosAnteriores.length < 2) {
+    if (!HorariosDisponibilidadeUtils.temInicioEFim(novosHorarios)) {
       throw ArgumentError('O cartão deve ter hora de entrada e de saída.');
     }
 
-    final correspondentes = alocacoes
-        .where(
-          (alocacao) =>
-              AlocacaoDisponibilidadeValidacaoUtils.alocacaoCorrespondeAoCartao(
-            alocacao: alocacao,
-            medicoId: disponibilidade.medicoId,
-            data: disponibilidade.data,
-            horarios: horariosAnteriores,
-          ),
-        )
-        .toList();
+    // Um cartão acabado de criar ainda não possui um intervalo anterior. Só
+    // procuramos uma alocação para sincronizar quando esse intervalo existe.
+    final correspondentes = HorariosDisponibilidadeUtils.temInicioEFim(
+      horariosAnteriores,
+    )
+        ? alocacoes
+            .where(
+              (alocacao) => AlocacaoDisponibilidadeValidacaoUtils
+                  .alocacaoCorrespondeAoCartao(
+                alocacao: alocacao,
+                medicoId: disponibilidade.medicoId,
+                data: disponibilidade.data,
+                horarios: horariosAnteriores,
+              ),
+            )
+            .toList()
+        : <Alocacao>[];
     if (correspondentes.length > 1) {
       throw StateError(
         'Existem várias alocações para o horário anterior; '
@@ -69,8 +76,15 @@ class AlocacaoHorarioService {
     );
     final ano = data.year.toString();
     final dia = _keyDia(data);
+    final disponibilidadeId =
+        CadastroMedicosHelper.isIdTemporarioOuInvalido(disponibilidade.id)
+            ? CadastroMedicosHelper.gerarIdPermanenteParaDisponibilidade(
+                disponibilidade,
+                disponibilidade.medicoId,
+              )
+            : disponibilidade.id;
     final disponibilidadeAtualizada = Disponibilidade(
-      id: disponibilidade.id,
+      id: disponibilidadeId,
       medicoId: disponibilidade.medicoId,
       data: data,
       horarios: List<String>.from(novosHorarios),
@@ -85,12 +99,12 @@ class AlocacaoHorarioService {
         .collection('disponibilidades')
         .doc(ano)
         .collection('registos')
-        .doc(disponibilidade.id);
+        .doc(disponibilidadeId);
     final disponibilidadeDiariaRef = unidadeRef
         .collection('dias')
         .doc(dia)
         .collection('disponibilidades')
-        .doc(disponibilidade.id);
+        .doc(disponibilidadeId);
     batch.set(disponibilidadeAnualRef, disponibilidadeAtualizada.toMap());
     batch.set(disponibilidadeDiariaRef, disponibilidadeAtualizada.toMap());
 

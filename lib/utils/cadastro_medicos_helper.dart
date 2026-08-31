@@ -81,6 +81,26 @@ class CadastroMedicosHelper {
         .toList();
   }
 
+  /// Indica se já existe um cartão único do médico na data indicada.
+  ///
+  /// Cartões de séries no mesmo dia não contam como duplicados: um médico pode
+  /// ter, por exemplo, uma série semanal e uma disponibilidade única na mesma
+  /// data.
+  static bool existeDisponibilidadeUnicaNaData(
+    List<Disponibilidade> disponibilidades,
+    String medicoId,
+    DateTime data,
+  ) {
+    return disponibilidades.any(
+      (d) =>
+          d.tipo == 'Única' &&
+          d.medicoId == medicoId &&
+          d.data.year == data.year &&
+          d.data.month == data.month &&
+          d.data.day == data.day,
+    );
+  }
+
   /// Remove disponibilidades únicas de um médico específico da lista
   static List<Disponibilidade> removerDisponibilidadesUnicas(
     List<Disponibilidade> disponibilidades,

@@ -50,4 +50,61 @@ void main() {
 
     expect(disponibilidade.horarios, ['08:00', '13:30']);
   });
+
+  test('série semanal no mesmo dia não impede um cartão único', () {
+    final disponibilidades = [
+      Disponibilidade(
+        id: 'serie_semanal_2026-08-31',
+        medicoId: 'cristina',
+        data: DateTime(2026, 8, 31),
+        horarios: ['08:00', '13:00'],
+        tipo: 'Semanal',
+      ),
+    ];
+
+    expect(
+      CadastroMedicosHelper.existeDisponibilidadeUnicaNaData(
+        disponibilidades,
+        'cristina',
+        DateTime(2026, 8, 31),
+      ),
+      isFalse,
+    );
+  });
+
+  test('outro cartão único do médico no mesmo dia continua bloqueado', () {
+    final disponibilidades = [
+      Disponibilidade(
+        id: 'unica_2026-08-31',
+        medicoId: 'cristina',
+        data: DateTime(2026, 8, 31),
+        horarios: ['16:00', '20:00'],
+        tipo: 'Única',
+      ),
+      Disponibilidade(
+        id: 'unica_outro_medico_2026-08-31',
+        medicoId: 'raquel',
+        data: DateTime(2026, 8, 31),
+        horarios: ['09:00', '12:00'],
+        tipo: 'Única',
+      ),
+    ];
+
+    expect(
+      CadastroMedicosHelper.existeDisponibilidadeUnicaNaData(
+        disponibilidades,
+        'cristina',
+        DateTime(2026, 8, 31, 18, 30),
+      ),
+      isTrue,
+    );
+    expect(
+      CadastroMedicosHelper.existeDisponibilidadeUnicaNaData(
+        disponibilidades,
+        'luisa',
+        DateTime(2026, 8, 31),
+      ),
+      isFalse,
+    );
+  });
 }

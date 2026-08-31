@@ -203,9 +203,14 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 
       // Cartões únicos não têm âmbito de série: aplicar apenas ao próprio
       // cartão. O callback persiste também a eventual alocação, mantendo o
-      // gabinete; só alteramos localmente quando não existe callback.
+      // gabinete. Num cartão novo, a primeira hora fica local até a segunda
+      // ser escolhida; só então existe um intervalo válido para persistir.
       if (disponibilidade.tipo == 'Única') {
-        if (widget.onAtualizarSerie != null) {
+        if (!HorariosDisponibilidadeUtils.temInicioEFim(horariosEditados)) {
+          setState(() {
+            disponibilidade.horarios = horariosEditados;
+          });
+        } else if (widget.onAtualizarSerie != null) {
           await widget.onAtualizarSerie!(disponibilidade, horariosEditados);
         } else {
           setState(() {
@@ -318,9 +323,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
       // A alteração pontual só ganha uma lista própria depois de a exceção ser
       // guardada com sucesso. A série e os restantes cartões permanecem com a
       // lista-base partilhada.
-      if (horariosEditados.length >= 2 &&
-          horariosEditados[0].trim().isNotEmpty &&
-          horariosEditados[1].trim().isNotEmpty) {
+      if (HorariosDisponibilidadeUtils.temInicioEFim(horariosEditados)) {
         ExcecaoSerie excecao;
         try {
           excecao = await widget.onAtualizarDataSerie(

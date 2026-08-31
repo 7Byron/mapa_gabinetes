@@ -3,6 +3,12 @@
 class HorariosDisponibilidadeUtils {
   HorariosDisponibilidadeUtils._();
 
+  /// Indica se a lista contém horas de início e de fim preenchidas.
+  static bool temInicioEFim(List<String> horarios) =>
+      horarios.length >= 2 &&
+      horarios[0].trim().isNotEmpty &&
+      horarios[1].trim().isNotEmpty;
+
   /// Devolve uma nova lista com o horário alterado.
   ///
   /// Os horários atuais nunca são modificados. Isto permite que os cartões

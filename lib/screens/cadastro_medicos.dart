@@ -3434,12 +3434,23 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       bool adicionouNova = false;
       for (final novaDisp in geradas) {
-        if (!diasSelecionados.any((d) =>
-            d.year == novaDisp.data.year &&
-            d.month == novaDisp.data.month &&
-            d.day == novaDisp.data.day)) {
+        final jaExisteUnica =
+            CadastroMedicosHelper.existeDisponibilidadeUnicaNaData(
+          disponibilidades,
+          _medicoId,
+          novaDisp.data,
+        );
+        if (!jaExisteUnica) {
           disponibilidades.add(novaDisp);
-          diasSelecionados.add(novaDisp.data);
+          final diaJaSelecionado = diasSelecionados.any(
+            (d) =>
+                d.year == novaDisp.data.year &&
+                d.month == novaDisp.data.month &&
+                d.day == novaDisp.data.day,
+          );
+          if (!diaJaSelecionado) {
+            diasSelecionados.add(novaDisp.data);
+          }
           adicionouNova = true;
         }
       }

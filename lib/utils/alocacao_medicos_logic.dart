@@ -1,3 +1,4 @@
+import 'excecoes_canceladas_utils.dart';
 // import '../database/database_helper.dart';
 // import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import 'package:flutter/foundation.dart';
@@ -346,7 +347,7 @@ class AlocacaoMedicosLogic {
   }
 
   /// Extrai datas com exceções canceladas do Firestore para um dia específico
-  /// Retorna um Set com chaves no formato: medicoId_ano-mes-dia
+  /// Retorna chaves por médico, série e data (ExcecoesCanceladasUtils).
   /// OTIMIZAÇÃO: Usa cache de exceções quando disponível para evitar chamadas redundantes
   static Future<Set<String>> extrairExcecoesCanceladasParaDia(
       String unidadeId, DateTime data) async {
@@ -378,8 +379,8 @@ class AlocacaoMedicosLogic {
               excecao.data.year == dataNormalizada.year &&
               excecao.data.month == dataNormalizada.month &&
               excecao.data.day == dataNormalizada.day) {
-            final dataKey =
-                '${medicoId}_${excecao.data.year}-${excecao.data.month}-${excecao.data.day}';
+            final dataKey = ExcecoesCanceladasUtils.chave(
+                medicoId, excecao.serieId, excecao.data);
             datasComExcecoesCanceladas.add(dataKey);
           }
         }
@@ -405,8 +406,10 @@ class AlocacaoMedicosLogic {
           if (!eExcecaoDaUnidade || doc.data()['cancelada'] != true) continue;
 
           final medicoId = segmentos[3];
+          final serieId = doc.data()['serieId']?.toString();
+          if (serieId == null || serieId.isEmpty) continue;
           datasComExcecoesCanceladas.add(
-            '${medicoId}_${data.year}-${data.month}-${data.day}',
+            ExcecoesCanceladasUtils.chave(medicoId, serieId, data),
           );
         }
       } catch (e) {
@@ -542,13 +545,11 @@ class AlocacaoMedicosLogic {
           excecoesCanceladas.isNotEmpty &&
           unidade != null &&
           dataFiltroDia != null) {
-        // Filtrar disponibilidades - remover todas as disponibilidades de médicos com exceções canceladas
+        // Filtrar disponibilidades - remover apenas os cartões da série cancelada
         final dispsAntes = disps.length;
         disps = disps.where((disp) {
-          final dataKey =
-              '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}';
-          final temExcecao = excecoesCanceladas.contains(dataKey);
-          if (temExcecao) {}
+          final temExcecao = ExcecoesCanceladasUtils.contem(
+              excecoesCanceladas, disp.medicoId, disp.id, disp.data);
           return !temExcecao;
         }).toList();
         if (dispsAntes != disps.length) {
@@ -556,13 +557,11 @@ class AlocacaoMedicosLogic {
               '✅ [FILTRO EXCEÇÃO] Disponibilidades filtradas: $dispsAntes -> ${disps.length} (removidas ${dispsAntes - disps.length})');
         }
 
-        // Filtrar alocações - remover todas as alocações de médicos com exceções canceladas
+        // Filtrar alocações - remover apenas as alocações da série cancelada
         final alocsAntes = alocs.length;
         alocs = alocs.where((aloc) {
-          final dataKey =
-              '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
-          final temExcecao = excecoesCanceladas.contains(dataKey);
-          if (temExcecao) {}
+          final temExcecao = ExcecoesCanceladasUtils.contem(
+              excecoesCanceladas, aloc.medicoId, aloc.id, aloc.data);
           return !temExcecao;
         }).toList();
         if (alocsAntes != alocs.length) {
@@ -2495,7 +2494,8 @@ class AlocacaoMedicosLogic {
         // Verificar se esta alocação corresponde a uma data com exceção cancelada
         final dataKey =
             '${aloc.medicoId}_${aloc.data.year}-${aloc.data.month}-${aloc.data.day}';
-        if (datasComExcecoesCanceladas.contains(dataKey)) {
+        if (ExcecoesCanceladasUtils.contem(
+            datasComExcecoesCanceladas, aloc.medicoId, aloc.id, aloc.data)) {
           continue;
         }
 

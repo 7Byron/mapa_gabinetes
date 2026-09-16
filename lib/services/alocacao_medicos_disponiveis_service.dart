@@ -1,3 +1,4 @@
+import '../utils/excecoes_canceladas_utils.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/medico.dart';
@@ -24,9 +25,8 @@ class AlocacaoMedicosDisponiveisService {
     for (final d in disponibilidades) {
       final dd = DateTime(d.data.year, d.data.month, d.data.day);
       if (dd != dataNormalizada) continue;
-      final dataKey =
-          '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
-      final temExcecaoCancelada = datasComExcecoesCanceladas.contains(dataKey);
+      final temExcecaoCancelada = ExcecoesCanceladasUtils.contem(
+          datasComExcecoesCanceladas, d.medicoId, d.id, d.data);
       final serieId = d.id.startsWith('serie_')
           ? SeriesHelper.extrairSerieIdDeDisponibilidade(d.id)
           : null;
@@ -44,10 +44,6 @@ class AlocacaoMedicosDisponiveisService {
 
     return medicos.where((m) {
       if (!m.ativo) return false;
-      final dataKey = '${m.id}_${data.year}-${data.month}-${data.day}';
-      if (datasComExcecoesCanceladas.contains(dataKey)) {
-        return false;
-      }
       return medicosComDisponibilidade.contains(m.id);
     }).toList();
   }

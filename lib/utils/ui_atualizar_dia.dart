@@ -1,3 +1,4 @@
+import 'excecoes_canceladas_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -393,9 +394,8 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
         final dDate = DateTime(d.data.year, d.data.month, d.data.day);
         if (dDate == dataNormalizada) {
           // Verificar se esta disponibilidade não tem exceção cancelada
-          final dataKey =
-              '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}';
-          if (!datasComExcecoesCanceladas.contains(dataKey)) {
+          if (!ExcecoesCanceladasUtils.contem(
+              datasComExcecoesCanceladas, d.medicoId, d.id, d.data)) {
             medicosComDisponibilidade.add(d.medicoId);
           }
         }
@@ -412,12 +412,6 @@ Future<Map<String, dynamic>> atualizarDadosDoDia({
         // Verifica se não está alocado
         if (medicosAlocados.contains(m.id)) {
           return false;
-        }
-
-        // Verifica se tem exceção cancelada para esse dia
-        final dataKey = '${m.id}_${data.year}-${data.month}-${data.day}';
-        if (datasComExcecoesCanceladas.contains(dataKey)) {
-          return false; // Não mostrar se tem exceção cancelada
         }
 
         // Verificar se o médico está no Set de médicos com disponibilidade

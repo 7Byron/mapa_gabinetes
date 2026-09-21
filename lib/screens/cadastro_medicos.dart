@@ -26,6 +26,7 @@ import '../services/gabinete_service.dart';
 import '../services/realocacao_serie_service.dart';
 
 // Widgets
+import '../widgets/guardar_antes_de_sair.dart';
 import '../widgets/disponibilidades_grid.dart';
 import '../widgets/calendario_disponibilidades.dart';
 import '../widgets/formulario_medico.dart';
@@ -57,10 +58,10 @@ class CadastroMedico extends StatefulWidget {
 
 class CadastroMedicoState extends State<CadastroMedico> {
   final _formKey = GlobalKey<FormState>();
-  bool _saving = false; // mostra progress enquanto grava
+  bool _saving = false;
+  Completer<bool>? _gravacaoEmCurso;
   double progressoSaving = 0.0;
   String mensagemSaving = 'A guardar...';
-  bool _navegandoAoSair = false; // evita retirar overlay antes do pop
   bool _atualizandoHorarios =
       false; // mostra progress enquanto atualiza horários
   double progressoAtualizandoHorarios = 0.0;
@@ -105,6 +106,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
   // Estado do campo ativo
   bool _medicoAtivo = true;
+  bool _medicoAtivoOriginal = true;
 
   bool isLoadingDisponibilidades = false;
   double progressoCarregamentoDisponibilidades = 0.0;
@@ -141,6 +143,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       especialidadeController.text = widget.medico!.especialidade;
       observacoesController.text = widget.medico!.observacoes ?? '';
       _medicoAutocompleteController.text = widget.medico!.nome;
+      _medicoAtivoOriginal = widget.medico!.ativo;
       _medicoAtivo = widget.medico!.ativo; // Carregar estado ativo do médico
 
       // Recarregar médico do Firestore para garantir dados atualizados (especialmente o campo ativo)
@@ -198,6 +201,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
             debugPrint(
                 '✅ [RECARREGAR-MÉDICO] Atualizando campo ativo de $_medicoAtivo para $ativoAtualizado');
             setState(() {
+              _medicoAtivoOriginal = ativoAtualizado;
               _medicoAtivo = ativoAtualizado;
               // Atualizar também o médico atual
               if (_medicoAtual != null) {
@@ -276,315 +280,42 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
   }
 
-  /// Verifica se houve mudanças nos dados
+  /// Compara com a última gravação confirmada, sem consultar o servidor.
   void _verificarMudancas() {
-    final nomeAtual = nomeController.text.trim();
-    final especialidadeAtual = especialidadeController.text.trim();
-    final observacoesAtual = observacoesController.text.trim();
-
-    bool mudancas = false;
-
-    // Verifica mudanças nos campos de texto
-    if (nomeAtual != _nomeOriginal ||
-        especialidadeAtual != _especialidadeOriginal ||
-        observacoesAtual != _observacoesOriginal) {
-      mudancas = true;
+    final mudancas = nomeController.text.trim() != _nomeOriginal ||
+        especialidadeController.text.trim() != _especialidadeOriginal ||
+        observacoesController.text.trim() != _observacoesOriginal ||
+        _medicoAtivo != _medicoAtivoOriginal ||
+        disponibilidades.length != _disponibilidadesOriginal.length ||
+        CadastroMedicosHelper.disponibilidadesPendentes(
+          disponibilidades, _disponibilidadesOriginal,
+        ).isNotEmpty;
+    if (mounted && _houveMudancas != mudancas) {
+      setState(() => _houveMudancas = mudancas);
     }
-
-    // CORREÇÃO CRÍTICA: Verificar mudanças nas disponibilidades "Única" primeiro
-    // mesmo quando múltiplas séries são criadas rapidamente
-    final disponibilidadesUnicas =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            disponibilidades, _medicoId);
-    final disponibilidadesUnicasOriginal =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            _disponibilidadesOriginal, _medicoId);
-
-    // Verificar se há disponibilidades "Única" novas ou removidas
-    final temUnicasNovas = disponibilidadesUnicas.any((d) =>
-        !disponibilidadesUnicasOriginal.any((orig) =>
-            orig.id == d.id &&
-            orig.data.year == d.data.year &&
-            orig.data.month == d.data.month &&
-            orig.data.day == d.data.day &&
-            CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios)));
-    final temUnicasRemovidas = disponibilidadesUnicasOriginal.any((orig) =>
-        !disponibilidadesUnicas.any((d) =>
-            d.id == orig.id &&
-            d.data.year == orig.data.year &&
-            d.data.month == orig.data.month &&
-            d.data.day == orig.data.day &&
-            CadastroMedicosHelper.listasIguais(d.horarios, orig.horarios)));
-
-    if (temUnicasNovas || temUnicasRemovidas) {
-      mudancas = true;
-    }
-
-    // CORREÇÃO: Verificar mudanças nas disponibilidades usando comparação por ID
-    if (!mudancas &&
-        disponibilidades.length != _disponibilidadesOriginal.length) {
-      mudancas = true;
-    } else if (!mudancas) {
-      // Verificar se todas as disponibilidades atuais existem nas originais
-      for (final disp in disponibilidades) {
-        final existeOriginal = _disponibilidadesOriginal.any((orig) =>
-            orig.id == disp.id &&
-            orig.data.year == disp.data.year &&
-            orig.data.month == disp.data.month &&
-            orig.data.day == disp.data.day &&
-            orig.tipo == disp.tipo &&
-            CadastroMedicosHelper.listasIguais(orig.horarios, disp.horarios));
-        if (!existeOriginal) {
-          mudancas = true;
-          break;
-        }
-      }
-
-      // Verificar se alguma disponibilidade original foi removida
-      if (!mudancas) {
-        for (final orig in _disponibilidadesOriginal) {
-          final existeAtual = disponibilidades.any((disp) =>
-              disp.id == orig.id &&
-              disp.data.year == orig.data.year &&
-              disp.data.month == orig.data.month &&
-              disp.data.day == orig.data.day &&
-              disp.tipo == orig.tipo &&
-              CadastroMedicosHelper.listasIguais(disp.horarios, orig.horarios));
-          if (!existeAtual) {
-            mudancas = true;
-            break;
-          }
-        }
-      }
-    }
-    setState(() {
-      _houveMudancas = mudancas;
-    });
   }
 
-  /// Salva automaticamente antes de sair (se houver mudanças)
-  Future<bool> _confirmarSaida() async {
-    // CORREÇÃO CRÍTICA: Verificar se há cartões únicos não salvos
-    // Mesmo que _houveMudancas seja false, se há cartões únicos, precisamos salvar
-    // IMPORTANTE: Recalcular disponibilidades únicas para garantir lista atualizada
-    final disponibilidadesUnicasAtualizadas =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            disponibilidades, _medicoId);
-    final disponibilidadesUnicasOriginal =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            _disponibilidadesOriginal, _medicoId);
-
-    // CORREÇÃO: Verificar se há disponibilidades "Única" que não estão nas originais
-    // Usar comparação mais robusta que verifica ID, data completa e horários
-    disponibilidadesUnicasAtualizadas.any((d) {
-      final existeOriginal = disponibilidadesUnicasOriginal.any((orig) =>
-          orig.id == d.id &&
-          orig.data.year == d.data.year &&
-          orig.data.month == d.data.month &&
-          orig.data.day == d.data.day &&
-          CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios));
-      return !existeOriginal;
-    });
-    // CORREÇÃO CRÍTICA: Sempre forçar verificação de mudanças antes de sair
-    // IMPORTANTE: Chamar _verificarMudancas() novamente para garantir estado atualizado
-    // (já foi chamado no PopScope, mas garantir novamente aqui)
-    _verificarMudancas();
-
-    // CORREÇÃO: Recalcular disponibilidades únicas após verificar mudanças
-    final disponibilidadesUnicasRecalculadas =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            disponibilidades, _medicoId);
-
-    // Atualizar temUnicasNaoSalvas após verificar mudanças novamente
-    final temUnicasNaoSalvasAtualizado =
-        disponibilidadesUnicasRecalculadas.any((d) {
-      final existeOriginal = disponibilidadesUnicasOriginal.any((orig) =>
-          orig.id == d.id &&
-          orig.data.year == d.data.year &&
-          orig.data.month == d.data.month &&
-          orig.data.day == d.data.day &&
-          CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios));
-
-      return !existeOriginal;
-    });
-
-    if (!temUnicasNaoSalvasAtualizado && !_houveMudancas) {
-      return true; // Pode sair sem salvar se não houve mudanças
+  /// Todas as navegações guardam apenas quando existe trabalho pendente.
+  Future<bool> _guardarAntesDeNavegar() async {
+    final gravacao = _gravacaoEmCurso;
+    if (gravacao != null) {
+      if (!await gravacao.future || !mounted) return false;
     }
-
-    // Se chegou aqui, há mudanças ou disponibilidades "Única" não salvas
-    // Atualizar flag para garantir salvamento
-    setState(() {
-      _houveMudancas = true;
-    });
-
-    // CORREÇÃO: Sempre salvar se há disponibilidades "Única" não salvas
-    // Usar a versão atualizada da verificação com lista atualizada
-    // Verificação de mudanças já feita acima
-
-    // Salvar automaticamente antes de sair
-    await _salvarMedico();
-    // Já fizemos pop dentro de _salvarMedico; não deixar o PopScope fazer novo pop
-    return false;
-  }
-
-  /// Salva automaticamente antes de mudar de médico (se houver mudanças)
-  Future<bool> _confirmarMudancaMedico() async {
-    if (!_houveMudancas) {
-      return true; // Pode mudar sem salvar se não houve mudanças
-    }
-
-    // Salvar automaticamente antes de mudar
-    final salvou = await _salvarMedicoSemSair();
-    return salvou; // Retorna true se salvou com sucesso
-  }
-
-  /// Navega para a página de alocação, salvando antes se houver mudanças
-  /// Salva antes de navegar para o mapa (usado pelos cartões)
-  Future<bool> _salvarAntesDeNavegarParaMapa() async {
-    // CORREÇÃO CRÍTICA: Sempre verificar mudanças e disponibilidades únicas
-    // Antes de qualquer outra operação, para garantir que sejam capturadas corretamente
-    _verificarMudancas();
-
-    // CORREÇÃO CRÍTICA: Capturar disponibilidades únicas ANTES de qualquer validação
-    // que possa modificar a lista (fazendo cópia profunda)
-    final todasDisponibilidadesCopia =
-        CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
-            disponibilidades);
-    final disponibilidadesUnicasParaVerificar =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            todasDisponibilidadesCopia, _medicoId);
-
-    // CORREÇÃO RADICAL: Se há disponibilidades únicas na lista, SEMPRE salvar, mesmo que _houveMudancas seja false
-    // porque pode ser que as disponibilidades únicas tenham sido criadas mas a flag não foi atualizada
-    final deveSalvar =
-        _houveMudancas || disponibilidadesUnicasParaVerificar.isNotEmpty;
-
-    if (!deveSalvar) {
-      return true; // Não há mudanças, pode navegar
-    }
-
-    // Validar formulário antes de salvar
-    if (!_formKey.currentState!.validate()) {
-      if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Por favor, corrija os erros no formulário antes de continuar'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    if (_saving || _isCarregandoInicial || isLoadingDisponibilidades ||
+        _atualizandoHorarios || _alocandoGabinete || _criandoExcecao) {
       return false;
     }
-
-    // Verificar se o nome foi preenchido
-    if (nomeController.text.trim().isEmpty) {
-      if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Introduza o nome do médico antes de continuar'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return false;
-    }
-
-    // Salvar antes de navegar
-    return await _salvarMedicoSemSair();
+    _verificarMudancas();
+    if (!_houveMudancas) return true;
+    return _salvarMedicoSemSair();
   }
+
+  Future<bool> _confirmarMudancaMedico() => _guardarAntesDeNavegar();
+
+  Future<bool> _salvarAntesDeNavegarParaMapa() => _guardarAntesDeNavegar();
 
   Future<void> _navegarParaAlocacao() async {
-    // CORREÇÃO CRÍTICA: Sempre verificar mudanças e disponibilidades únicas
-    // Antes de qualquer outra operação, para garantir que sejam capturadas corretamente
-    _verificarMudancas();
-
-    // CORREÇÃO CRÍTICA: Capturar disponibilidades únicas ANTES de qualquer validação
-    // que possa modificar a lista (fazendo cópia profunda)
-    final todasDisponibilidadesCopia =
-        CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
-            disponibilidades);
-    final disponibilidadesUnicasParaVerificar =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            todasDisponibilidadesCopia, _medicoId);
-
-    final disponibilidadesUnicasOriginal =
-        CadastroMedicosHelper.filtrarDisponibilidadesUnicas(
-            _disponibilidadesOriginal, _medicoId);
-
-    final temUnicasNaoSalvas = disponibilidadesUnicasParaVerificar.any((d) {
-      return !disponibilidadesUnicasOriginal.any((orig) =>
-          orig.id == d.id &&
-          orig.data.year == d.data.year &&
-          orig.data.month == d.data.month &&
-          orig.data.day == d.data.day &&
-          CadastroMedicosHelper.listasIguais(orig.horarios, d.horarios));
-    });
-
-    // CORREÇÃO CRÍTICA: SEMPRE salvar se há disponibilidades únicas na lista, independentemente de _houveMudancas
-    // Se há disponibilidades únicas, sempre salvar para garantir que sejam persistidas
-    debugPrint(
-        '🔍 [_navegarParaAlocacao] Verificando salvamento: _houveMudancas=$_houveMudancas, temUnicasNaoSalvas=$temUnicasNaoSalvas, totalUnicas=${disponibilidadesUnicasParaVerificar.length}');
-
-    // CORREÇÃO RADICAL: Se há disponibilidades únicas na lista, SEMPRE salvar, mesmo que _houveMudancas seja false
-    // porque pode ser que as disponibilidades únicas tenham sido criadas mas a flag não foi atualizada
-    final deveSalvar =
-        _houveMudancas || disponibilidadesUnicasParaVerificar.isNotEmpty;
-
-    if (deveSalvar) {
-      debugPrint(
-          '✅ [_navegarParaAlocacao] Vai salvar antes de navegar (mudanças: $_houveMudancas, únicas: ${disponibilidadesUnicasParaVerificar.length})');
-      if (widget.unidade == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Não é possível navegar para alocação: unidade não definida'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      // Validar formulário antes de salvar
-      if (!_formKey.currentState!.validate()) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Por favor, corrija os erros no formulário antes de continuar'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // Verificar se o nome foi preenchido
-      if (nomeController.text.trim().isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Introduza o nome do médico antes de continuar'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // Salvar antes de navegar
-      final salvou = await _salvarMedicoSemSair();
-      if (!salvou) {
-        // Se não salvou com sucesso, não navegar
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('Erro ao salvar. Não foi possível navegar para alocação.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
+    if (!await _guardarAntesDeNavegar() || !mounted) return;
 
     // Verificar se unidade está disponível
     if (widget.unidade == null) {
@@ -631,6 +362,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       especialidadeController.text = medico.especialidade;
       observacoesController.text = medico.observacoes ?? '';
       _medicoAutocompleteController.text = medico.nome;
+      _medicoAtivoOriginal = medico.ativo;
       _medicoAtivo = medico.ativo; // Carregar estado ativo do médico
 
       // Limpar dados antigos
@@ -996,17 +728,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
   }
 
-  /// Mostra diálogo de confirmação antes de criar novo
-  /// Salva automaticamente antes de criar novo médico (se houver mudanças)
-  Future<bool> _confirmarNovo() async {
-    if (!_houveMudancas) {
-      return true; // Pode criar novo sem salvar se não houve mudanças
-    }
-
-    // Salvar automaticamente antes de criar novo
-    await _salvarMedico();
-    return true;
-  }
+  Future<bool> _confirmarNovo() => _guardarAntesDeNavegar();
 
   /// Carrega todos os dados iniciais (disponibilidades, alocações e gabinetes) com progress bar
   Future<void> _carregarDadosIniciaisCompleto(String medicoId,
@@ -1733,7 +1455,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
         // NOVO MODELO: Apenas séries - adicionar disponibilidades geradas
         // As exceções já são aplicadas automaticamente na geração
-        // Usar um Map para garantir unicidade baseado em (medicoId, data, tipo)
+        // Usar um Map para preservar a identidade de cada cartão único
         final disponibilidadesUnicas = <String, Disponibilidade>{};
 
         // Adicionar disponibilidades existentes de outros anos
@@ -1758,7 +1480,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // Adicionar disponibilidades geradas de séries
         for (final dispGerada in dispsGeradas) {
           final chave =
-              '${dispGerada.medicoId}_${dispGerada.data.year}-${dispGerada.data.month}-${dispGerada.data.day}_${dispGerada.tipo}';
+              CadastroMedicosHelper.gerarChaveDisponibilidade(dispGerada);
           disponibilidadesUnicas[chave] = dispGerada;
         }
 
@@ -1767,7 +1489,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // têm prioridade sobre as do Firestore para a mesma chave
         for (final dispUnica in dispsUnicas) {
           final chave =
-              '${dispUnica.medicoId}_${dispUnica.data.year}-${dispUnica.data.month}-${dispUnica.data.day}_${dispUnica.tipo}';
+              CadastroMedicosHelper.gerarChaveDisponibilidade(dispUnica);
           // Só adicionar se não existe ainda (para não sobrescrever disponibilidades não salvas)
           if (!disponibilidadesUnicas.containsKey(chave)) {
             disponibilidadesUnicas[chave] = dispUnica;
@@ -1898,6 +1620,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
       onProgressoExterno(0.98, 'A concluir...');
     }
 
+    final pendentesAntesDoCarregamento =
+        CadastroMedicosHelper.disponibilidadesPendentes(
+      this.disponibilidades, _disponibilidadesOriginal,
+    ).map((d) => d.id).toSet();
+    final originaisAntesDoCarregamento = {
+      for (final d in _disponibilidadesOriginal) d.id: d,
+    };
+
     // Atualizar os dados - SEMPRE atualizar, independente de mostrarProgressoInterno
     // CORREÇÃO CRÍTICA: Antes de substituir a lista, preservar disponibilidades únicas não salvas
     final unicasNaoSalvas = this
@@ -1913,10 +1643,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // Adicionar de volta as disponibilidades únicas não salvas
         for (final unica in unicasNaoSalvas) {
           final chave =
-              '${unica.medicoId}_${unica.data.year}-${unica.data.month}-${unica.data.day}_${unica.tipo}';
+              CadastroMedicosHelper.gerarChaveDisponibilidade(unica);
           final jaExiste = this.disponibilidades.any((d) {
             final dChave =
-                '${d.medicoId}_${d.data.year}-${d.data.month}-${d.data.day}_${d.tipo}';
+                CadastroMedicosHelper.gerarChaveDisponibilidade(d);
             return dChave == chave;
           });
           if (!jaExiste) {
@@ -1955,20 +1685,21 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
     }
 
+    // Recarregar o calendário não transforma trabalho local em trabalho guardado.
+    _disponibilidadesOriginal = CadastroMedicosHelper.criarCopiaProfundaDisponibilidades([
+      for (final d in this.disponibilidades)
+        if (!pendentesAntesDoCarregamento.contains(d.id))
+          d
+        else if (originaisAntesDoCarregamento.containsKey(d.id))
+          originaisAntesDoCarregamento[d.id]!,
+    ]);
+
     // Desligar progresso interno após concluir (apenas se estava mostrando)
     if (mostrarProgressoInterno && mounted) {
       setState(() {
         isLoadingDisponibilidades = false;
         progressoCarregamentoDisponibilidades = 0.0;
         mensagemCarregamentoDisponibilidades = 'A carregar disponibilidades...';
-
-        // CORREÇÃO: Guardar disponibilidades originais de forma síncrona
-        // quando o usuário cria novas disponibilidades
-        // IMPORTANTE: Incluir também as disponibilidades únicas não salvas
-        _disponibilidadesOriginal = this
-            .disponibilidades
-            .map((d) => Disponibilidade.fromMap(d.toMap()))
-            .toList();
 
         // DEBUG: Verificar se disponibilidades únicas foram preservadas
         final unicasAposCarregamento = this
@@ -3434,25 +3165,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       bool adicionouNova = false;
       for (final novaDisp in geradas) {
-        final jaExisteUnica =
-            CadastroMedicosHelper.existeDisponibilidadeUnicaNaData(
-          disponibilidades,
-          _medicoId,
-          novaDisp.data,
+        disponibilidades.add(novaDisp);
+        final diaJaSelecionado = diasSelecionados.any(
+          (d) =>
+              d.year == novaDisp.data.year &&
+              d.month == novaDisp.data.month &&
+              d.day == novaDisp.data.day,
         );
-        if (!jaExisteUnica) {
-          disponibilidades.add(novaDisp);
-          final diaJaSelecionado = diasSelecionados.any(
-            (d) =>
-                d.year == novaDisp.data.year &&
-                d.month == novaDisp.data.month &&
-                d.day == novaDisp.data.day,
-          );
-          if (!diaJaSelecionado) {
-            diasSelecionados.add(novaDisp.data);
-          }
-          adicionouNova = true;
+        if (!diaJaSelecionado) {
+          diasSelecionados.add(novaDisp.data);
         }
+        adicionouNova = true;
       }
 
       if (adicionouNova) {
@@ -3598,6 +3321,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
             widget.unidade!.id,
             _medicoId,
             date,
+            disponibilidade: disponibilidadeNaData,
           );
           debugPrint(
               '✅ Disponibilidade única removida do Firestore: ${disponibilidadeNaData.id}, data: ${date.day}/${date.month}/${date.year}');
@@ -3658,11 +3382,11 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
 
       final removerComoSerie = removeSerie && serieParaRemover != null;
-      if (!removeSerie && disponibilidadeAlvo != null) {
+      if (!removeSerie && disponibilidadeNaData.id.isNotEmpty) {
         // Podem existir vários cartões no mesmo dia. Remover apenas o cartão
         // que originou a ação, mantendo as restantes séries desse dia.
         disponibilidades = disponibilidades
-            .where((d) => d.id != disponibilidadeAlvo.id)
+            .where((d) => d.id != disponibilidadeNaData.id)
             .toList();
       } else {
         disponibilidades = removerDisponibilidade(
@@ -4688,6 +4412,11 @@ class CadastroMedicoState extends State<CadastroMedico> {
     // tipo "Única". Nesse caso a fonte a atualizar é a série, não uma
     // disponibilidade avulsa.
     if (disponibilidade.tipo == 'Única' && !pertenceASerie) {
+      if (_saving) return;
+      final gravacao = Completer<bool>();
+      _gravacaoEmCurso = gravacao;
+      var guardou = false;
+      setState(() => _saving = true);
       final horariosAnteriores = List<String>.from(disponibilidade.horarios);
       try {
         if (mounted) {
@@ -4723,7 +4452,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
               .indexWhere((d) => d.id == disponibilidade.id);
           if (indexOriginal != -1) {
             _disponibilidadesOriginal[indexOriginal] =
-                Disponibilidade.fromMap(dispAtualizada.toMap());
+                CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
+                  [dispAtualizada]).single;
+          } else {
+            _disponibilidadesOriginal.add(
+              CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
+                  [dispAtualizada]).single,
+            );
           }
 
           final alocacaoAtualizada = resultado.alocacao;
@@ -4737,6 +4472,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
           }
         });
 
+        guardou = true;
         return;
       } catch (e) {
         if (mounted) {
@@ -4748,6 +4484,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
           );
         }
         return;
+      } finally {
+        if (mounted) setState(() => _saving = false);
+        _gravacaoEmCurso = null;
+        gravacao.complete(guardou);
       }
     }
 
@@ -4981,123 +4721,11 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
   }
 
-  Future<void> _salvarMedico() async {
-    if (!_formKey.currentState!.validate()) {
-      return; // Não salva se o formulário for inválido
-    }
-
-    // Verifica se o nome foi preenchido
-    if (nomeController.text.trim().isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Introduza o nome do médico')),
-        );
-      }
-      return; // Interrompe o processo de salvar
-    }
-
-    try {
-      setState(() => _saving = true);
-
-      final resultado =
-          await CadastroMedicoSalvarService.salvarMedicoCompletoComTudo(
-        context,
-        _medicoId,
-        nomeController.text,
-        especialidadeController.text,
-        observacoesController.text,
-        disponibilidades,
-        series,
-        excecoes,
-        _disponibilidadesOriginal,
-        widget.unidade,
-        ativo: _medicoAtivo,
-      );
-
-      if (!mounted) return;
-
-      if (!resultado['sucesso']) {
-        return; // Erro já foi mostrado pelo serviço
-      }
-
-      // Verificar se o valor foi realmente salvo no Firestore
-      // Aguardar um pouco para garantir que o Firestore processou
-      await Future.delayed(const Duration(milliseconds: 500));
-      try {
-        final firestore = FirebaseFirestore.instance;
-        DocumentReference medicoRef;
-        if (widget.unidade != null) {
-          medicoRef = firestore
-              .collection('unidades')
-              .doc(widget.unidade!.id)
-              .collection('ocupantes')
-              .doc(_medicoId);
-        } else {
-          medicoRef = firestore.collection('medicos').doc(_medicoId);
-        }
-        final docVerificacao =
-            await medicoRef.get(const GetOptions(source: Source.server));
-        if (docVerificacao.exists) {
-          final dadosVerificacao =
-              docVerificacao.data() as Map<String, dynamic>;
-          final ativoSalvo = dadosVerificacao['ativo'] ?? true;
-          debugPrint(
-              '🔍 [VERIFICAÇÃO-PÓS-SALVAR] Valor salvo no Firestore: ativo=$ativoSalvo, esperado=$_medicoAtivo');
-          if (ativoSalvo != _medicoAtivo) {
-            debugPrint(
-                '⚠️ [VERIFICAÇÃO-PÓS-SALVAR] DISCREPÂNCIA! Valor no Firestore ($ativoSalvo) diferente do esperado ($_medicoAtivo)');
-          }
-        }
-      } catch (e) {
-        debugPrint('⚠️ [VERIFICAÇÃO-PÓS-SALVAR] Erro ao verificar: $e');
-      }
-
-      // Reseta as mudanças após salvar com sucesso
-      _nomeOriginal = nomeController.text.trim();
-      _especialidadeOriginal = especialidadeController.text.trim();
-      _observacoesOriginal = observacoesController.text.trim();
-      _disponibilidadesOriginal = List.from(disponibilidades);
-      setState(() {
-        _houveMudancas = false;
-        // Atualizar médico atual após salvar
-        _medicoAtual = Medico(
-          id: _medicoId,
-          nome: nomeController.text,
-          especialidade: especialidadeController.text,
-          observacoes: observacoesController.text,
-          disponibilidades: disponibilidades,
-          ativo: _medicoAtivo,
-        );
-        // Atualizar médico na lista local também
-        final index = _listaMedicos.indexWhere((m) => m.id == _medicoId);
-        if (index != -1) {
-          _listaMedicos[index] = _medicoAtual!;
-        }
-      });
-
-      // Retorna à lista sem flicker: agenda o pop para o próximo frame
-      _navegandoAoSair = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.pop(context, true);
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar registo: $e')),
-      );
-    } finally {
-      if (mounted && !_navegandoAoSair) {
-        setState(() {
-          _saving = false;
-          progressoSaving = 0.0;
-          mensagemSaving = 'A guardar...';
-        });
-      }
-    }
-  }
-
   /// Salva o médico atual sem sair da página
   Future<bool> _salvarMedicoSemSair() async {
+    if (_saving || _isCarregandoInicial || isLoadingDisponibilidades) return false;
+    _verificarMudancas();
+    if (!_houveMudancas) return true;
     if (!_formKey.currentState!.validate()) {
       return false; // Não salva se o formulário for inválido
     }
@@ -5110,6 +4738,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
       return false; // Interrompe o processo de salvar
     }
 
+    final gravacao = Completer<bool>();
+    _gravacaoEmCurso = gravacao;
+    var guardou = false;
     try {
       setState(() => _saving = true);
 
@@ -5138,7 +4769,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
       _nomeOriginal = nomeController.text.trim();
       _especialidadeOriginal = especialidadeController.text.trim();
       _observacoesOriginal = observacoesController.text.trim();
-      _disponibilidadesOriginal = List.from(disponibilidades);
+      _medicoAtivoOriginal = _medicoAtivo;
+      _disponibilidadesOriginal =
+          CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(disponibilidades);
       setState(() {
         _houveMudancas = false;
         // Atualizar médico atual após salvar
@@ -5157,18 +4790,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
         progressoSaving = 1.0;
         mensagemSaving = 'Concluído!';
-        // Desligar progress bar após um pequeno delay para mostrar 100%
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            setState(() {
-              _saving = false;
-              progressoSaving = 0.0;
-              mensagemSaving = 'A guardar...';
-            });
-          }
-        });
+
       });
 
+      guardou = true;
       return true; // Indica que foi salvo com sucesso
     } catch (e) {
       if (!mounted) return false;
@@ -5177,6 +4802,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
       );
       return false;
     } finally {
+      _gravacaoEmCurso = null;
+      gravacao.complete(guardou);
       // Garantir que o loading seja desativado mesmo em caso de erro
       if (mounted && _saving) {
         setState(() {
@@ -5239,6 +4866,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       _especialidadeOriginal = especialidadeController.text.trim();
       _observacoesOriginal = observacoesController.text.trim();
       _disponibilidadesOriginal.clear();
+      _medicoAtivoOriginal = _medicoAtivo;
 
       setState(() {
         _houveMudancas = false;
@@ -5295,7 +4923,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
   void _criarNovo() async {
     // Salvar automaticamente se houver mudanças (mantém o overlay de salvamento)
     final podeCriar = await _confirmarNovo();
-    if (podeCriar) {
+    if (podeCriar && mounted) {
       setState(() {
         _medicoAtual = null;
         _medicoId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -5309,6 +4937,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
         excecoes.clear();
 
         // Reseta os valores originais
+        _medicoAtivo = true;
+        _medicoAtivoOriginal = true;
         _nomeOriginal = '';
         _especialidadeOriginal = '';
         _observacoesOriginal = '';
@@ -5385,19 +5015,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
   Widget build(BuildContext context) {
     final isLargeScreen = MediaQuery.of(context).size.width > 600;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) async {
-        if (didPop) return;
-
-        // CORREÇÃO CRÍTICA: Forçar verificação de mudanças antes de confirmar saída
-        _verificarMudancas();
-
-        final podeSair = await _confirmarSaida();
-        if (podeSair && context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
+    return GuardarAntesDeSair(
+      onGuardar: _guardarAntesDeNavegar,
       child: Scaffold(
         appBar: AppBar(
           centerTitle: true,
@@ -5409,7 +5028,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
               Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: () => Navigator.of(context).maybePop(),
                   child: const Padding(
                     padding: EdgeInsets.all(16.0),
                     child: Icon(Icons.arrow_back, color: Colors.white),

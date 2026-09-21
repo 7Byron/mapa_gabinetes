@@ -1,15 +1,31 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/disponibilidade.dart';
 import 'cache_version_service.dart';
 import '../utils/alocacao_medicos_logic.dart';
 
 /// Serviço para remover alocações e disponibilidades do Firestore
 /// Extracted from cadastro_medicos.dart to reduce code duplication
 class AlocacaoDisponibilidadeRemocaoService {
+  // As alocações antigas ligam-se ao cartão pelo intervalo horário.
+  static bool _alocacaoDoCartao(
+    String id,
+    Map<String, dynamic> data,
+    Disponibilidade disponibilidade,
+  ) {
+    if (id.startsWith('serie_') || data['serieId'] != null) return false;
+    final horarios = disponibilidade.horarios;
+    return horarios.length >= 2 &&
+        horarios[0].isNotEmpty &&
+        horarios[1].isNotEmpty &&
+        data['horarioInicio'] == horarios[0] &&
+        data['horarioFim'] == horarios[1];
+  }
+
   /// Remove alocações e disponibilidades únicas do Firestore para um período de datas
   /// Retorna o número de alocações e disponibilidades removidas
   static Future<Map<String, int>> removerAlocacoesEDisponibilidades(
       String unidadeId, String medicoId, DateTime dataInicio, DateTime dataFim,
-      {String? serieId}) async {
+      {String? serieId, Disponibilidade? disponibilidade}) async {
     final firestore = FirebaseFirestore.instance;
     int alocacoesRemovidas = 0;
     int disponibilidadesRemovidas = 0;
@@ -35,6 +51,10 @@ class AlocacaoDisponibilidadeRemocaoService {
           final medicoIdAloc = data['medicoId']?.toString();
           final dataAloc = data['data']?.toString();
           if (medicoIdAloc != medicoId) return false;
+          if (disponibilidade != null &&
+              !_alocacaoDoCartao(doc.id, data, disponibilidade)) {
+            return false;
+          }
           if (serieId != null) {
             final serieIdAloc = data['serieId']?.toString();
             final pertenceSerie =
@@ -72,6 +92,9 @@ class AlocacaoDisponibilidadeRemocaoService {
         final alocacoesDiaParaRemover = todasAlocacoesDia.docs.where((doc) {
           final data = doc.data();
           if (data['medicoId']?.toString() != medicoId) return false;
+          if (disponibilidade != null) {
+            return _alocacaoDoCartao(doc.id, data, disponibilidade);
+          }
           if (serieId == null) return true;
           final serieIdAloc = data['serieId']?.toString();
           return serieIdAloc == serieId || doc.id.contains(serieId);
@@ -96,6 +119,9 @@ class AlocacaoDisponibilidadeRemocaoService {
         final disponibilidadesParaRemover =
             todasDisponibilidades.docs.where((doc) {
           final data = doc.data();
+          if (disponibilidade != null && doc.id != disponibilidade.id) {
+            return false;
+          }
           final dataDisp = data['data']?.toString();
           final tipoDisp = data['tipo']?.toString();
           final medicoIdDisp = data['medicoId']?.toString();
@@ -137,6 +163,9 @@ class AlocacaoDisponibilidadeRemocaoService {
           final medicoIdDisp = data['medicoId']?.toString();
           final tipoDisp = data['tipo']?.toString();
           if (medicoIdDisp != medicoId || tipoDisp != 'Única') {
+            return false;
+          }
+          if (disponibilidade != null && doc.id != disponibilidade.id) {
             return false;
           }
           final dataDisp = data['data']?.toString();
@@ -185,13 +214,14 @@ class AlocacaoDisponibilidadeRemocaoService {
   /// Remove alocações e disponibilidades únicas do Firestore para uma data específica
   static Future<Map<String, int>> removerAlocacoesEDisponibilidadesPorData(
       String unidadeId, String medicoId, DateTime data,
-      {String? serieId}) async {
+      {String? serieId, Disponibilidade? disponibilidade}) async {
     return removerAlocacoesEDisponibilidades(
       unidadeId,
       medicoId,
       data,
       data,
       serieId: serieId,
+      disponibilidade: disponibilidade,
     );
   }
 }

@@ -64,7 +64,7 @@ Future<void> salvarMedicoCompleto(
     medicoRef = firestore.collection('medicos').doc(medico.id);
   }
 
-  // Salva o médico (dados básicos) — merge para evitar regravar igual
+  // Merge preserva outros campos; esta operação continua a ser uma escrita.
   await medicoRef.set({
     'id': medico.id,
     'nome': medico.nome,
@@ -114,7 +114,14 @@ Future<void> salvarMedicoCompleto(
   final idsParaCriar = idsNovas.difference(idsExistentes);
   final idsPossiveisUpdates = idsExistentes.intersection(idsNovas);
 
-  // removido: comparação detalhada não é necessária com upsert completo
+  final disponibilidadesAlteradas = medico.disponibilidades.where((d) {
+    final original = existentes[d.id];
+    return original == null ||
+        original.medicoId != d.medicoId ||
+        original.data != d.data ||
+        original.tipo != d.tipo ||
+        !listEquals(original.horarios, d.horarios);
+  }).toList();
 
   final batch = firestore.batch();
 
@@ -126,8 +133,8 @@ Future<void> salvarMedicoCompleto(
     batch.delete(ref);
   }
 
-  // Upsert de TODOS os registos atuais (garante gravação completa da série)
-  for (final d in medico.disponibilidades) {
+  // Gravar apenas registos novos ou alterados.
+  for (final d in disponibilidadesAlteradas) {
     final ano = d.data.year.toString();
     final ref = dispRef.doc(ano).collection('registos').doc(d.id);
     batch.set(ref, {
@@ -139,7 +146,9 @@ Future<void> salvarMedicoCompleto(
     });
   }
 
-  await batch.commit();
+  if (idsParaApagar.isNotEmpty || disponibilidadesAlteradas.isNotEmpty) {
+    await batch.commit();
+  }
   await CacheVersionService.bumpVersions(
     unidadeId: unidade?.id,
     fields: [

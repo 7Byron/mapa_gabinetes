@@ -42,7 +42,10 @@ class CadastroMedicoSalvarService {
     // Preparar disponibilidades únicas para salvar
     final disponibilidadesUnicasParaSalvar =
         CadastroMedicosHelper.prepararDisponibilidadesUnicasParaSalvar(
-      disponibilidades,
+      CadastroMedicosHelper.disponibilidadesPendentes(
+        disponibilidades,
+        disponibilidadesOriginais,
+      ),
       medicoId,
     );
 
@@ -78,43 +81,19 @@ class CadastroMedicoSalvarService {
       // através do CadastroMedicosHelper.salvarSeries que chama invalidateCacheParaSerie
       await CadastroMedicosHelper.salvarSeries(series, unidade);
 
-      // Salvar disponibilidades únicas
-      // CORREÇÃO CRÍTICA: Cada disponibilidade única invalida o cache do seu dia específico
-      // através do DisponibilidadeUnicaService.salvarDisponibilidadesUnicas
-      int unicasSalvas = 0;
-      int unicasErros = 0;
-
-      for (final disp in disponibilidadesUnicasParaSalvar) {
-        try {
-          await DisponibilidadeUnicaService.salvarDisponibilidadesUnicas(
-            [disp],
-            medicoId,
-            unidade,
-          );
-          // CORREÇÃO CRÍTICA: Cache já é invalidado dentro de DisponibilidadeUnicaService
-          // mas garantimos também aqui para máxima segurança
-          AlocacaoMedicosLogic.invalidateCacheForDay(disp.data);
-          unicasSalvas++;
-        } catch (e, stackTrace) {
-          unicasErros++;
-          debugPrint('❌ Erro ao salvar disponibilidade única ${disp.id}: $e');
-          debugPrint('   Stack trace: $stackTrace');
-
-          if (mostrarMensagensErro && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                    'Erro ao salvar disponibilidade ${disp.data.day}/${disp.data.month}/${disp.data.year}: $e'),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 3),
-              ),
+      // Um único lote lógico: falhas propagam-se e impedem a saída da página.
+      final resultadoUnicas = disponibilidadesUnicasParaSalvar.isEmpty
+          ? {'salvas': 0, 'erros': 0}
+          : await DisponibilidadeUnicaService.salvarDisponibilidadesUnicas(
+              disponibilidadesUnicasParaSalvar,
+              medicoId,
+              unidade,
             );
-          }
-        }
+      final unicasSalvas = resultadoUnicas['salvas']!;
+      final unicasErros = resultadoUnicas['erros']!;
+      if (unicasErros > 0) {
+        throw StateError('Não foi possível guardar todos os cartões.');
       }
-
-      // Aguardar um pouco para dar tempo à Cloud Function atualizar a vista diária
-      await Future.delayed(const Duration(milliseconds: 1000));
 
       // Salvar exceções
       // CORREÇÃO CRÍTICA: Exceções invalidam o cache automaticamente quando são salvas
@@ -126,7 +105,7 @@ class CadastroMedicoSalvarService {
       // CORREÇÃO CRÍTICA: Invalidar cache para todas as disponibilidades
       // Isso garante que mesmo disponibilidades que não foram salvas diretamente sejam atualizadas
       CadastroMedicosHelper.invalidarCacheDisponibilidades(disponibilidades);
-      
+
       // CORREÇÃO CRÍTICA: Invalidar cache também para todas as séries
       // Para garantir que todas as séries sejam recarregadas
       for (final serie in series) {
@@ -136,18 +115,6 @@ class CadastroMedicoSalvarService {
       // Invalidar cache de médicos ativos
       if (unidade != null) {
         // Cache removido - não precisa invalidar
-      }
-
-      // Mostrar avisos se houver erros
-      if (unicasErros > 0 && mostrarMensagensErro && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Aviso: $unicasErros disponibilidade(s) única(s) não foram salvas. Verifique os logs.'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
       }
 
       return {

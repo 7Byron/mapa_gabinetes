@@ -184,11 +184,11 @@ class _CalendarioDisponibilidadesState
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Criar nova série?'),
+          title: const Text('Criar novo cartão de horário.'),
           content: Text(
-            'Já existe uma disponibilidade em '
-            '${date.day}/${date.month}/${date.year}. '
-            'Deseja criar uma nova série para este dia?',
+            'Já existe um cartão no dia '
+            '${date.day}/${date.month}/${date.year}.\n'
+            'Deseja criar novo cartão para esse dia?',
           ),
           actions: [
             TextButton(
@@ -197,7 +197,7 @@ class _CalendarioDisponibilidadesState
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Criar nova série'),
+              child: const Text('Criar novo cartão'),
             ),
           ],
         );

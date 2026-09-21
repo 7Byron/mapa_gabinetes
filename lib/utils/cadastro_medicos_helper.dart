@@ -81,26 +81,6 @@ class CadastroMedicosHelper {
         .toList();
   }
 
-  /// Indica se já existe um cartão único do médico na data indicada.
-  ///
-  /// Cartões de séries no mesmo dia não contam como duplicados: um médico pode
-  /// ter, por exemplo, uma série semanal e uma disponibilidade única na mesma
-  /// data.
-  static bool existeDisponibilidadeUnicaNaData(
-    List<Disponibilidade> disponibilidades,
-    String medicoId,
-    DateTime data,
-  ) {
-    return disponibilidades.any(
-      (d) =>
-          d.tipo == 'Única' &&
-          d.medicoId == medicoId &&
-          d.data.year == data.year &&
-          d.data.month == data.month &&
-          d.data.day == data.day,
-    );
-  }
-
   /// Remove disponibilidades únicas de um médico específico da lista
   static List<Disponibilidade> removerDisponibilidadesUnicas(
     List<Disponibilidade> disponibilidades,
@@ -112,8 +92,11 @@ class CadastroMedicosHelper {
   }
 
   /// Gera uma chave única para uma disponibilidade
-  /// Formato: {medicoId}_{ano-mes-dia}_{tipo}
+  /// Cartões únicos distinguem-se pelo ID, mesmo no mesmo dia e horário.
   static String gerarChaveDisponibilidade(Disponibilidade disp) {
+    if (disp.tipo == 'Única') {
+      return '${disp.medicoId}_Única_${disp.id}';
+    }
     return '${disp.medicoId}_${disp.data.year}-${disp.data.month}-${disp.data.day}_${disp.tipo}';
   }
 
@@ -146,6 +129,22 @@ class CadastroMedicosHelper {
     if (!anosInvalidar.contains(anoAtual)) {
       AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(anoAtual, 1, 1));
     }
+  }
+
+  /// Seleciona apenas registos novos ou alterados, sem reler o servidor.
+  static List<Disponibilidade> disponibilidadesPendentes(
+    List<Disponibilidade> atuais,
+    List<Disponibilidade> originais,
+  ) {
+    final porId = {for (final d in originais) d.id: d};
+    return atuais.where((d) {
+      final original = porId[d.id];
+      return original == null ||
+          original.medicoId != d.medicoId ||
+          original.data != d.data ||
+          original.tipo != d.tipo ||
+          !listasIguais(original.horarios, d.horarios);
+    }).toList();
   }
 
   /// Prepara disponibilidades únicas para salvar

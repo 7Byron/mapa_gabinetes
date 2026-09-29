@@ -12,6 +12,7 @@ import '../services/serie_service.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import 'medico_card.dart';
+import 'cartoes_gabinete_layout.dart';
 import '../services/alocacao_unica_service.dart';
 import '../services/realocacao_unico_service.dart';
 import '../services/realocacao_serie_service.dart';
@@ -1779,6 +1780,33 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 _horarioParaMinutos(a.horarioInicio).compareTo(
                                     _horarioParaMinutos(b.horarioInicio)));
 
+                          final alocacoesVisiveis =
+                              alocacoesDoGabineteUnicas.where((a) {
+                            // CORREÇÃO: Se o médico está sendo realocado, ocultar da origem
+                            if (_isRealocando &&
+                                _alocacaoIdEmRealocacao == a.id &&
+                                _gabineteOrigemRealocacao == gabinete.id) {
+                              // Este é o gabinete de origem e o médico está sendo realocado
+                              // Ocultar o cartão da origem durante a realocação
+                              return false;
+                            }
+
+                            // Verificar se o médico existe e está ativo
+                            final medico = widget.medicos.firstWhere(
+                              (m) => m.id == a.medicoId,
+                              orElse: () => Medico(
+                                id: '',
+                                nome: 'Desconhecido',
+                                especialidade: '',
+                                disponibilidades: [],
+                                ativo: false,
+                              ),
+                            );
+                            return medico.id.isNotEmpty &&
+                                medico.ativo &&
+                                medico.nome != 'Desconhecido';
+                          }).toList();
+
                           // Esses logs estavam causando milhares de escritas desnecessárias
 
                           // Verificar se há conflito neste gabinete
@@ -1825,85 +1853,54 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: sombraHover,
                                   ),
-                                  child: SingleChildScrollView(
-                                    physics:
-                                        const AlwaysScrollableScrollPhysics(),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        // Nome do gabinete e especialidade na mesma linha com ícone de status
-                                        Row(
-                                          children: [
-                                            // Ícone de status (ocupado/livre/conflito)
-                                            Icon(
-                                              alocacoesDoGabineteUnicas.isEmpty
-                                                  ? Icons.check_circle_outline
-                                                  : Icons.check_circle,
-                                              size: 14,
-                                              color: temConflitoGabinete
-                                                  ? Colors.red.shade300
-                                                  : alocacoesDoGabineteUnicas
-                                                          .isEmpty
-                                                      ? Colors.grey[400]
-                                                      : MyAppTheme.azulEscuro,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                '${gabinete.nome} ${gabinete.especialidadesPermitidas.join(", ")}',
-                                                style: MyAppTheme.bodyMedium
-                                                    .copyWith(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: temConflitoGabinete
-                                                      ? Colors.red.shade700
-                                                      : alocacoesDoGabineteUnicas
-                                                              .isEmpty
-                                                          ? Colors.grey[700]
-                                                          : MyAppTheme
-                                                              .azulEscuro,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
+                                  child: Column(
+                                    children: [
+                                      // Nome do gabinete e especialidade na mesma linha com ícone de status
+                                      Row(
+                                        children: [
+                                          // Ícone de status (ocupado/livre/conflito)
+                                          Icon(
+                                            alocacoesDoGabineteUnicas.isEmpty
+                                                ? Icons.check_circle_outline
+                                                : Icons.check_circle,
+                                            size: 14,
+                                            color: temConflitoGabinete
+                                                ? Colors.red.shade300
+                                                : alocacoesDoGabineteUnicas
+                                                        .isEmpty
+                                                    ? Colors.grey[400]
+                                                    : MyAppTheme.azulEscuro,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              '${gabinete.nome} ${gabinete.especialidadesPermitidas.join(", ")}',
+                                              style: MyAppTheme.bodyMedium
+                                                  .copyWith(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: temConflitoGabinete
+                                                    ? Colors.red.shade700
+                                                    : alocacoesDoGabineteUnicas
+                                                            .isEmpty
+                                                        ? Colors.grey[700]
+                                                        : MyAppTheme.azulEscuro,
                                               ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        // Lista de médicos alocados
-                                        // FILTRAR: Não mostrar alocações de médicos "Desconhecido" ou médicos não encontrados
-                                        // CORREÇÃO: Ocultar médico que está sendo realocado da origem
-                                        if (alocacoesDoGabineteUnicas
-                                            .isNotEmpty)
-                                          ...alocacoesDoGabineteUnicas
-                                              .where((a) {
-                                            // CORREÇÃO: Se o médico está sendo realocado, ocultar da origem
-                                            if (_isRealocando &&
-                                                _alocacaoIdEmRealocacao ==
-                                                    a.id &&
-                                                _gabineteOrigemRealocacao ==
-                                                    gabinete.id) {
-                                              // Este é o gabinete de origem e o médico está sendo realocado
-                                              // Ocultar o cartão da origem durante a realocação
-                                              return false;
-                                            }
-
-                                            // Verificar se o médico existe e está ativo
-                                            final medico =
-                                                widget.medicos.firstWhere(
-                                              (m) => m.id == a.medicoId,
-                                              orElse: () => Medico(
-                                                id: '',
-                                                nome: 'Desconhecido',
-                                                especialidade: '',
-                                                disponibilidades: [],
-                                                ativo: false,
-                                              ),
-                                            );
-                                            return medico.id.isNotEmpty &&
-                                                medico.ativo &&
-                                                medico.nome != 'Desconhecido';
-                                          }).map((a) {
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Expanded(
+                                        child: CartoesGabineteLayout(
+                                          horarioInicio:
+                                              alocacoesVisiveis.length == 1
+                                                  ? alocacoesVisiveis
+                                                      .single.horarioInicio
+                                                  : null,
+                                          children: alocacoesVisiveis.map((a) {
                                             final medico =
                                                 widget.medicos.firstWhere(
                                               (m) => m.id == a.medicoId,
@@ -1987,9 +1984,10 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                                     child: medicoCard,
                                                   )
                                                 : medicoCard;
-                                          }),
-                                      ],
-                                    ),
+                                          }).toList(),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),

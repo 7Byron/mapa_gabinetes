@@ -267,7 +267,9 @@ class RelatoriosService {
       alocacoes.addAll(alocacoesAno);
     }
     return alocacoes
-        .where((a) => !a.data.isBefore(inicio) && !a.data.isAfter(fim))
+        .where((a) =>
+            !_normalizarData(a.data).isBefore(inicio) &&
+            !_normalizarData(a.data).isAfter(fim))
         .toList();
   }
 
@@ -664,6 +666,8 @@ class RelatoriosService {
     required DateTime fim,
     required Unidade unidade,
     required List<String> gabineteIds,
+    void Function(String gabineteId, double ocupadas, double disponiveis)?
+        onHorasGabinete,
   }) async {
     final inicioNormalizado = _normalizarData(inicio);
     final fimNormalizado = _normalizarData(fim);
@@ -760,11 +764,13 @@ class RelatoriosService {
       double horasOcupadas = 0.0;
       for (final gabId in gabSet) {
         final alocacoesGabinete = mapaDia[gabId] ?? const <Alocacao>[];
-        horasOcupadas += calcularHorasOcupadasUnicas(
+        final horasGabinete = calcularHorasOcupadasUnicas(
           alocacoesGabinete,
           abertura: horariosDia.length >= 2 ? horariosDia[0] : '00:00',
           fecho: horariosDia.length >= 2 ? horariosDia[1] : '24:00',
         );
+        horasOcupadas += horasGabinete;
+        onHorasGabinete?.call(gabId, horasGabinete, horasAbertas);
       }
       final horasTotais = horasAbertas * gabSet.length;
       if (horasOcupadas > horasTotais) {

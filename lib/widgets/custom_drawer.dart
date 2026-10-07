@@ -1,3 +1,4 @@
+import '../screens/relatorio_taxas_ocupacao_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
@@ -374,8 +375,28 @@ class CustomDrawer extends StatelessWidget {
                 _buildSectionDivider(),
                 _buildSectionTitle('Relatórios'),
                 ListTile(
+                  leading: const Icon(Icons.pie_chart_outline),
+                  title: const Text('Taxas de Ocupação',
+                      style: TextStyle(fontSize: 14)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    if (unidade == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Unidade não definida.')),
+                      );
+                      return;
+                    }
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              RelatorioTaxasOcupacaoScreen(unidade: unidade!),
+                        ));
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.bar_chart),
-                  title: const Text('Ocupação de Gabinetes',
+                  title: const Text('Ocupação por Gabinete',
                       style: TextStyle(fontSize: 14)),
                   onTap: () {
                     Navigator.pop(context);
@@ -393,7 +414,7 @@ class CustomDrawer extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (context) => RelatorioOcupacaoDetalheScreen(
                           unidade: unidade!,
-                          titulo: 'Ocupação de Gabinetes',
+                          titulo: 'Ocupação por Gabinete',
                           periodoLabel: 'esta semana',
                           inicio: DateTime.now(),
                           fim: DateTime.now(),
@@ -406,7 +427,7 @@ class CustomDrawer extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.query_stats),
                   title: const Text(
-                    'Horas por Especialidade',
+                    'Horas de Especialidade',
                     style: TextStyle(fontSize: 14),
                   ),
                   onTap: () {

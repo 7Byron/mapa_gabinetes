@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:file_saver/file_saver.dart';
+import '../services/medico_salvar_service.dart';
+import '../services/relatorio_horas_excel_service.dart';
+import '../utils/app_theme.dart';
 
 import '../models/relatorio_horas_especialidade.dart';
 import '../models/unidade.dart';
@@ -9,7 +13,15 @@ import '../services/cache_version_service.dart';
 import '../services/relatorio_horas_especialidade_service.dart';
 import '../widgets/custom_appbar.dart';
 
-enum PeriodoHorasEspecialidade { dia, semana, mes, trimestre, semestre, ano }
+enum PeriodoHorasEspecialidade {
+  dia,
+  semana,
+  mes,
+  trimestre,
+  semestre,
+  ano,
+  personalizado
+}
 
 class IntervaloHorasEspecialidade {
   final DateTime inicio;
@@ -54,6 +66,9 @@ class _RelatorioHorasEspecialidadeScreenState
   final NumberFormat _numberFormat = NumberFormat('#,##0.##', 'pt_PT');
 
   bool _carregando = true;
+  bool _exportando = false;
+  List<String> _especialidades = [];
+  final Set<String> _selecionadas = {};
   String? _erro;
   double _progresso = 0.0;
   String _mensagemProgresso = 'A iniciar...';
@@ -70,10 +85,57 @@ class _RelatorioHorasEspecialidadeScreenState
     super.initState();
     _dataReferencia = _normalizarData(DateTime.now());
     _atualizarIntervalo();
-    unawaited(_carregarRelatorio());
+    unawaited(_carregarEspecialidades());
+  }
+
+  Future<void> _carregarEspecialidades() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+      _mensagemProgresso = 'A carregar especialidades...';
+    });
+    try {
+      final medicos = await buscarMedicos(unidade: widget.unidade);
+      final especialidades = medicos
+          .where((m) => m.ativo)
+          .map((m) {
+            final nome = m.especialidade.trim();
+            return nome.isEmpty ? 'Sem especialidade' : nome;
+          })
+          .toSet()
+          .toList()
+        ..sort();
+      if (!mounted) return;
+      setState(() {
+        _especialidades = especialidades;
+        _selecionadas.clear();
+        _selecionadas.addAll(especialidades);
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = 'Não foi possível carregar as especialidades.';
+      });
+    }
+  }
+
+  void _selecionarEspecialidades(
+      Iterable<String> especialidades, bool selecionar) {
+    setState(() {
+      if (selecionar) {
+        _selecionadas.addAll(especialidades);
+      } else {
+        _selecionadas.removeAll(especialidades);
+      }
+      _relatorio = null;
+      _erro = null;
+    });
   }
 
   Future<void> _carregarRelatorio({bool forcarServidor = false}) async {
+    if (_selecionadas.isEmpty || _carregando) return;
     setState(() {
       _carregando = true;
       _erro = null;
@@ -102,6 +164,7 @@ class _RelatorioHorasEspecialidadeScreenState
         inicio: _inicioRelatorio,
         fim: _fimRelatorio,
         forcarServidor: forcarServidor,
+        especialidades: Set.of(_selecionadas),
         onProgress: _atualizarProgresso,
       );
 
@@ -129,7 +192,11 @@ class _RelatorioHorasEspecialidadeScreenState
 
   Future<void> _forcarAtualizacao() async {
     _cache.removeWhere((key, _) => key.startsWith('${widget.unidade.id}|'));
-    await _carregarRelatorio(forcarServidor: true);
+    if (_especialidades.isEmpty) {
+      await _carregarEspecialidades();
+    } else {
+      await _carregarRelatorio(forcarServidor: true);
+    }
   }
 
   void _atualizarProgresso(double valor, String mensagem) {
@@ -146,6 +213,7 @@ class _RelatorioHorasEspecialidadeScreenState
       _inicioRelatorio.millisecondsSinceEpoch,
       _fimRelatorio.millisecondsSinceEpoch,
       _periodoSelecionado.name,
+      (_selecionadas.toList()..sort()).map(Uri.encodeComponent).join(','),
     ].join('|');
   }
 
@@ -176,6 +244,9 @@ class _RelatorioHorasEspecialidadeScreenState
   ) {
     final base = _normalizarData(referencia);
     switch (periodo) {
+      case PeriodoHorasEspecialidade.personalizado:
+        return IntervaloHorasEspecialidade(
+            inicio: _inicioRelatorio, fim: _fimRelatorio);
       case PeriodoHorasEspecialidade.dia:
         return IntervaloHorasEspecialidade(inicio: base, fim: base);
       case PeriodoHorasEspecialidade.semana:
@@ -206,6 +277,8 @@ class _RelatorioHorasEspecialidadeScreenState
 
   String _rotuloPeriodo(PeriodoHorasEspecialidade periodo) {
     switch (periodo) {
+      case PeriodoHorasEspecialidade.personalizado:
+        return 'Período personalizado';
       case PeriodoHorasEspecialidade.dia:
         return 'Dia';
       case PeriodoHorasEspecialidade.semana:
@@ -221,20 +294,53 @@ class _RelatorioHorasEspecialidadeScreenState
     }
   }
 
-  Future<void> _selecionarDataReferencia() async {
+  Future<void> _selecionarData({required bool inicial}) async {
     final novaData = await showDatePicker(
       context: context,
-      initialDate: _dataReferencia,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
+      initialDate: inicial ? _inicioRelatorio : _fimRelatorio,
+      firstDate: inicial ? DateTime(2000) : _inicioRelatorio,
+      lastDate: inicial ? _fimRelatorio : DateTime(2100, 12, 31),
+      helpText: inicial ? 'Data inicial' : 'Data final',
     );
-    if (novaData == null) return;
-
+    if (novaData == null || !mounted) return;
     setState(() {
-      _dataReferencia = _normalizarData(novaData);
-      _atualizarIntervalo();
+      _periodoSelecionado = PeriodoHorasEspecialidade.personalizado;
+      if (inicial) {
+        _inicioRelatorio = _normalizarData(novaData);
+      } else {
+        _fimRelatorio = _normalizarData(novaData);
+      }
+      _relatorio = null;
+      _erro = null;
     });
-    await _carregarRelatorio();
+  }
+
+  Future<void> _exportarExcel() async {
+    final relatorio = _relatorio;
+    if (relatorio == null || _exportando) return;
+    setState(() => _exportando = true);
+    try {
+      final bytes = RelatorioHorasExcelService.gerar(
+          unidade: widget.unidade.nome, relatorio: relatorio);
+      final formato = DateFormat('yyyy-MM-dd');
+      await FileSaver.instance.saveFile(
+        name:
+            'horas_especialidade_${formato.format(relatorio.inicio)}_${formato.format(relatorio.fim)}',
+        bytes: bytes,
+        fileExtension: 'xlsx',
+        mimeType: MimeType.microsoftExcel,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Excel exportado.')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Não foi possível exportar o Excel. Tente novamente.')));
+    } finally {
+      if (mounted) setState(() => _exportando = false);
+    }
   }
 
   String _formatHoras(double valor) => _numberFormat.format(valor);
@@ -243,20 +349,16 @@ class _RelatorioHorasEspecialidadeScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Horas por Especialidade',
+        title: 'Horas de Especialidade',
         onRefresh: _forcarAtualizacao,
       ),
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 920),
+          constraints: const BoxConstraints(maxWidth: 1400),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: _carregando
-                ? _buildCarregamento()
-                : _erro != null
-                    ? _buildErro()
-                    : _buildConteudo(),
+            child: _carregando ? _buildCarregamento() : _buildConteudo(),
           ),
         ),
       ),
@@ -289,120 +391,152 @@ class _RelatorioHorasEspecialidadeScreenState
     );
   }
 
-  Widget _buildErro() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(_erro ?? 'Erro desconhecido'),
-          const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: _carregarRelatorio,
-            child: const Text('Tentar novamente'),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _quadro(Widget child) => Card(
+        child: Padding(padding: const EdgeInsets.all(16), child: child),
+      );
 
   Widget _buildConteudo() {
     final relatorio = _relatorio;
-    if (relatorio == null) {
-      return const Center(child: Text('Sem dados para apresentar.'));
-    }
-
-    return ListView(
-      children: [
-        _buildFiltrosCard(),
-        const SizedBox(height: 12),
+    return ListView(children: [
+      _buildSelecaoCard(),
+      _buildFiltrosCard(),
+      Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+              child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(280, 60),
+                    textStyle: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+                onPressed: _selecionadas.isEmpty || _carregando || _exportando
+                    ? null
+                    : _carregarRelatorio,
+                icon: const Icon(Icons.assessment_outlined),
+                label: const Text('Gerar relatório'),
+              ),
+              OutlinedButton.icon(
+                style:
+                    OutlinedButton.styleFrom(minimumSize: const Size(180, 60)),
+                onPressed:
+                    relatorio == null || _exportando ? null : _exportarExcel,
+                icon: const Icon(Icons.download_outlined),
+                label: Text(_exportando ? 'A exportar…' : 'Exportar Excel'),
+              ),
+            ],
+          ))),
+      if (_erro != null)
+        _quadro(Column(children: [
+          Text(_erro!),
+          TextButton(
+              onPressed: _especialidades.isEmpty
+                  ? _carregarEspecialidades
+                  : _carregarRelatorio,
+              child: const Text('Tentar novamente')),
+        ]))
+      else if (_selecionadas.isEmpty)
+        _quadro(const Text(
+            'Selecione pelo menos uma especialidade para gerar o relatório.'))
+      else if (relatorio != null) ...[
         _buildResumoCard(relatorio),
         const SizedBox(height: 12),
         _buildListaEspecialidades(relatorio),
       ],
-    );
+    ]);
   }
 
-  Widget _buildFiltrosCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Filtros',
-              style: TextStyle(fontWeight: FontWeight.bold),
+  Widget _buildSelecaoCard() =>
+      _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        LayoutBuilder(builder: (context, constraints) {
+          final titulo = Text('1. Selecionar especialidades',
+              style: Theme.of(context).textTheme.titleLarge);
+          final acoes = Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                    '${_selecionadas.length} de ${_especialidades.length} selecionadas'),
+                TextButton(
+                    onPressed: () =>
+                        _selecionarEspecialidades(_especialidades, true),
+                    child: const Text('Selecionar todas')),
+                TextButton(
+                    onPressed: () =>
+                        _selecionarEspecialidades(_especialidades, false),
+                    child: const Text('Desselecionar todas')),
+              ]);
+          if (constraints.maxWidth >= 860) {
+            return Row(children: [titulo, const Spacer(), acoes]);
+          }
+          return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titulo,
+                Align(alignment: Alignment.centerRight, child: acoes)
+              ]);
+        }),
+        const SizedBox(height: 12),
+        if (_especialidades.isEmpty)
+          const Text('Esta unidade não tem especialidades com médicos ativos.'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final especialidade in _especialidades)
+            FilterChip(
+              label: Text(especialidade),
+              selected: _selecionadas.contains(especialidade),
+              backgroundColor: MyAppTheme.gabineteLivre,
+              selectedColor: MyAppTheme.gabineteOcupado,
+              side: const BorderSide(color: MyAppTheme.bordaGabineteOcupado),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              onSelected: (valor) =>
+                  _selecionarEspecialidades([especialidade], valor),
             ),
-            const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final compacto = constraints.maxWidth < 620;
-                final dropdown =
-                    DropdownButtonFormField<PeriodoHorasEspecialidade>(
-                  initialValue: _periodoSelecionado,
-                  decoration: const InputDecoration(
-                    labelText: 'Período',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    for (final periodo in PeriodoHorasEspecialidade.values)
-                      DropdownMenuItem(
-                        value: periodo,
-                        child: Text(_rotuloPeriodo(periodo)),
-                      ),
-                  ],
-                  onChanged: (value) async {
-                    if (value == null || value == _periodoSelecionado) return;
-                    setState(() {
-                      _periodoSelecionado = value;
+        ]),
+      ]));
+
+  Widget _buildFiltrosCard() =>
+      _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('2. Escolher período',
+            style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final periodo in PeriodoHorasEspecialidade.values
+              .where((p) => p != PeriodoHorasEspecialidade.personalizado))
+            ChoiceChip(
+                label: Text(_rotuloPeriodo(periodo)),
+                selected: _periodoSelecionado == periodo,
+                onSelected: (_) => setState(() {
+                      _periodoSelecionado = periodo;
+                      _dataReferencia = _inicioRelatorio;
                       _atualizarIntervalo();
-                    });
-                    await _carregarRelatorio();
-                  },
-                );
+                      _relatorio = null;
+                      _erro = null;
+                    })),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 12, runSpacing: 10, children: [
+          _buildBotaoData(inicial: true),
+          _buildBotaoData(inicial: false)
+        ]),
+      ]));
 
-                final botaoData = OutlinedButton.icon(
-                  onPressed: _selecionarDataReferencia,
-                  icon: const Icon(Icons.event),
-                  label: Text(
-                    'Data base: ${_dateFormat.format(_dataReferencia)}',
-                  ),
-                );
-
-                if (compacto) {
-                  return Column(
-                    children: [
-                      dropdown,
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: botaoData,
-                      ),
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    Expanded(child: dropdown),
-                    const SizedBox(width: 12),
-                    botaoData,
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Intervalo: ${_dateFormat.format(_inicioRelatorio)}'
-              ' - ${_dateFormat.format(_fimRelatorio)}',
-              style: TextStyle(color: Colors.grey[700]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildBotaoData({required bool inicial}) => OutlinedButton.icon(
+        onPressed: () => _selecionarData(inicial: inicial),
+        icon: const Icon(Icons.calendar_month_outlined, size: 20),
+        style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+        label: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(inicial ? 'Data inicial' : 'Data final',
+              style: const TextStyle(fontSize: 11)),
+          Text(_dateFormat.format(inicial ? _inicioRelatorio : _fimRelatorio)),
+        ]),
+      );
 
   Widget _buildResumoCard(RelatorioHorasEspecialidade relatorio) {
     return Card(
@@ -412,7 +546,7 @@ class _RelatorioHorasEspecialidadeScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Resumo (${_rotuloPeriodo(_periodoSelecionado)})',
+              'Resumo — ${_dateFormat.format(relatorio.inicio)} a ${_dateFormat.format(relatorio.fim)}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,

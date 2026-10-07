@@ -20,6 +20,7 @@ class RelatorioHorasEspecialidadeService {
     required DateTime inicio,
     required DateTime fim,
     bool forcarServidor = false,
+    Set<String>? especialidades,
     void Function(double progresso, String mensagem)? onProgress,
   }) async {
     var inicioNormalizado = _normalizarData(inicio);
@@ -111,7 +112,13 @@ class RelatorioHorasEspecialidadeService {
 
     onProgress?.call(0.25, 'A carregar médicos...');
     final medicos = await buscarMedicos(unidade: unidade);
-    final medicosAtivos = medicos.where((m) => m.ativo).toList();
+    final medicosAtivos = medicos
+        .where((m) =>
+            m.ativo &&
+            (especialidades == null ||
+                especialidades
+                    .contains(_normalizarEspecialidade(m.especialidade))))
+        .toList();
     if (medicosAtivos.isEmpty) {
       onProgress?.call(1.0, 'Concluído');
       return RelatorioHorasEspecialidade(

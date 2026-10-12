@@ -1,4 +1,5 @@
 import '../screens/relatorio_taxas_ocupacao_screen.dart';
+import '../screens/matriz_distribuicao_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
@@ -328,7 +329,7 @@ class CustomDrawer extends StatelessWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _buildSectionTitle('Médicos e Gabinete'),
+                _buildSectionTitle('Médicos e Gabinetes'),
                 ListTile(
                   leading: const Icon(Icons.medical_services),
                   title: Text(
@@ -371,6 +372,25 @@ class CustomDrawer extends StatelessWidget {
                           ).then((_) => onRefresh());
                         }
                       : null,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.grid_view),
+                  title:
+                      Text('Matriz de Distribuição', style: _itemTextStyle()),
+                  onTap: () {
+                    Navigator.pop(context);
+                    if (unidade == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Unidade não definida.')));
+                      return;
+                    }
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              MatrizDistribuicaoScreen(unidade: unidade!),
+                        ));
+                  },
                 ),
                 _buildSectionDivider(),
                 _buildSectionTitle('Relatórios'),

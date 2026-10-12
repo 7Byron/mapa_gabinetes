@@ -16,6 +16,7 @@ import '../services/relatorios_service.dart';
 import '../services/serie_generator.dart';
 import '../services/serie_service.dart';
 import '../utils/time_utils.dart';
+import '../utils/app_theme.dart';
 import '../widgets/custom_appbar.dart';
 
 enum PeriodoRelatorio {
@@ -639,8 +640,7 @@ class _RelatorioOcupacaoDetalheScreenState
   }
 
   Color _corParaPercentual(double valor) {
-    final t = (valor.clamp(0.0, 100.0) / 100.0);
-    return Color.lerp(Colors.blue, Colors.red, t) ?? Colors.blue;
+    return MyAppTheme.corOcupacao(valor);
   }
 
   DateTime _normalizarData(DateTime data) {

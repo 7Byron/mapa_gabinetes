@@ -12,6 +12,7 @@ import '../models/unidade.dart';
 import '../services/cache_version_service.dart';
 import '../services/relatorio_horas_especialidade_service.dart';
 import '../widgets/custom_appbar.dart';
+import '../widgets/horas_especialidade_card.dart';
 
 enum PeriodoHorasEspecialidade {
   dia,
@@ -634,81 +635,10 @@ class _RelatorioHorasEspecialidadeScreenState
           ),
         ),
         const SizedBox(height: 8),
-        ...relatorio.linhas.map((linha) {
-          final destaque =
-              '${linha.medicosComDisponibilidade} médico(s), ${_formatHoras(linha.horasConsulta)} h';
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compacto = constraints.maxWidth < 500;
-                  if (compacto) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          linha.especialidade,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          destaque,
-                          style: TextStyle(color: Colors.grey[800]),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Disponibilidade efetiva no período',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              linha.especialidade,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Disponibilidade efetiva no período',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        destaque,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.blue.shade800,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          );
-        }),
+        ...relatorio.linhas.map((linha) => HorasEspecialidadeCard(
+              linha: linha,
+              totalMedicosAtivosClinica: relatorio.totalMedicosAtivosClinica,
+            )),
       ],
     );
   }

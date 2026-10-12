@@ -6,6 +6,7 @@ import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../models/disponibilidade.dart'; // Corrigido: Importação do modelo Disponibilidade para evitar erro de referência.
 import 'cache_version_service.dart';
+import 'matriz_distribuicao_cache_service.dart';
 
 final Map<String, List<Medico>> _cacheMedicosPorUnidade = {};
 
@@ -15,6 +16,7 @@ String _cacheKeyMedicos(Unidade? unidade) {
 }
 
 void limparCacheMedicos({Unidade? unidade}) {
+  MatrizDistribuicaoCacheService.invalidar(unidadeId: unidade?.id);
   if (unidade == null) {
     _cacheMedicosPorUnidade.clear();
     return;

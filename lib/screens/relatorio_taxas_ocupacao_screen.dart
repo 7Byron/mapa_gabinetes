@@ -257,7 +257,7 @@ class _RelatorioTaxasOcupacaoScreenState
                     value: (taxa.percentagem / 100).clamp(0, 1),
                     strokeWidth: 20,
                     backgroundColor: MyAppTheme.bordaGabineteOcupado,
-                    color: MyAppTheme.azulEscuro,
+                    color: MyAppTheme.corOcupacao(taxa.percentagem),
                   )),
                   Text(_percentagem(taxa),
                       style: Theme.of(context).textTheme.titleLarge),

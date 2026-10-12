@@ -112,6 +112,7 @@ class RelatorioHorasEspecialidadeService {
 
     onProgress?.call(0.25, 'A carregar médicos...');
     final medicos = await buscarMedicos(unidade: unidade);
+    final totalMedicosAtivosClinica = medicos.where((m) => m.ativo).length;
     final medicosAtivos = medicos
         .where((m) =>
             m.ativo &&
@@ -125,6 +126,7 @@ class RelatorioHorasEspecialidadeService {
         inicio: inicioNormalizado,
         fim: fimNormalizado,
         linhas: const [],
+        totalMedicosAtivosClinica: totalMedicosAtivosClinica,
       );
     }
 
@@ -216,6 +218,7 @@ class RelatorioHorasEspecialidadeService {
       inicio: inicioNormalizado,
       fim: fimNormalizado,
       linhas: linhas,
+      totalMedicosAtivosClinica: totalMedicosAtivosClinica,
     );
   }
 

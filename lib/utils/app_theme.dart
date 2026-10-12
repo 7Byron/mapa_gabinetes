@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
 class MyAppTheme {
+  static Color corOcupacao(double percentagem) {
+    final proporcao = percentagem.clamp(0.0, 100.0) / 100.0;
+    return Color.lerp(Colors.blue, Colors.red, proporcao) ?? Colors.blue;
+  }
+
   // Cores principais - Paleta profissional moderna
   static const Color azulEscuro = Color(0xFF1565C0);
   static const Color azulClaro = Color(0xFF64B5F6);

@@ -21,11 +21,13 @@ class RelatorioHorasEspecialidade {
   final DateTime inicio;
   final DateTime fim;
   final List<RelatorioHorasEspecialidadeLinha> linhas;
+  final int totalMedicosAtivosClinica;
 
   const RelatorioHorasEspecialidade({
     required this.inicio,
     required this.fim,
     required this.linhas,
+    this.totalMedicosAtivosClinica = 0,
   });
 
   int get totalEspecialidades => linhas.length;

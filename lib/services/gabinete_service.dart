@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/gabinete.dart';
 import '../models/unidade.dart';
 import 'cache_version_service.dart';
+import 'matriz_distribuicao_cache_service.dart';
 
 final Map<String, List<Gabinete>> _cacheGabinetesPorUnidade = {};
 
@@ -13,6 +14,7 @@ String _cacheKeyGabinetes(Unidade? unidade) {
 }
 
 void limparCacheGabinetes({Unidade? unidade}) {
+  MatrizDistribuicaoCacheService.invalidar(unidadeId: unidade?.id);
   if (unidade == null) {
     _cacheGabinetesPorUnidade.clear();
     return;

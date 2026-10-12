@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_init_service.dart';
+import 'matriz_distribuicao_cache_service.dart';
 
 class CacheVersionService {
   static const String _docId = 'global';
@@ -55,6 +56,7 @@ class CacheVersionService {
       if (value is num) return value.toInt();
       return 0;
     }
+
     return {
       fieldSeries: asInt(data?[fieldSeries]),
       fieldAlocacoes: asInt(data?[fieldAlocacoes]),
@@ -73,8 +75,8 @@ class CacheVersionService {
     final key = _cacheKey(unidadeId);
     try {
       await FirebaseInitService.ensureInitialized();
-      final snapshot = await _docRef(unidadeId)
-          .get(const GetOptions(source: Source.server));
+      final snapshot =
+          await _docRef(unidadeId).get(const GetOptions(source: Source.server));
       final versions = _parseSnapshot(snapshot);
       _cacheVersions(key, versions);
       return versions;
@@ -105,6 +107,12 @@ class CacheVersionService {
     String? unidadeId,
     required List<String> fields,
   }) async {
+    if (fields.any((field) =>
+        field == fieldMedicos ||
+        field == fieldGabinetes ||
+        field == fieldSeries)) {
+      MatrizDistribuicaoCacheService.invalidar(unidadeId: unidadeId);
+    }
     try {
       await FirebaseInitService.ensureInitialized();
       if (fields.isEmpty) return;

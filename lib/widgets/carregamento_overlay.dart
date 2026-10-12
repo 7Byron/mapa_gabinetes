@@ -4,12 +4,14 @@ class CarregamentoOverlay extends StatelessWidget {
   final bool isRefreshing;
   final String mensagem;
   final double progresso;
+  final bool progressoIndeterminado;
 
   const CarregamentoOverlay({
     super.key,
     required this.isRefreshing,
     required this.mensagem,
     required this.progresso,
+    this.progressoIndeterminado = false,
   });
 
   @override
@@ -39,7 +41,7 @@ class CarregamentoOverlay extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
-                        value: progresso,
+                        value: progressoIndeterminado ? null : progresso,
                         backgroundColor: Colors.white.withValues(alpha: 0.3),
                         valueColor:
                             const AlwaysStoppedAnimation<Color>(Colors.white),

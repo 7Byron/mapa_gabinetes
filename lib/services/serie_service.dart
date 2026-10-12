@@ -7,6 +7,7 @@ import '../models/excecao_serie.dart';
 import '../models/unidade.dart';
 import '../utils/alocacao_medicos_logic.dart';
 import 'cache_version_service.dart';
+import 'matriz_distribuicao_cache_service.dart';
 
 /// Serviço para gerenciar séries de recorrência e exceções no Firestore
 class SerieService {
@@ -111,6 +112,7 @@ class SerieService {
 
   /// Invalida o cache de séries para um médico específico (ou todos se medicoId for null)
   static void invalidateCacheSeries(String unidadeId, [String? medicoId]) {
+    MatrizDistribuicaoCacheService.invalidar(unidadeId: unidadeId);
     if (medicoId == null) {
       // Invalidar todas as séries da unidade
       final keysToInvalidate = _cacheSeries.keys

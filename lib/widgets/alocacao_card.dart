@@ -15,8 +15,10 @@ class AlocacaoCard extends StatelessWidget {
   final List<Gabinete>? gabinetes;
   final Unidade? unidade;
   final String? rotuloSerie;
+  final bool ausente;
   final VoidCallback? onChanged;
   final VoidCallback onTap; // Abre diálogo de seleção de gabinete
+  final VoidCallback? onInativar;
   final VoidCallback onRemover; // Remove o cartão
   final VoidCallback onNavegarParaMapa; // Navega para o mapa
   final VoidCallback onSelecionarHorarioInicio; // Seleciona horário de início
@@ -29,9 +31,11 @@ class AlocacaoCard extends StatelessWidget {
     this.gabinetes,
     this.unidade,
     this.rotuloSerie,
+    this.ausente = false,
     this.onChanged,
     required this.onTap,
     required this.onRemover,
+    this.onInativar,
     required this.onNavegarParaMapa,
     required this.onSelecionarHorarioInicio,
     required this.onSelecionarHorarioFim,
@@ -79,170 +83,201 @@ class AlocacaoCard extends StatelessWidget {
       child: Card(
         elevation: 4,
         margin: const EdgeInsets.all(8),
-        color: corCartao,
+        color: ausente ? Colors.grey.shade200 : corCartao,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 2.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
+          child: Stack(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year} ($diaSemana)',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // Ícone de deletar
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 16),
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 24, minHeight: 24),
-                    onPressed: onRemover,
-                  ),
-                ],
-              ),
-              Text(
-                'Série: ${rotuloSerie ?? disponibilidade.tipo}',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: SerieTipoColors.para(disponibilidade.tipo),
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              // Divider entre Série e Gabinete
-              const Divider(height: 2, thickness: 0.5),
-              // Exibir número do gabinete se houver alocação (texto maior)
-              if (nomeGabinete != null && nomeGabinete.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Gab: $nomeGabinete',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue.shade700,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon:
-                            const Icon(Icons.map, color: Colors.blue, size: 18),
-                        padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(minWidth: 24, minHeight: 24),
-                        tooltip: 'Ver no mapa',
-                        onPressed: onNavegarParaMapa,
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Sem gabinete',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade700,
-                            fontWeight: FontWeight.bold,
-                            fontStyle: FontStyle.italic,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon:
-                            const Icon(Icons.map, color: Colors.blue, size: 18),
-                        padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(minWidth: 24, minHeight: 24),
-                        tooltip: 'Ver no mapa',
-                        onPressed: onNavegarParaMapa,
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 2),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Flexible(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade100,
-                        foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        minimumSize: const Size(55, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${disponibilidade.data.day}/${disponibilidade.data.month}/${disponibilidade.data.year} ($diaSemana)',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      onPressed: onSelecionarHorarioInicio,
-                      child: Text(
-                        horarioInicio,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
+                      if (!ausente && onInativar != null)
+                        IconButton(
+                          tooltip: 'Inativar este cartão',
+                          icon: Icon(Icons.event_busy,
+                              color: Colors.orange.shade800, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints:
+                              const BoxConstraints(minWidth: 24, minHeight: 24),
+                          onPressed: onInativar,
                         ),
-                      ),
-                    ),
+                      if (ausente)
+                        IconButton(
+                          tooltip: 'Ativar este cartão',
+                          icon: const Icon(Icons.event_available,
+                              color: Colors.green, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints:
+                              const BoxConstraints(minWidth: 24, minHeight: 24),
+                          onPressed: onTap,
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade100,
-                        foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        minimumSize: const Size(55, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                  Text(
+                    '${ausente ? 'Ausente · ' : 'Série: '}${rotuloSerie ?? disponibilidade.tipo}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: ausente
+                          ? Colors.orange.shade800
+                          : SerieTipoColors.para(disponibilidade.tipo),
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // Divider entre Série e Gabinete
+                  const Divider(height: 2, thickness: 0.5),
+                  // Exibir número do gabinete se houver alocação (texto maior)
+                  if (nomeGabinete != null && nomeGabinete.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Gab: $nomeGabinete',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade700,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.map,
+                                color: Colors.blue, size: 18),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 24, minHeight: 24),
+                            tooltip: 'Ver no mapa',
+                            onPressed: onNavegarParaMapa,
+                          ),
+                        ],
                       ),
-                      onPressed: onSelecionarHorarioFim,
-                      child: Text(
-                        horarioFim,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Sem gabinete',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade700,
+                                fontWeight: FontWeight.bold,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.map,
+                                color: Colors.blue, size: 18),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 24, minHeight: 24),
+                            tooltip: 'Ver no mapa',
+                            onPressed: onNavegarParaMapa,
+                          ),
+                        ],
                       ),
                     ),
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade100,
+                            foregroundColor: Colors.black87,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            minimumSize: const Size(55, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed:
+                              ausente ? onTap : onSelecionarHorarioInicio,
+                          child: Text(
+                            horarioInicio,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade100,
+                            foregroundColor: Colors.black87,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            minimumSize: const Size(55, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: ausente ? onTap : onSelecionarHorarioFim,
+                          child: Text(
+                            horarioFim,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: IconButton(
+                  tooltip: 'Remover cartão',
+                  icon: const Icon(Icons.delete, color: Colors.red, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: onRemover,
+                ),
               ),
             ],
           ),

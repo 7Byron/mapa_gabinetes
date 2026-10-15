@@ -15,6 +15,7 @@ import '../services/disponibilidade_criacao.dart';
 import '../services/disponibilidade_remocao.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../services/serie_service.dart';
+import '../services/mapa_cartao_service.dart';
 import '../services/serie_generator.dart';
 import '../services/disponibilidade_unica_service.dart';
 import '../services/alocacao_horario_service.dart';
@@ -288,7 +289,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
         _medicoAtivo != _medicoAtivoOriginal ||
         disponibilidades.length != _disponibilidadesOriginal.length ||
         CadastroMedicosHelper.disponibilidadesPendentes(
-          disponibilidades, _disponibilidadesOriginal,
+          disponibilidades,
+          _disponibilidadesOriginal,
         ).isNotEmpty;
     if (mounted && _houveMudancas != mudancas) {
       setState(() => _houveMudancas = mudancas);
@@ -301,8 +303,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
     if (gravacao != null) {
       if (!await gravacao.future || !mounted) return false;
     }
-    if (_saving || _isCarregandoInicial || isLoadingDisponibilidades ||
-        _atualizandoHorarios || _alocandoGabinete || _criandoExcecao) {
+    if (_saving ||
+        _isCarregandoInicial ||
+        isLoadingDisponibilidades ||
+        _atualizandoHorarios ||
+        _alocandoGabinete ||
+        _criandoExcecao) {
       return false;
     }
     _verificarMudancas();
@@ -1622,7 +1628,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
     final pendentesAntesDoCarregamento =
         CadastroMedicosHelper.disponibilidadesPendentes(
-      this.disponibilidades, _disponibilidadesOriginal,
+      this.disponibilidades,
+      _disponibilidadesOriginal,
     ).map((d) => d.id).toSet();
     final originaisAntesDoCarregamento = {
       for (final d in _disponibilidadesOriginal) d.id: d,
@@ -1642,11 +1649,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
         // Adicionar de volta as disponibilidades únicas não salvas
         for (final unica in unicasNaoSalvas) {
-          final chave =
-              CadastroMedicosHelper.gerarChaveDisponibilidade(unica);
+          final chave = CadastroMedicosHelper.gerarChaveDisponibilidade(unica);
           final jaExiste = this.disponibilidades.any((d) {
-            final dChave =
-                CadastroMedicosHelper.gerarChaveDisponibilidade(d);
+            final dChave = CadastroMedicosHelper.gerarChaveDisponibilidade(d);
             return dChave == chave;
           });
           if (!jaExiste) {
@@ -1686,7 +1691,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
 
     // Recarregar o calendário não transforma trabalho local em trabalho guardado.
-    _disponibilidadesOriginal = CadastroMedicosHelper.criarCopiaProfundaDisponibilidades([
+    _disponibilidadesOriginal =
+        CadastroMedicosHelper.criarCopiaProfundaDisponibilidades([
       for (final d in this.disponibilidades)
         if (!pendentesAntesDoCarregamento.contains(d.id))
           d
@@ -4266,6 +4272,111 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
   }
 
+  Future<void> _reativarCartaoAusente(Disponibilidade disponibilidade) =>
+      _definirAusenciaCartao(disponibilidade, false);
+
+  Future<void> _inativarCartao(Disponibilidade disponibilidade) =>
+      _definirAusenciaCartao(disponibilidade, true);
+
+  Future<void> _apagarCartaoAusente(Disponibilidade disponibilidade) =>
+      _definirAusenciaCartao(disponibilidade, true, apagar: true);
+
+  Future<void> _definirAusenciaCartao(
+      Disponibilidade disponibilidade, bool ausente,
+      {bool apagar = false}) async {
+    final unidade = widget.unidade;
+    if (unidade == null) throw StateError('Seleciona uma unidade.');
+    setState(() {
+      _saving = true;
+      progressoSaving = 0.1;
+      mensagemSaving = apagar
+          ? 'A apagar cartão...'
+          : ausente
+              ? 'A inativar cartão...'
+              : 'A ativar cartão...';
+    });
+    try {
+      final correspondentes = alocacoes
+          .where((a) =>
+              a.medicoId == disponibilidade.medicoId &&
+              DateUtils.isSameDay(a.data, disponibilidade.data) &&
+              (disponibilidade.id.startsWith('serie_')
+                  ? a.id == disponibilidade.id
+                  : a.horarioInicio == disponibilidade.horarios.firstOrNull &&
+                      a.horarioFim == disponibilidade.horarios.lastOrNull))
+          .toList();
+      if (correspondentes.length > 1) {
+        throw StateError(
+            'Há várias alocações para este cartão. Atualiza o médico.');
+      }
+      await MapaCartaoService.definirAusencia(
+        unidade: unidade,
+        cartao: correspondentes.firstOrNull ??
+            Alocacao(
+              id: disponibilidade.id,
+              medicoId: disponibilidade.medicoId,
+              gabineteId: '',
+              data: disponibilidade.data,
+              horarioInicio: disponibilidade.horarios.firstOrNull ?? '',
+              horarioFim: disponibilidade.horarios.lastOrNull ?? '',
+            ),
+        disponibilidades: disponibilidades,
+        ausente: ausente,
+        ocultarCartao: apagar,
+      );
+      final seriesAtuais = await SerieService.carregarSeries(
+        disponibilidade.medicoId,
+        unidade: unidade,
+        forcarServidor: true,
+      );
+      final atualizadas = await SerieService.carregarExcecoes(
+        disponibilidade.medicoId,
+        unidade: unidade,
+        dataInicio: disponibilidade.data,
+        dataFim: disponibilidade.data,
+        forcarServidor: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        // Acrescentar a regra de um cartão único convertido sem substituir
+        // outras séries que possam ter alterações locais por guardar.
+        final idsLocais = series.map((s) => s.id).toSet();
+        series.addAll(seriesAtuais.where((s) => !idsLocais.contains(s.id)));
+        excecoes.removeWhere(
+            (e) => DateUtils.isSameDay(e.data, disponibilidade.data));
+        excecoes.addAll(atualizadas);
+        if (ausente) {
+          disponibilidades.removeWhere((d) => d.id == disponibilidade.id);
+        }
+        progressoSaving = 0.65;
+        mensagemSaving = 'A atualizar cartões...';
+      });
+      await _carregarDisponibilidadesFirestore(disponibilidade.medicoId,
+          ano: disponibilidade.data.year);
+      if (!mounted) return;
+      setState(() => progressoSaving = 0.9);
+      await _carregarAlocacoesEGabinetes(disponibilidade.medicoId,
+          ano: disponibilidade.data.year);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(apagar
+              ? 'Cartão apagado.'
+              : ausente
+                  ? 'Cartão marcado como ausente.'
+                  : 'Cartão ativado.'),
+        ));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          progressoSaving = 0;
+          mensagemSaving = 'A guardar...';
+        });
+      }
+    }
+  }
+
   /// Remove uma exceção
   Future<void> _removerExcecao(ExcecaoSerie excecao) async {
     try {
@@ -4453,7 +4564,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
           if (indexOriginal != -1) {
             _disponibilidadesOriginal[indexOriginal] =
                 CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
-                  [dispAtualizada]).single;
+                    [dispAtualizada]).single;
           } else {
             _disponibilidadesOriginal.add(
               CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
@@ -4723,7 +4834,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
   /// Salva o médico atual sem sair da página
   Future<bool> _salvarMedicoSemSair() async {
-    if (_saving || _isCarregandoInicial || isLoadingDisponibilidades) return false;
+    if (_saving || _isCarregandoInicial || isLoadingDisponibilidades) {
+      return false;
+    }
     _verificarMudancas();
     if (!_houveMudancas) return true;
     if (!_formKey.currentState!.validate()) {
@@ -4771,7 +4884,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
       _observacoesOriginal = observacoesController.text.trim();
       _medicoAtivoOriginal = _medicoAtivo;
       _disponibilidadesOriginal =
-          CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(disponibilidades);
+          CadastroMedicosHelper.criarCopiaProfundaDisponibilidades(
+              disponibilidades);
       setState(() {
         _houveMudancas = false;
         // Atualizar médico atual após salvar
@@ -4790,7 +4904,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         }
         progressoSaving = 1.0;
         mensagemSaving = 'Concluído!';
-
       });
 
       guardou = true;
@@ -5220,6 +5333,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                   flex: 1,
                                   child: SingleChildScrollView(
                                     child: DisponibilidadesGrid(
+                                      excecoes: excecoes
+                                          .where((e) =>
+                                              _anoVisualizado == null ||
+                                              e.data.year == _anoVisualizado)
+                                          .toList(),
+                                      onReativar: _reativarCartaoAusente,
+                                      onInativar: _inativarCartao,
+                                      onApagarAusente: _apagarCartaoAusente,
                                       disponibilidades: _anoVisualizado != null
                                           ? disponibilidades
                                               .where((d) =>
@@ -5773,6 +5894,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
                                       constraints:
                                           const BoxConstraints(maxHeight: 300),
                                       child: DisponibilidadesGrid(
+                                        excecoes: excecoes
+                                            .where((e) =>
+                                                _anoVisualizado == null ||
+                                                e.data.year == _anoVisualizado)
+                                            .toList(),
+                                        onReativar: _reativarCartaoAusente,
+                                        onInativar: _inativarCartao,
+                                        onApagarAusente: _apagarCartaoAusente,
                                         disponibilidades:
                                             _anoVisualizado != null
                                                 ? disponibilidades

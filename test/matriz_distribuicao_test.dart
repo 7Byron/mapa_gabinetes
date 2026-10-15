@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mapa_gabinetes/models/medico.dart';
+import 'package:mapa_gabinetes/models/matriz_distribuicao.dart';
 import 'package:mapa_gabinetes/models/mudanca_gabinete.dart';
 import 'package:mapa_gabinetes/models/serie_recorrencia.dart';
 import 'package:mapa_gabinetes/services/matriz_distribuicao_service.dart';
@@ -148,6 +149,40 @@ void main() {
       serie('b', 'b', 'Semanal', DateTime(2025))
     ], referencia: DateTime(2026, 2, 2));
     expect(matriz.itens, isEmpty);
+  });
+
+  test('Quinzenal de 2 de novembro só entra quando está em vigor', () {
+    final regra = serie(
+        'andre-quinzenal', 'andre', 'Quinzenal', DateTime(2026, 11, 2),
+        gabinete: '4')
+      ..horarios = ['14:00', '17:00'];
+    final regras = [
+      regra,
+      serie('andre-unica-19', 'andre', 'Única', DateTime(2026, 10, 19),
+          gabinete: '4'),
+      serie('andre-unica-26', 'andre', 'Única', DateTime(2026, 10, 26),
+          gabinete: '4'),
+    ];
+    MatrizDistribuicao gerar(DateTime referencia) =>
+        MatrizDistribuicaoService.gerar(
+          medicos: [medico('andre')],
+          series: regras,
+          referencia: referencia,
+        );
+    expect(gerar(DateTime(2026, 10, 15)).itens, isEmpty);
+    expect(gerar(DateTime(2026, 11, 1)).itens, isEmpty);
+    final emVigor = gerar(DateTime(2026, 11, 2));
+    expect(emVigor.itens.map((i) => i.dia), [1, 15, 29]);
+    expect(
+        emVigor.itens.every((i) =>
+            i.serieId == regra.id &&
+            i.gabineteId == '4' &&
+            i.horario == '14:00 – 17:00'),
+        isTrue);
+
+    // Se a série começar efetivamente em outubro, já aparece em outubro.
+    regra.dataInicio = DateTime(2026, 10, 2);
+    expect(gerar(DateTime(2026, 10, 15)).itens, isNotEmpty);
   });
 
   test('Horários separados não se sobrepõem; conflitos reais são destacados',

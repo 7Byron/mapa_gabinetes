@@ -437,7 +437,9 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
 
   double _alturaIdentificacao(
       BuildContext context, Gabinete gabinete, double largura) {
-    var altura = 20.0;
+    // O Container desconta o padding (10 + 10) e a borda (1 + 1).
+    const espacoIdentificacao = 22.0;
+    var altura = espacoIdentificacao;
     for (final (texto, estilo) in [
       (
         gabinete.setor.isEmpty ? 'Sem piso' : gabinete.setor,
@@ -459,7 +461,7 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
             style: DefaultTextStyle.of(context).style.merge(estilo)),
         textDirection: Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
-      )..layout(maxWidth: largura - 20);
+      )..layout(maxWidth: largura - espacoIdentificacao);
       altura += painter.height;
       painter.dispose();
     }

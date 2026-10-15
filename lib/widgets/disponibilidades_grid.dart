@@ -9,16 +9,22 @@ import '../models/unidade.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import 'alocacao_card.dart';
+import '../services/mapa_ausencias_service.dart';
 import '../utils/alocacao_card_actions.dart';
 import '../utils/alocacao_card_handlers.dart';
 import '../utils/horarios_disponibilidade_utils.dart';
 import '../utils/serie_numeracao_utils.dart';
 import '../utils/series_helper.dart';
+import '../utils/excecoes_canceladas_utils.dart';
 import '../services/disponibilidade_data_gestao_service.dart';
 // import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
+  final List<ExcecaoSerie> excecoes;
+  final Future<void> Function(Disponibilidade)? onReativar;
+  final Future<void> Function(Disponibilidade)? onInativar;
+  final Future<void> Function(Disponibilidade)? onApagarAusente;
   final Function(Disponibilidade, bool) onRemoverData;
   final Function(Disponibilidade)? onEditarDisponibilidade;
   final VoidCallback? onChanged; // notifica alterações (horários etc.)
@@ -41,6 +47,10 @@ class DisponibilidadesGrid extends StatefulWidget {
   const DisponibilidadesGrid({
     super.key,
     required this.disponibilidades,
+    this.excecoes = const [],
+    this.onReativar,
+    this.onInativar,
+    this.onApagarAusente,
     required this.onRemoverData,
     this.onEditarDisponibilidade,
     this.onChanged,
@@ -62,6 +72,35 @@ class DisponibilidadesGrid extends StatefulWidget {
 class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   // Contador para forçar rebuild quando alocações mudam drasticamente
   int _rebuildCounter = 0;
+  final _reativando = <String>{};
+
+  Future<void> _reativar(Disponibilidade disponibilidade) =>
+      _alterarAusencia(disponibilidade, false);
+
+  Future<void> _alterarAusencia(Disponibilidade disponibilidade, bool ausente,
+      {bool apagar = false}) async {
+    final callback = apagar
+        ? widget.onApagarAusente
+        : ausente
+            ? widget.onInativar
+            : widget.onReativar;
+    if (callback == null || !_reativando.add(disponibilidade.id)) {
+      return;
+    }
+    try {
+      await callback(disponibilidade);
+    } catch (erro) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Não foi possível ${apagar ? 'apagar' : ausente ? 'inativar' : 'ativar'} o cartão: $erro'),
+        ));
+      }
+    } finally {
+      _reativando.remove(disponibilidade.id);
+    }
+  }
+
   List<String>? _lastAlocacoesHash;
   // Key única para forçar rebuild completo do GridView quando necessário
   Key? _gridUniqueKey;
@@ -416,6 +455,26 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
 
   @override
   Widget build(BuildContext context) {
+    final ausentes = MapaAusenciasService.projetarCartoesAusentes(
+      series: widget.series ?? [],
+      excecoes: widget.excecoes,
+    );
+    final idsAusentes = ausentes.disponibilidades.map((d) => d.id).toSet();
+    final cancelamentos = {
+      for (final e in widget.excecoes.where((e) => e.cancelada))
+        for (final serie in widget.series ?? <SerieRecorrencia>[])
+          if (serie.id == e.serieId)
+            ExcecoesCanceladasUtils.chave(serie.medicoId, e.serieId, e.data),
+    };
+    final disponibilidadesVisiveis = [
+      ...widget.disponibilidades.where((d) => !ExcecoesCanceladasUtils.contem(
+          cancelamentos, d.medicoId, d.id, d.data)),
+      ...ausentes.disponibilidades,
+    ]..sort((a, b) => a.data.compareTo(b.data));
+    final alocacoesVisuais = [
+      ...?widget.alocacoes?.where((a) => !idsAusentes.contains(a.id)),
+      ...ausentes.alocacoes,
+    ];
     // #region agent log (COMENTADO - pode ser reativado se necessário)
 
 //    try {
@@ -470,7 +529,7 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
       builder: (context, constraints) {
         final int crossAxisCount = (constraints.maxWidth / 200).floor();
         // Ordena por data para garantir ordem cronológica na grelha
-        widget.disponibilidades.sort((a, b) => a.data.compareTo(b.data));
+
         // CORREÇÃO CRÍTICA: Usar UniqueKey quando disponível, senão usar ValueKey baseado em hash
         // Isso força rebuild completo do GridView quando as alocações mudam drasticamente
         final gridKey = _gridUniqueKey ??
@@ -487,9 +546,10 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
           ),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: widget.disponibilidades.length,
+          itemCount: disponibilidadesVisiveis.length,
           itemBuilder: (context, index) {
-            final disponibilidade = widget.disponibilidades[index];
+            final disponibilidade = disponibilidadesVisiveis[index];
+            final ausente = idsAusentes.contains(disponibilidade.id);
             final serieDoCartao = widget.series == null
                 ? null
                 : DisponibilidadeDataGestaoService
@@ -555,16 +615,24 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
               key: ValueKey(
                   'card_${disponibilidade.id}_${dataKey}_$gabineteKey'),
               disponibilidade: disponibilidade,
-              alocacoes: widget.alocacoes,
+              ausente: ausente,
+              onInativar: widget.onInativar == null
+                  ? null
+                  : () => _alterarAusencia(disponibilidade, true),
+              alocacoes: alocacoesVisuais,
               gabinetes: widget.gabinetes,
               unidade: widget.unidade,
               rotuloSerie: rotuloSerie,
               onChanged: widget.onChanged,
-              onTap: () => _verDisponibilidade(disponibilidade),
-              onRemover: () => _mostrarDialogoRemocaoSeries(
-                context,
-                disponibilidade,
-              ),
+              onTap: () => ausente
+                  ? _reativar(disponibilidade)
+                  : _verDisponibilidade(disponibilidade),
+              onRemover: () => ausente
+                  ? _alterarAusencia(disponibilidade, true, apagar: true)
+                  : _mostrarDialogoRemocaoSeries(
+                      context,
+                      disponibilidade,
+                    ),
               onNavegarParaMapa: () => _navegarParaMapa(
                 context,
                 disponibilidade.data,

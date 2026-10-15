@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mapa_gabinetes/models/excecao_serie.dart';
+import 'package:mapa_gabinetes/models/alocacao.dart';
 import 'package:mapa_gabinetes/models/serie_recorrencia.dart';
 import 'package:mapa_gabinetes/models/medico.dart';
 import 'package:mapa_gabinetes/services/mapa_ausencias_service.dart';
@@ -40,6 +41,43 @@ void main() {
         MapaAusenciasService.gerar(
             series: series, excecoes: excecoes, data: DateTime(2026, 10, 16)),
         isEmpty);
+  });
+
+  test(
+      'Ausência substitui cópia ativa durante o refresh sem afetar outros cartões',
+      () {
+    Alocacao cartao(String id, {int dia = 15, String gabinete = 'g1'}) =>
+        Alocacao(
+            id: id,
+            medicoId: 'm1',
+            gabineteId: gabinete,
+            data: DateTime(2026, 10, dia),
+            horarioInicio: '08:00',
+            horarioFim: '15:00');
+    final ativoAntigo = cartao('s1');
+    final ausente = cartao('s1', gabinete: 'g2');
+    final outraSerie = cartao('s2');
+    final outroDia = cartao('s1', dia: 22);
+    final duranteRefresh = MapaAusenciasService.conciliar(
+      alocacoes: [ativoAntigo, outraSerie, outroDia],
+      ausencias: [ausente, ausente],
+    );
+    expect(duranteRefresh.ativas, [outraSerie, outroDia]);
+    expect(duranteRefresh.ausencias, [ausente]);
+    // A cópia ativa também deixa de participar nos conflitos do gabinete.
+    expect(duranteRefresh.ativas.contains(ativoAntigo), isFalse);
+    final depoisRefresh = MapaAusenciasService.conciliar(
+      alocacoes: [outraSerie, outroDia],
+      ausencias: [ausente],
+    );
+    expect(depoisRefresh.ativas, duranteRefresh.ativas);
+    expect(depoisRefresh.ausencias, duranteRefresh.ausencias);
+    final reativado = MapaAusenciasService.conciliar(
+      alocacoes: [ativoAntigo, outraSerie, outroDia],
+      ausencias: [],
+    );
+    expect(reativado.ativas, [ativoAntigo, outraSerie, outroDia]);
+    expect(reativado.ausencias, isEmpty);
   });
 
   testWidgets('Cartão de ausência apresenta indicação e cor própria',

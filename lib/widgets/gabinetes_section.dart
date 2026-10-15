@@ -13,6 +13,10 @@ import '../services/mapa_ausencias_service.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import 'medico_card.dart';
+import 'cartao_mapa_interativo.dart';
+import '../services/mapa_cartao_service.dart';
+import '../services/matriz_progresso_controller.dart';
+import 'carregamento_overlay.dart';
 import 'cartoes_gabinete_layout.dart';
 import '../services/alocacao_unica_service.dart';
 import '../services/realocacao_unico_service.dart';
@@ -124,6 +128,73 @@ class _GabinetesSectionState extends State<GabinetesSection> {
       }
     } catch (erro) {
       debugPrint('Erro ao carregar ausências do mapa: $erro');
+    }
+  }
+
+  Future<void> _alternarAusencia(Alocacao cartao, bool ausente) async {
+    final unidade = widget.unidade;
+    if (unidade == null) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final controlador = MatrizProgressoController()..iniciar();
+    final mensagem =
+        ValueNotifier(ausente ? 'A ativar cartão...' : 'A inativar cartão...');
+    final progresso = DialogRoute<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: Material(
+          type: MaterialType.transparency,
+          child: AnimatedBuilder(
+            animation: Listenable.merge([controlador, mensagem]),
+            builder: (context, _) => Stack(children: [
+              CarregamentoOverlay(
+                isRefreshing: false,
+                mensagem: mensagem.value,
+                progresso: controlador.value,
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    navigator.push(progresso);
+    controlador.etapa(0.1, limiteEspera: 0.6);
+    try {
+      await MapaCartaoService.definirAusencia(
+        unidade: unidade,
+        cartao: cartao,
+        disponibilidades: widget.disponibilidades,
+        ausente: !ausente,
+      );
+      mensagem.value = 'A atualizar o mapa...';
+      controlador.etapa(0.65, limiteEspera: 0.85);
+      await widget.onAtualizarEstado();
+      if (!mounted) return;
+      mensagem.value = 'A atualizar ausências...';
+      controlador.etapa(0.88, limiteEspera: 0.97);
+      await _carregarAusencias();
+      if (!mounted) return;
+      mensagem.value = 'Concluído!';
+      await controlador.concluir();
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:
+            Text(ausente ? 'Cartão ativado.' : 'Cartão marcado como ausente.'),
+      ));
+    } catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Não foi possível atualizar o cartão: $erro'),
+      ));
+    } finally {
+      // O refresh pode reconstruir o cartão e o mapa; a rota mantém o
+      // indicador visível até terminar também o carregamento das ausências.
+      if (progresso.isActive) navigator.removeRoute(progresso);
+      controlador.dispose();
+      mensagem.dispose();
     }
   }
 
@@ -848,6 +919,10 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
   @override
   Widget build(BuildContext context) {
+    final cartoes = MapaAusenciasService.conciliar(
+      alocacoes: widget.alocacoes,
+      ausencias: _ausencias,
+    );
     // Agrupa gabinetes por setor
     final gabinetesPorSetor = <String, List<Gabinete>>{};
     for (var g in widget.gabinetes) {
@@ -1770,8 +1845,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                           // Esses logs estavam causando milhares de escritas desnecessárias
 
-                          final alocacoesDoGabinete = widget.alocacoes
-                              .where((a) {
+                          final alocacoesDoGabinete = cartoes.ativas.where((a) {
                             final aData =
                                 DateTime(a.data.year, a.data.month, a.data.day);
                             final corresponde = a.gabineteId == gabinete.id &&
@@ -1849,7 +1923,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 medico.nome != 'Desconhecido';
                           }).toList();
 
-                          final ausenciasGabinete = _ausencias
+                          final ausenciasGabinete = cartoes.ausencias
                               .where((a) => a.gabineteId == gabinete.id)
                               .toList();
                           final idsAusentes =
@@ -1984,77 +2058,36 @@ class _GabinetesSectionState extends State<GabinetesSection> {
 
                                             final ausente =
                                                 idsAusentes.contains(a.id);
-                                            final medicoCard = ausente
-                                                ? MedicoCard
-                                                    .buildSmallMedicoCard(
-                                                    medico,
-                                                    horariosAlocacao,
-                                                    Colors.grey.shade200,
-                                                    true,
-                                                    ausente: true,
-                                                    corDestaque: corDestaque,
-                                                  )
-                                                : widget.isAdmin
-                                                    ? Draggable<String>(
-                                                        data:
-                                                            '${medico.id}|||alocacao:${a.id}',
-                                                        feedback: MedicoCard
-                                                            .dragFeedback(
-                                                          medico,
-                                                          horariosAlocacao,
-                                                        ),
-                                                        childWhenDragging:
-                                                            Opacity(
-                                                          opacity: 0.5,
-                                                          child: MedicoCard
-                                                              .buildSmallMedicoCard(
-                                                            medico,
-                                                            horariosAlocacao,
-                                                            Colors.white,
-                                                            true,
-                                                            corDestaque:
-                                                                corDestaque,
-                                                          ),
-                                                        ),
-                                                        child: MedicoCard
-                                                            .buildSmallMedicoCard(
-                                                          medico,
-                                                          horariosAlocacao,
-                                                          Colors.white,
-                                                          true,
-                                                          corDestaque:
-                                                              corDestaque,
-                                                        ),
-                                                        onDragEnd: (details) {
-                                                          if (details
-                                                                  .wasAccepted ==
-                                                              false) {}
-                                                        },
-                                                      )
-                                                    : MedicoCard
-                                                        .buildSmallMedicoCard(
-                                                        medico,
-                                                        horariosAlocacao,
-                                                        Colors.white,
-                                                        true,
-                                                        corDestaque:
-                                                            corDestaque,
-                                                      );
-
-                                            // Adicionar GestureDetector para detectar tap (editar)
-                                            // Só permitir edição se for administrador
-                                            return widget.isAdmin &&
-                                                    widget.onEditarMedico !=
-                                                        null
-                                                ? GestureDetector(
-                                                    // Clique único para editar (só aciona se não houver drag)
-                                                    onTap: () {
-                                                      widget.onEditarMedico!(
-                                                          medico);
-                                                    },
-                                                    child: medicoCard,
-                                                  )
-                                                : medicoCard;
+                                            if (!widget.isAdmin) {
+                                              return MedicoCard
+                                                  .buildSmallMedicoCard(
+                                                medico,
+                                                horariosAlocacao,
+                                                ausente
+                                                    ? Colors.grey.shade200
+                                                    : Colors.white,
+                                                true,
+                                                ausente: ausente,
+                                                corDestaque: corDestaque,
+                                              );
+                                            }
+                                            return CartaoMapaInterativo(
+                                              key: ValueKey(
+                                                  '${widget.unidade?.id}_${widget.selectedDate}_${a.id}'),
+                                              medico: medico,
+                                              horarios: horariosAlocacao,
+                                              dragData:
+                                                  '${medico.id}|||alocacao:${a.id}',
+                                              ausente: ausente,
+                                              corDestaque: corDestaque,
+                                              onEditar: widget.onEditarMedico ==
+                                                      null
+                                                  ? null
+                                                  : () => widget
+                                                      .onEditarMedico!(medico),
+                                              onAlternarAusencia: () =>
+                                                  _alternarAusencia(a, ausente),
+                                            );
                                           }).toList(),
                                         ),
                                       ),

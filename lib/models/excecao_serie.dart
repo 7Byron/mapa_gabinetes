@@ -6,6 +6,8 @@ class ExcecaoSerie {
   String id;
   String serieId; // ID da série à qual pertence
   DateTime data; // Data específica da exceção
+  bool
+      ocultarCartao; // Ocorrência apagada: continua cancelada, sem cartão visual.
   bool cancelada; // true = não acontece nesta data
   List<String>? horarios; // null = usa horários da série, senão sobrescreve
   String? gabineteId; // null = usa gabinete da série, senão sobrescreve
@@ -15,6 +17,7 @@ class ExcecaoSerie {
     required this.serieId,
     required this.data,
     this.cancelada = false,
+    this.ocultarCartao = false,
     this.horarios,
     this.gabineteId,
   });
@@ -25,6 +28,7 @@ class ExcecaoSerie {
       'serieId': serieId,
       'data': data.toIso8601String(),
       'cancelada': cancelada,
+      'ocultarCartao': ocultarCartao,
       'horarios': horarios,
       'gabineteId': gabineteId,
     };
@@ -60,6 +64,7 @@ class ExcecaoSerie {
       serieId: map['serieId']?.toString() ?? '',
       data: dataExcecao,
       cancelada: map['cancelada'] ?? false,
+      ocultarCartao: map['ocultarCartao'] == true,
       horarios: horarios,
       gabineteId: map['gabineteId']?.toString(),
     );

@@ -57,6 +57,37 @@ void main() {
     expect(find.byKey(const ValueKey('celula_101_8')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('Identificação com várias linhas cabe em gabinetes vazios',
+      (tester) async {
+    for (final escala in [1.0, 1.8]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(escala)),
+            child: MatrizDistribuicaoGrid(
+              gabinetes: [
+                for (final numero in ['9', '10', '11'])
+                  Gabinete(
+                    id: numero,
+                    setor: 'Piso 0',
+                    nome: numero,
+                    especialidadesPermitidas: [
+                      numero == '9'
+                          ? 'Sala Tratamentos Enfermagem'
+                          : 'Técnicas de Oftalmologia',
+                    ],
+                  ),
+              ],
+              itens: const [],
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   for (final zoom in [0.5, 1.0, 1.4, 2.0]) {
     for (final largura in [390.0, 1400.0]) {
       testWidgets('Grelha a $largura e zoom $zoom sem overflow',

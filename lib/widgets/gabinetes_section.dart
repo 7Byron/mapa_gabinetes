@@ -9,6 +9,7 @@ import '../models/unidade.dart';
 import '../utils/conflict_utils.dart';
 import '../utils/app_theme.dart';
 import '../services/serie_service.dart';
+import '../services/mapa_ausencias_service.dart';
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import 'medico_card.dart';
@@ -85,6 +86,47 @@ class GabinetesSection extends StatefulWidget {
 }
 
 class _GabinetesSectionState extends State<GabinetesSection> {
+  List<Alocacao> _ausencias = [];
+  int _pedidoAusencias = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarAusencias();
+  }
+
+  @override
+  void didUpdateWidget(covariant GabinetesSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedDate != widget.selectedDate ||
+        oldWidget.unidade?.id != widget.unidade?.id ||
+        oldWidget.medicos != widget.medicos ||
+        oldWidget.alocacoes != widget.alocacoes ||
+        oldWidget.disponibilidades != widget.disponibilidades) {
+      _ausencias = [];
+      _carregarAusencias();
+    }
+  }
+
+  Future<void> _carregarAusencias() async {
+    final pedido = ++_pedidoAusencias;
+    final unidade = widget.unidade;
+    if (unidade == null) return;
+    try {
+      final ausencias = await MapaAusenciasService.carregar(
+        unidade: unidade,
+        medicoIds:
+            widget.medicos.where((m) => m.ativo).map((m) => m.id).toList(),
+        data: widget.selectedDate,
+      );
+      if (mounted && pedido == _pedidoAusencias) {
+        setState(() => _ausencias = ausencias);
+      }
+    } catch (erro) {
+      debugPrint('Erro ao carregar ausências do mapa: $erro');
+    }
+  }
+
   String _medicoIdDoDrag(String data) => data.split('|||').first;
 
   String? _disponibilidadeIdDoDrag(String data) {
@@ -1807,7 +1849,20 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 medico.nome != 'Desconhecido';
                           }).toList();
 
-                          // Esses logs estavam causando milhares de escritas desnecessárias
+                          final ausenciasGabinete = _ausencias
+                              .where((a) => a.gabineteId == gabinete.id)
+                              .toList();
+                          final idsAusentes =
+                              ausenciasGabinete.map((a) => a.id).toSet();
+                          alocacoesVisiveis.addAll(ausenciasGabinete);
+                          alocacoesVisiveis.sort((a, b) {
+                            final aAusente = idsAusentes.contains(a.id);
+                            final bAusente = idsAusentes.contains(b.id);
+                            if (aAusente != bAusente) return aAusente ? 1 : -1;
+                            return _horarioParaMinutos(a.horarioInicio)
+                                .compareTo(
+                                    _horarioParaMinutos(b.horarioInicio));
+                          });
 
                           // Verificar se há conflito neste gabinete
                           final temConflitoGabinete =
@@ -1927,48 +1982,64 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                                 ? Colors.orange.shade200
                                                 : null;
 
-                                            final medicoCard = widget.isAdmin
-                                                ? Draggable<String>(
-                                                    data:
-                                                        '${medico.id}|||alocacao:${a.id}',
-                                                    feedback:
-                                                        MedicoCard.dragFeedback(
-                                                      medico,
-                                                      horariosAlocacao,
-                                                    ),
-                                                    childWhenDragging: Opacity(
-                                                      opacity: 0.5,
-                                                      child: MedicoCard
-                                                          .buildSmallMedicoCard(
+                                            final ausente =
+                                                idsAusentes.contains(a.id);
+                                            final medicoCard = ausente
+                                                ? MedicoCard
+                                                    .buildSmallMedicoCard(
+                                                    medico,
+                                                    horariosAlocacao,
+                                                    Colors.grey.shade200,
+                                                    true,
+                                                    ausente: true,
+                                                    corDestaque: corDestaque,
+                                                  )
+                                                : widget.isAdmin
+                                                    ? Draggable<String>(
+                                                        data:
+                                                            '${medico.id}|||alocacao:${a.id}',
+                                                        feedback: MedicoCard
+                                                            .dragFeedback(
+                                                          medico,
+                                                          horariosAlocacao,
+                                                        ),
+                                                        childWhenDragging:
+                                                            Opacity(
+                                                          opacity: 0.5,
+                                                          child: MedicoCard
+                                                              .buildSmallMedicoCard(
+                                                            medico,
+                                                            horariosAlocacao,
+                                                            Colors.white,
+                                                            true,
+                                                            corDestaque:
+                                                                corDestaque,
+                                                          ),
+                                                        ),
+                                                        child: MedicoCard
+                                                            .buildSmallMedicoCard(
+                                                          medico,
+                                                          horariosAlocacao,
+                                                          Colors.white,
+                                                          true,
+                                                          corDestaque:
+                                                              corDestaque,
+                                                        ),
+                                                        onDragEnd: (details) {
+                                                          if (details
+                                                                  .wasAccepted ==
+                                                              false) {}
+                                                        },
+                                                      )
+                                                    : MedicoCard
+                                                        .buildSmallMedicoCard(
                                                         medico,
                                                         horariosAlocacao,
                                                         Colors.white,
                                                         true,
                                                         corDestaque:
                                                             corDestaque,
-                                                      ),
-                                                    ),
-                                                    child: MedicoCard
-                                                        .buildSmallMedicoCard(
-                                                      medico,
-                                                      horariosAlocacao,
-                                                      Colors.white,
-                                                      true,
-                                                      corDestaque: corDestaque,
-                                                    ),
-                                                    onDragEnd: (details) {
-                                                      if (details.wasAccepted ==
-                                                          false) {}
-                                                    },
-                                                  )
-                                                : MedicoCard
-                                                    .buildSmallMedicoCard(
-                                                    medico,
-                                                    horariosAlocacao,
-                                                    Colors.white,
-                                                    true,
-                                                    corDestaque: corDestaque,
-                                                  );
+                                                      );
 
                                             // Adicionar GestureDetector para detectar tap (editar)
                                             // Só permitir edição se for administrador

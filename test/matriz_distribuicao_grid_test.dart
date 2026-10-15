@@ -5,7 +5,59 @@ import 'package:mapa_gabinetes/models/matriz_distribuicao.dart';
 import 'package:mapa_gabinetes/widgets/matriz_distribuicao_grid.dart';
 
 void main() {
-  for (final zoom in [0.5, 1.0, 2.0]) {
+  testWidgets('Reúne rotações na semana e mantém o gabinete e os conflitos',
+      (tester) async {
+    MatrizDistribuicaoItem item(
+            String serie, String nome, String tipo, String ciclo, int dia,
+            {bool conflito = false}) =>
+        MatrizDistribuicaoItem(
+          serieId: serie,
+          medicoId: serie,
+          medicoNome: nome,
+          especialidade: 'Clínica',
+          gabineteId: '101',
+          tipo: tipo,
+          ciclo: ciclo,
+          dia: dia,
+          inicioMinutos: 540,
+          fimMinutos: 600,
+          conflito: conflito,
+        );
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+      body: MatrizDistribuicaoGrid(gabinetes: [
+        Gabinete(
+            id: '101',
+            setor: 'Piso 1',
+            nome: 'Gab 101',
+            especialidadesPermitidas: ['Psicologia']),
+      ], itens: [
+        for (final dia in [1, 8, 15, 22, 29])
+          item('x', 'Dr. X', 'Semanal', 'Todas as semanas', dia),
+        item('y', 'Dr. Y', 'Quinzenal', '14 dias · semanas 1, 3, 5', 1),
+        item('y', 'Dr. Y', 'Quinzenal', '14 dias · semanas 1, 3, 5', 15,
+            conflito: true),
+        item('w', 'Dr. W', 'Mensal', 'Mensal · 2.ª semana', 8),
+      ]),
+    )));
+    await tester.pumpAndSettle();
+    final segunda = find.byKey(const ValueKey('celula_101_1'));
+    for (final texto in [
+      'Dr. X',
+      'Dr. Y',
+      'Dr. W',
+      'Semanal',
+      'Quinzenal',
+      '2.ª segunda-feira do mês',
+      'Possível coincidência'
+    ]) {
+      expect(find.descendant(of: segunda, matching: find.text(texto)),
+          findsOneWidget);
+    }
+    expect(find.byKey(const ValueKey('celula_101_8')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  for (final zoom in [0.5, 1.0, 1.4, 2.0]) {
     for (final largura in [390.0, 1400.0]) {
       testWidgets('Grelha a $largura e zoom $zoom sem overflow',
           (tester) async {
@@ -19,7 +71,7 @@ void main() {
                 id: '$i',
                 setor: 'Piso ${i ~/ 2 + 1}',
                 nome: 'Gabinete $i',
-                especialidadesPermitidas: []),
+                especialidadesPermitidas: ['Psicologia']),
         ];
         await tester.pumpWidget(MaterialApp(
             home: Scaffold(
@@ -45,13 +97,13 @@ void main() {
           ]),
         ))));
         await tester.pumpAndSettle();
-        expect(find.text('Piso 1'), findsOneWidget);
-        expect(find.text('Piso 2'), findsOneWidget);
-        for (var semana = 1; semana <= 5; semana++) {
-          expect(find.text('Semana $semana'), findsOneWidget);
-        }
+        expect(find.text('Piso 1'), findsNWidgets(2));
+        expect(find.text('Piso 2'), findsNWidgets(2));
+        expect(find.text('Psicologia'), findsNWidgets(4));
+        expect(find.text('Semana tipo'), findsOneWidget);
+        expect(find.text('Semana 2'), findsNothing);
         for (final dia in ['2ª', '3ª', '4ª', '5ª', '6ª', 'Sáb', 'Dom']) {
-          expect(find.text(dia), findsNWidgets(5));
+          expect(find.text(dia), findsOneWidget);
         }
         final quinta = find.byKey(const ValueKey('celula_0_4'));
         expect(
@@ -80,13 +132,13 @@ void main() {
             .first;
         expect(tester.getTopLeft(cartaoTarde).dy - tester.getTopLeft(quinta).dy,
             greaterThanOrEqualTo(96 * zoom));
-        final cabecalhoAntes = tester.getTopLeft(find.text('Semana 1'));
+        final cabecalhoAntes = tester.getTopLeft(find.text('Semana tipo'));
         await tester.dragFrom(
             tester.getCenter(
                 find.byKey(const ValueKey('matriz_corpo_horizontal'))),
             const Offset(0, -300));
         await tester.pumpAndSettle();
-        expect(tester.getTopLeft(find.text('Semana 1')), cabecalhoAntes);
+        expect(tester.getTopLeft(find.text('Semana tipo')), cabecalhoAntes);
         final vertical = tester.widget<ListView>(lista);
         expect(vertical.controller!.offset, greaterThan(0));
         final identificacaoAntes = tester.getTopLeft(find.text('Gabinete 0'));

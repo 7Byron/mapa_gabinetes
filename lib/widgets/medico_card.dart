@@ -6,13 +6,13 @@ class MedicoCard {
   /// Cartão compacto principal, permitindo personalizar cor e "validez".
   static Widget buildSmallMedicoCard(
       Medico medico, String horarios, Color backgroundColor, bool isValid,
-      {Color? corDestaque}) {
+      {Color? corDestaque, bool ausente = false}) {
     return Container(
       constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        color: corDestaque ?? backgroundColor,
+        color: ausente ? Colors.grey.shade200 : corDestaque ?? backgroundColor,
         borderRadius: BorderRadius.circular(10),
         border: corDestaque != null
             ? Border.all(color: Colors.orange.shade400, width: 2)
@@ -24,6 +24,13 @@ class MedicoCard {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (ausente)
+            Text('Ausente',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade800,
+                )),
           // Nome do Médico
           Text(
             medico.nome,

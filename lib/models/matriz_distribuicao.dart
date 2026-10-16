@@ -37,12 +37,13 @@ class MatrizDistribuicaoItem {
     if (inicio == null || fim == null) return null;
     // A projeção anual já limita a validade ao ano selecionado. Mostrar
     // datas apenas nos segmentos que não abrangem o ano completo.
-    final anoCompleto = inicio.year == fim.year &&
-        inicio.month == 1 &&
-        inicio.day == 1 &&
-        fim.month == 12 &&
-        fim.day == 31;
-    if (anoCompleto) return null;
+    if (inicio.year == fim.year) {
+      final comecaNoInicioDoAno = inicio.month == 1 && inicio.day == 1;
+      final terminaNoFimDoAno = fim.month == 12 && fim.day == 31;
+      if (comecaNoInicioDoAno && terminaNoFimDoAno) return null;
+      if (comecaNoInicioDoAno) return 'Até ${_data(fim)}';
+      if (terminaNoFimDoAno) return 'A partir de ${_data(inicio)}';
+    }
     return 'De ${_data(inicio)} a ${_data(fim)}';
   }
 

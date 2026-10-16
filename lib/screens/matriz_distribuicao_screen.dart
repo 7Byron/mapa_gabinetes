@@ -1,3 +1,4 @@
+import '../widgets/matriz_distribuicao_ajuda.dart';
 import 'package:flutter/material.dart';
 import '../models/gabinete.dart';
 import '../models/matriz_distribuicao.dart';
@@ -240,6 +241,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           ),
+          const MatrizDistribuicaoAjuda(),
           const SizedBox(width: 12),
           if (compacto)
             IconButton(

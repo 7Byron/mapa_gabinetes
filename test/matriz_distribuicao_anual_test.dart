@@ -82,8 +82,8 @@ void main() {
     );
     final primeiro = matriz.itens.singleWhere((i) => i.gabineteId == '21');
     final segundo = matriz.itens.singleWhere((i) => i.gabineteId == '28');
-    expect(primeiro.periodo, 'De 01/01/2027 a 30/06/2027');
-    expect(segundo.periodo, 'De 01/07/2027 a 31/12/2027');
+    expect(primeiro.periodo, 'Até 30/06/2027');
+    expect(segundo.periodo, 'A partir de 01/07/2027');
     expect(primeiro.ocorrencias.every((d) => d.isBefore(DateTime.utc(2027, 7))),
         isTrue);
     expect(segundo.ocorrencias.every((d) => !d.isBefore(DateTime.utc(2027, 7))),
@@ -126,7 +126,7 @@ void main() {
     final mensal = matriz.itens.singleWhere((i) => i.tipo == 'Mensal');
     expect(mensal.ciclo, 'Mensal · 2.ª semana');
     expect(mensal.ocorrencias.first, DateTime.utc(2026, 2, 9));
-    expect(mensal.periodo, 'De 09/02/2026 a 31/12/2026');
+    expect(mensal.periodo, 'A partir de 09/02/2026');
     final sincrona = MatrizDistribuicaoService.gerarAnual(
         medicos: medicos, series: series, referencia: DateTime(2026));
     expect(matriz.itens.map((i) => (i.serieId, i.periodo, i.conflito)),

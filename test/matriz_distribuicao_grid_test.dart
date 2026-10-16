@@ -38,7 +38,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Ano completo'), findsOneWidget);
     expect(find.text('De 01/01/2027 a 31/12/2027'), findsNothing);
-    expect(find.text('De 01/01/2027 a 30/06/2027'), findsOneWidget);
+    expect(find.text('Até 30/06/2027'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

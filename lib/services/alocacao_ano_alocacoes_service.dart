@@ -44,21 +44,22 @@ class AlocacaoAnoAlocacoesService {
           : await _carregarMedicosAtivosIds(firestore, unidade.id);
 
       final dataInicioAno = DateTime(ano, 1, 1);
-      final dataFimAno = DateTime(ano + 1, 1, 1);
+      final dataFimAno = DateTime(ano, 12, 31);
 
+      final seriesPorMedico = await SerieService.carregarSeriesDeMedicos(
+        medicoIds,
+        unidade: unidade,
+        dataFim: dataFimAno,
+      );
       final futures = <Future<List<Alocacao>>>[];
       for (final medicoId in medicoIds) {
         futures.add((() async {
-          final series = await SerieService.carregarSeries(
-            medicoId,
-            unidade: unidade,
-            dataInicio: null,
-            dataFim: dataFimAno,
-            forcarServidor: true,
-          );
+          final series = seriesPorMedico[medicoId] ?? const [];
 
-          final seriesComGabinete =
-              series.where((s) => s.gabineteId != null).toList();
+          final seriesComGabinete = series
+              .where(
+                  (s) => s.gabineteId != null || s.mudancasGabinete.isNotEmpty)
+              .toList();
 
           if (seriesComGabinete.isEmpty) return <Alocacao>[];
 

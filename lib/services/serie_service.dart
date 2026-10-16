@@ -1,3 +1,4 @@
+import '../utils/cadastro_persistencia_snapshot.dart';
 // lib/services/serie_service.dart
 
 import 'package:flutter/foundation.dart';
@@ -285,6 +286,72 @@ class SerieService {
     }
   }
 
+  /// Só recebe alterações efetivas do editor. Cada lote inclui a versão,
+  /// para outros clientes detetarem também uma gravação parcialmente concluída.
+  static Future<void> salvarAlteracoes({
+    required List<SerieRecorrencia> series,
+    required List<ExcecaoSerie> excecoes,
+    required String medicoId,
+    Unidade? unidade,
+    FirebaseFirestore? firestore,
+    CadastroPersistenciaSnapshot? originais,
+  }) async {
+    if (series.isEmpty && excecoes.isEmpty) return;
+    final db = firestore ?? _firestore;
+    final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+    final unidadeRef = db.collection('unidades').doc(unidadeId);
+    final medicoRef = unidadeRef.collection('ocupantes').doc(medicoId);
+    final documentos =
+        <(DocumentReference<Map<String, dynamic>>, Map<String, dynamic>, bool)>[
+      for (final serie in series)
+        (
+          medicoRef.collection('series').doc(serie.id),
+          originais?.camposSerie(serie) ?? serie.toMap(),
+          originais?.contemSerie(serie.id) ?? false
+        ),
+      for (final excecao in excecoes)
+        (
+          medicoRef
+              .collection('excecoes')
+              .doc('${excecao.data.year}')
+              .collection('registos')
+              .doc(excecao.id),
+          originais?.camposExcecao(excecao) ?? excecao.toMap(),
+          originais?.contemExcecao(excecao.id) ?? false
+        ),
+    ];
+    try {
+      for (var inicio = 0; inicio < documentos.length; inicio += 400) {
+        final batch = db.batch();
+        for (final (ref, dados, existia) in documentos.skip(inicio).take(400)) {
+          if (existia) {
+            // Atualizar só campos editados, preservando alterações concorrentes
+            // de outros campos. Um documento entretanto apagado deve dar erro.
+            batch.update(ref, dados);
+          } else {
+            batch.set(ref, dados, SetOptions(merge: true));
+          }
+        }
+        batch.set(
+            unidadeRef.collection('cache_control').doc('global'),
+            {
+              CacheVersionService.fieldSeries: FieldValue.increment(1),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true));
+        await batch.commit();
+      }
+    } finally {
+      invalidateCacheSeries(unidadeId, medicoId);
+      for (final serie in series) {
+        AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
+      }
+      for (final excecao in excecoes) {
+        AlocacaoMedicosLogic.invalidateCacheForDay(excecao.data);
+      }
+    }
+  }
+
   /// A mudança de período substitui os gabinetes pontuais já existentes.
   /// Atualiza apenas gabineteId: ausências, cartões ocultos e horários mantêm-se.
   static Future<void> salvarRealocacaoSerie(
@@ -292,41 +359,57 @@ class SerieService {
     DateTime dataRef,
     String gabineteDestino, {
     Unidade? unidade,
+    FirebaseFirestore? firestore,
   }) async {
+    final db = firestore ?? _firestore;
     final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
-    final medicoRef = _firestore
-        .collection('unidades')
-        .doc(unidadeId)
-        .collection('ocupantes')
-        .doc(serie.medicoId);
-    // Inclui todos os anos, mesmo quando a série não tem data de fim.
-    final snapshot = await _firestore
+    final unidadeRef = db.collection('unidades').doc(unidadeId);
+    final medicoRef = unidadeRef.collection('ocupantes').doc(serie.medicoId);
+    final inicio = DateTime(dataRef.year, dataRef.month, dataRef.day);
+    // Inclui todos os anos futuros, sem transferir o histórico anterior.
+    final snapshot = await db
         .collectionGroup('registos')
         .where('serieId', isEqualTo: serie.id)
+        .where('data', isGreaterThanOrEqualTo: inicio.toIso8601String())
         .get(const GetOptions(source: Source.server));
     final prefixo = '${medicoRef.path}/excecoes/';
-    final alteracoes = snapshot.docs.where((doc) {
-      if (!doc.reference.path.startsWith(prefixo)) return false;
-      return ExcecaoSerie.fromMap(doc.data())
-          .deveSubstituirGabineteNaRealocacao(
-        serieId: serie.id,
-        dataRef: dataRef,
-        gabineteDestino: gabineteDestino,
-      );
-    }).toList();
-
-    // Publicar a regra só depois de atualizar todas as exceções. Repetir uma
-    // tentativa interrompida é seguro, pois apenas o gabinete é substituído.
-    for (var inicio = 0; inicio < alteracoes.length; inicio += 450) {
-      final batch = _firestore.batch();
-      for (final doc in alteracoes.skip(inicio).take(450)) {
-        batch.update(doc.reference, {'gabineteId': gabineteDestino});
+    final alteracoes = snapshot.docs
+        .where((doc) =>
+            doc.reference.path.startsWith(prefixo) &&
+            ExcecaoSerie.fromMap(doc.data()).deveSubstituirGabineteNaRealocacao(
+              serieId: serie.id,
+              dataRef: inicio,
+              gabineteDestino: gabineteDestino,
+            ))
+        .toList();
+    final totalLotes = (alteracoes.length / 400).ceil().clamp(1, 1000000);
+    try {
+      for (var lote = 0; lote < totalLotes; lote++) {
+        final batch = db.batch();
+        for (final doc in alteracoes.skip(lote * 400).take(400)) {
+          batch.update(doc.reference, {'gabineteId': gabineteDestino});
+        }
+        if (lote == totalLotes - 1) {
+          // Para até 400 exceções, regra e exceções mudam atomicamente.
+          // Não sobrescrever os horários nem outros campos da série.
+          batch.update(medicoRef.collection('series').doc(serie.id), {
+            'mudancasGabinete':
+                serie.mudancasGabinete.map((m) => m.toMap()).toList(),
+          });
+        }
+        batch.set(
+            unidadeRef.collection('cache_control').doc('global'),
+            {
+              CacheVersionService.fieldSeries: FieldValue.increment(1),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true));
+        await batch.commit();
       }
-      await batch.commit();
+    } finally {
+      invalidateCacheSeries(unidadeId, serie.medicoId);
+      AlocacaoMedicosLogic.invalidateCacheFromDate(inicio);
     }
-    _invalidarCacheExcecoes(unidadeId, medicoId: serie.medicoId);
-    AlocacaoMedicosLogic.invalidateCacheFromDate(dataRef);
-    await salvarSerie(serie, unidade: unidade);
   }
 
   /// Persiste, numa única operação, apenas a numeração das séries antigas.
@@ -695,6 +778,32 @@ class SerieService {
       debugPrint('❌ Erro ao salvar exceção: $e');
       rethrow;
     }
+  }
+
+  /// Consulta pontual sem carregar todo o histórico anual do médico.
+  static Future<List<ExcecaoSerie>> carregarExcecoesDaData({
+    required String medicoId,
+    required String serieId,
+    required DateTime data,
+    Unidade? unidade,
+    FirebaseFirestore? firestore,
+  }) async {
+    final dia = DateTime(data.year, data.month, data.day);
+    final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+    final snapshot = await (firestore ?? _firestore)
+        .collection('unidades')
+        .doc(unidadeId)
+        .collection('ocupantes')
+        .doc(medicoId)
+        .collection('excecoes')
+        .doc('${dia.year}')
+        .collection('registos')
+        .where('data', isEqualTo: dia.toIso8601String())
+        .get(const GetOptions(source: Source.server));
+    return snapshot.docs
+        .map((d) => ExcecaoSerie.fromMap({...d.data(), 'id': d.id}))
+        .where((e) => e.serieId == serieId)
+        .toList();
   }
 
   /// Carrega exceções de um médico em um período

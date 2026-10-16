@@ -49,9 +49,11 @@ Future<List<String>> buscarEspecialidadesExistentes({Unidade? unidade}) async {
 Future<void> salvarMedicoCompleto(
   Medico medico, {
   Unidade? unidade,
+  Medico? medicoOriginal,
+  FirebaseFirestore? firestoreParaTeste,
   List<Disponibilidade>? disponibilidadesOriginais, // opcional: evita reler
 }) async {
-  final firestore = FirebaseFirestore.instance;
+  final firestore = firestoreParaTeste ?? FirebaseFirestore.instance;
 
   DocumentReference medicoRef;
   if (unidade != null) {
@@ -66,17 +68,32 @@ Future<void> salvarMedicoCompleto(
     medicoRef = firestore.collection('medicos').doc(medico.id);
   }
 
-  // Merge preserva outros campos; esta operação continua a ser uma escrita.
-  await medicoRef.set({
-    'id': medico.id,
-    'nome': medico.nome,
-    'especialidade': medico.especialidade,
-    'observacoes': medico.observacoes,
-    'ativo': medico.ativo, // Inclui o campo ativo
-    // Campos para pesquisa indexada
-    'nomeSearch': _normalize(medico.nome),
-    'searchTokens': _buildSearchTokens(medico.nome, medico.especialidade),
-  }, SetOptions(merge: true));
+  final dadosMedicoAlterados = medicoOriginal == null ||
+      medicoOriginal.nome != medico.nome ||
+      medicoOriginal.especialidade != medico.especialidade ||
+      medicoOriginal.observacoes != medico.observacoes ||
+      medicoOriginal.ativo != medico.ativo;
+  if (dadosMedicoAlterados) {
+    await medicoRef.set({
+      if (medicoOriginal == null) 'id': medico.id,
+      if (medicoOriginal == null || medicoOriginal.nome != medico.nome)
+        'nome': medico.nome,
+      if (medicoOriginal == null ||
+          medicoOriginal.especialidade != medico.especialidade)
+        'especialidade': medico.especialidade,
+      if (medicoOriginal == null ||
+          medicoOriginal.observacoes != medico.observacoes)
+        'observacoes': medico.observacoes,
+      if (medicoOriginal == null || medicoOriginal.ativo != medico.ativo)
+        'ativo': medico.ativo,
+      if (medicoOriginal == null || medicoOriginal.nome != medico.nome)
+        'nomeSearch': _normalize(medico.nome),
+      if (medicoOriginal == null ||
+          medicoOriginal.nome != medico.nome ||
+          medicoOriginal.especialidade != medico.especialidade)
+        'searchTokens': _buildSearchTokens(medico.nome, medico.especialidade),
+    }, SetOptions(merge: true));
+  }
 
   debugPrint('✅ Médico salvo: ${medico.nome} (ID: ${medico.id})');
   debugPrint('📊 Disps (novas): ${medico.disponibilidades.length}');
@@ -89,7 +106,7 @@ Future<void> salvarMedicoCompleto(
   Map<String, Disponibilidade> existentes = {};
   if (disponibilidadesOriginais != null) {
     for (final d in disponibilidadesOriginais) {
-      existentes[d.id] = d;
+      if (!d.id.startsWith('serie_')) existentes[d.id] = d;
     }
   } else {
     final anosSnap =
@@ -99,14 +116,17 @@ Future<void> salvarMedicoCompleto(
           .collection('registos')
           .get(const GetOptions(source: Source.serverAndCache));
       for (final doc in registosSnap.docs) {
-        existentes[doc.id] = Disponibilidade.fromMap(doc.data());
+        if (!doc.id.startsWith('serie_')) {
+          existentes[doc.id] = Disponibilidade.fromMap(doc.data());
+        }
       }
     }
   }
 
   // 2) Map das novas
   final Map<String, Disponibilidade> novas = {
-    for (final d in medico.disponibilidades) d.id: d
+    for (final d in medico.disponibilidades)
+      if (!d.id.startsWith('serie_')) d.id: d
   };
 
   // 3) Calcular diff
@@ -117,6 +137,8 @@ Future<void> salvarMedicoCompleto(
   final idsPossiveisUpdates = idsExistentes.intersection(idsNovas);
 
   final disponibilidadesAlteradas = medico.disponibilidades.where((d) {
+    // Cartões gerados pertencem à regra da série, não a documentos por dia.
+    if (d.id.startsWith('serie_')) return false;
     final original = existentes[d.id];
     return original == null ||
         original.medicoId != d.medicoId ||
@@ -151,14 +173,19 @@ Future<void> salvarMedicoCompleto(
   if (idsParaApagar.isNotEmpty || disponibilidadesAlteradas.isNotEmpty) {
     await batch.commit();
   }
-  await CacheVersionService.bumpVersions(
-    unidadeId: unidade?.id,
-    fields: [
-      CacheVersionService.fieldMedicos,
-      CacheVersionService.fieldDisponibilidades,
-    ],
-  );
-  limparCacheMedicos(unidade: unidade);
+  final disponibilidadesMudaram =
+      idsParaApagar.isNotEmpty || disponibilidadesAlteradas.isNotEmpty;
+  if (dadosMedicoAlterados || disponibilidadesMudaram) {
+    await CacheVersionService.bumpVersions(
+      firestore: firestoreParaTeste,
+      unidadeId: unidade?.id,
+      fields: [
+        if (dadosMedicoAlterados) CacheVersionService.fieldMedicos,
+        if (disponibilidadesMudaram) CacheVersionService.fieldDisponibilidades,
+      ],
+    );
+    limparCacheMedicos(unidade: unidade);
+  }
   debugPrint(
       '✅ Diff aplicado: -${idsParaApagar.length} / +${idsParaCriar.length} / ~${idsPossiveisUpdates.length}');
 }

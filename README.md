@@ -41,6 +41,11 @@ App para gerir dotações de gabinetes médicos
 
 
 ## para deploy no firebase
+Versionamento: `AAAA.MM.DD+N`, com contador global crescente a partir de
+`2026.10.16+2`. Incrementar o contador atual a cada nova publicação (`+2` → `+3` → `+4`), mesmo que a data mude.
+O contador não reinicia com o dia, mês ou ano; recompilações e novas tentativas
+de deploy da mesma versão mantêm o número. Ver [AGENTS.md](AGENTS.md).
+
 dart run tool/build_web.dart
 firebase deploy --only hosting
 

@@ -106,6 +106,7 @@ class CacheVersionService {
   static Future<void> bumpVersions({
     String? unidadeId,
     required List<String> fields,
+    FirebaseFirestore? firestore,
   }) async {
     if (fields.any((field) =>
         field == fieldMedicos ||
@@ -114,7 +115,7 @@ class CacheVersionService {
       MatrizDistribuicaoCacheService.invalidar(unidadeId: unidadeId);
     }
     try {
-      await FirebaseInitService.ensureInitialized();
+      if (firestore == null) await FirebaseInitService.ensureInitialized();
       if (fields.isEmpty) return;
       final updates = <String, dynamic>{
         'updatedAt': FieldValue.serverTimestamp(),
@@ -122,7 +123,16 @@ class CacheVersionService {
       for (final field in fields) {
         updates[field] = FieldValue.increment(1);
       }
-      await _docRef(unidadeId).set(
+      final ref = firestore == null
+          ? _docRef(unidadeId)
+          : (unidadeId == null || unidadeId.isEmpty
+              ? firestore.collection(_collection).doc(_docId)
+              : firestore
+                  .collection('unidades')
+                  .doc(unidadeId)
+                  .collection(_collection)
+                  .doc(_docId));
+      await ref.set(
         updates,
         SetOptions(merge: true),
       );

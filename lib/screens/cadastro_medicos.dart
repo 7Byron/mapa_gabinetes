@@ -1,3 +1,4 @@
+import '../utils/cadastro_persistencia_snapshot.dart';
 import 'dart:async';
 import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -90,6 +91,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
   List<Gabinete> gabinetes = [];
 
   // Séries de recorrência (novo modelo)
+  final _persistenciaSnapshot = CadastroPersistenciaSnapshot();
   List<SerieRecorrencia> series = [];
   List<ExcecaoSerie> excecoes = [];
 
@@ -187,7 +189,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
       }
 
       final doc = await medicoRef.get(const GetOptions(source: Source.server));
-      if (doc.exists && mounted) {
+      if (doc.exists &&
+          mounted &&
+          _medicoAtual?.id == medicoId &&
+          _medicoId == medicoId) {
         final dados = doc.data() as Map<String, dynamic>;
         final ativoAtualizado = dados['ativo'] ?? true;
 
@@ -374,6 +379,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
       disponibilidades.clear();
       diasSelecionados.clear();
       series.clear();
+      _persistenciaSnapshot.clear();
       excecoes.clear();
       alocacoes.clear(); // Limpar também alocações
 
@@ -679,23 +685,14 @@ class CadastroMedicoState extends State<CadastroMedico> {
         rethrow;
       }
 
-      // Remover da lista local
+      // A exclusão já foi confirmada. O formulário vazio passa a ser o novo
+      // estado original; não há um médico pendente para guardar ao navegar.
+      final apagouMedicoAtual = _medicoAtual?.id == medicoId;
       setState(() {
         _listaMedicos.removeWhere((m) => m.id == medicoId);
-        if (_medicoAtual?.id == medicoId) {
-          _medicoAtual = null;
-          _medicoId = DateTime.now().millisecondsSinceEpoch.toString();
-          nomeController.clear();
-          especialidadeController.clear();
-          observacoesController.clear();
-          disponibilidades.clear();
-          diasSelecionados.clear();
-          series.clear();
-          excecoes.clear();
-          _medicoAutocompleteController.clear();
-        }
         _saving = false;
       });
+      if (apagouMedicoAtual) reiniciarFormulario();
 
       // Invalidar cache
       // AlocacaoMedicosLogic.invalidateCacheFromDate(DateTime(2000, 1, 1));
@@ -825,6 +822,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
       final alocacoesCarregadas = resultados[0] as List<Alocacao>;
       final seriesCarregadas = resultados[1] as List<SerieRecorrencia>;
+      if (!seriesJaCarregadas) {
+        _persistenciaSnapshot.registarSeries(seriesCarregadas);
+      }
 
       // Atualizar séries no estado se foram carregadas
       if (!seriesJaCarregadas && seriesCarregadas.isNotEmpty) {
@@ -1064,6 +1064,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
               true, // Forçar servidor para garantir dados atualizados
           // Não filtrar por data para carregar todas as séries ativas
         );
+        _persistenciaSnapshot.registarSeries(seriesCarregadas);
 
         // Atualizar progresso após carregar séries (esta operação pode demorar)
         if (onProgressoExterno != null) {
@@ -1196,6 +1197,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
           ]);
 
           final excecoesDoFirestore = resultados[0] as List<ExcecaoSerie>;
+          _persistenciaSnapshot.registarExcecoes(excecoesDoFirestore);
           dispsUnicas = resultados[1] as List<Disponibilidade>;
 
           // Atualizar progresso após carregar exceções e disponibilidades únicas
@@ -1589,9 +1591,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
       if (gabinetes.isEmpty) {
         gabinetes = await buscarGabinetes(unidade: widget.unidade);
       }
-
-      // Aguardar um pouco para garantir que o Firestore sincronizou após alocação
-      await Future.delayed(const Duration(milliseconds: 500));
 
       // Carregar alocações do médico para o ano específico
       final alocacoesCarregadas =
@@ -3961,6 +3960,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
             _medicoAtual!.id,
             dataInicioFiltrada,
             dataFimFiltrada,
+            serieId: serie.id,
           );
         }
       }
@@ -4699,6 +4699,8 @@ class CadastroMedicoState extends State<CadastroMedico> {
         _disponibilidadesOriginal,
         widget.unidade,
         ativo: _medicoAtivo,
+        persistenciaSnapshot: _persistenciaSnapshot,
+        medicoOriginal: _medicoAtual,
       );
 
       if (!mounted) return false;
@@ -4861,40 +4863,38 @@ class CadastroMedicoState extends State<CadastroMedico> {
     }
   }
 
-  /// Reseta campos para criação de um novo registo
+  /// Limpa o editor e os valores de comparação após exclusão ou novo registo.
+  void reiniciarFormulario() {
+    setState(() {
+      _medicoAtual = null;
+      _medicoId = DateTime.now().millisecondsSinceEpoch.toString();
+      nomeController.clear();
+      especialidadeController.clear();
+      observacoesController.clear();
+      _medicoAutocompleteController.clear();
+      disponibilidades.clear();
+      diasSelecionados.clear();
+      alocacoes.clear();
+      series.clear();
+      _persistenciaSnapshot.clear();
+      excecoes.clear();
+      _medicoAtivo = true;
+      _medicoAtivoOriginal = true;
+      _nomeOriginal = '';
+      _especialidadeOriginal = '';
+      _observacoesOriginal = '';
+      _disponibilidadesOriginal.clear();
+      _houveMudancas = false;
+      _anoVisualizado = DateTime.now().year;
+      _dataCalendario = DateTime.now();
+      _saving = false;
+    });
+  }
+
+  /// Reseta campos para criação de um novo registo.
   void _criarNovo() async {
-    // Salvar automaticamente se houver mudanças (mantém o overlay de salvamento)
     final podeCriar = await _confirmarNovo();
-    if (podeCriar && mounted) {
-      setState(() {
-        _medicoAtual = null;
-        _medicoId = DateTime.now().millisecondsSinceEpoch.toString();
-        nomeController.clear();
-        especialidadeController.clear();
-        observacoesController.clear();
-        _medicoAutocompleteController.clear();
-        disponibilidades.clear();
-        diasSelecionados.clear();
-        series.clear();
-        excecoes.clear();
-
-        // Reseta os valores originais
-        _medicoAtivo = true;
-        _medicoAtivoOriginal = true;
-        _nomeOriginal = '';
-        _especialidadeOriginal = '';
-        _observacoesOriginal = '';
-        _disponibilidadesOriginal.clear();
-        _houveMudancas = false;
-
-        // Resetar ano visualizado
-        _anoVisualizado = DateTime.now().year;
-        _dataCalendario = DateTime.now();
-
-        // Desativar o overlay após resetar
-        _saving = false;
-      });
-    }
+    if (podeCriar && mounted) reiniciarFormulario();
   }
 
   /// Constrói a tela simplificada para criação de novo médico

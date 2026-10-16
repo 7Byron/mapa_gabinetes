@@ -3,10 +3,7 @@ import '../models/disponibilidade.dart';
 import 'cache_version_service.dart';
 import '../utils/alocacao_medicos_logic.dart';
 
-/// Serviço para remover alocações e disponibilidades do Firestore
-/// Extracted from cadastro_medicos.dart to reduce code duplication
 class AlocacaoDisponibilidadeRemocaoService {
-  // As alocações antigas ligam-se ao cartão pelo intervalo horário.
   static bool _alocacaoDoCartao(
     String id,
     Map<String, dynamic> data,
@@ -21,207 +18,144 @@ class AlocacaoDisponibilidadeRemocaoService {
         data['horarioFim'] == horarios[1];
   }
 
-  /// Remove alocações e disponibilidades únicas do Firestore para um período de datas
-  /// Retorna o número de alocações e disponibilidades removidas
+  /// Duas consultas anuais por ano abrangido; vistas diárias limitadas ao médico.
+  /// As falhas propagam-se: o editor não pode anunciar uma remoção incompleta.
   static Future<Map<String, int>> removerAlocacoesEDisponibilidades(
       String unidadeId, String medicoId, DateTime dataInicio, DateTime dataFim,
-      {String? serieId, Disponibilidade? disponibilidade}) async {
-    final firestore = FirebaseFirestore.instance;
-    int alocacoesRemovidas = 0;
-    int disponibilidadesRemovidas = 0;
+      {String? serieId,
+      Disponibilidade? disponibilidade,
+      FirebaseFirestore? firestore,
+      void Function(int documentos)? onConsulta}) async {
+    final db = firestore ?? FirebaseFirestore.instance;
+    final inicio = DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
+    final fim = DateTime(dataFim.year, dataFim.month, dataFim.day);
+    final limite = fim.add(const Duration(days: 1));
+    if (fim.isBefore(inicio)) {
+      throw ArgumentError('O fim do período é anterior ao início.');
+    }
+    final unidadeRef = db.collection('unidades').doc(unidadeId);
+    final medicoRef = unidadeRef.collection('ocupantes').doc(medicoId);
+    final remover =
+        <String, (DocumentReference<Map<String, dynamic>>, String)>{};
 
-    DateTime dataAtual = dataInicio;
-    while (dataAtual.isBefore(dataFim.add(const Duration(days: 1)))) {
-      final ano = dataAtual.year.toString();
-      final inicio = DateTime(dataAtual.year, dataAtual.month, dataAtual.day);
-      bool houveRemocaoNoDia = false;
+    Future<QuerySnapshot<Map<String, dynamic>>> consultar(
+        Query<Map<String, dynamic>> query) async {
+      final snapshot = await query.get(const GetOptions(source: Source.server));
+      onConsulta?.call(snapshot.docs.length);
+      return snapshot;
+    }
 
-      try {
-        // 1. Remover alocações
-        final alocacoesRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('alocacoes')
-            .doc(ano)
-            .collection('registos');
+    bool pertenceSerie(String id, Map<String, dynamic> dados) {
+      if (serieId == null) return true;
+      if (dados['serieId'] != null) return dados['serieId'] == serieId;
+      // IDs antigos podem codificar a série; exigir o separador evita
+      // confundir, por exemplo, serie_12 com serie_123.
+      return id.startsWith('serie_${serieId}_') || id.startsWith('${serieId}_');
+    }
 
-        final todasAlocacoes = await alocacoesRef.get();
-        final alocacoesParaRemover = todasAlocacoes.docs.where((doc) {
-          final data = doc.data();
-          final medicoIdAloc = data['medicoId']?.toString();
-          final dataAloc = data['data']?.toString();
-          if (medicoIdAloc != medicoId) return false;
-          if (disponibilidade != null &&
-              !_alocacaoDoCartao(doc.id, data, disponibilidade)) {
-            return false;
-          }
-          if (serieId != null) {
-            final serieIdAloc = data['serieId']?.toString();
-            final pertenceSerie =
-                serieIdAloc == serieId || doc.id.contains(serieId);
-            if (!pertenceSerie) return false;
-          }
-          if (dataAloc == null) return false;
-          try {
-            final dataAlocDateTime = DateTime.parse(dataAloc);
-            return dataAlocDateTime.year == inicio.year &&
-                dataAlocDateTime.month == inicio.month &&
-                dataAlocDateTime.day == inicio.day;
-          } catch (e) {
-            return false;
-          }
-        }).toList();
+    bool alocacaoSelecionada(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+        pertenceSerie(doc.id, doc.data()) &&
+        (disponibilidade == null ||
+            _alocacaoDoCartao(doc.id, doc.data(), disponibilidade));
+    bool disponibilidadeSelecionada(
+            QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+        serieId == null &&
+        doc.data()['tipo'] == 'Única' &&
+        (disponibilidade == null || doc.id == disponibilidade.id);
+    void adicionar(
+        QueryDocumentSnapshot<Map<String, dynamic>> doc, String tipo) {
+      remover[doc.reference.path] = (doc.reference, tipo);
+    }
 
-        for (final doc in alocacoesParaRemover) {
-          await doc.reference.delete();
-          alocacoesRemovidas++;
-          houveRemocaoNoDia = true;
-        }
-
-        // A aplicação lê primeiro esta vista materializada. Se apenas o
-        // registo anual for apagado, a cópia diária pode reaparecer no mapa.
-        final keyDia =
-            '${inicio.year}-${inicio.month.toString().padLeft(2, '0')}-${inicio.day.toString().padLeft(2, '0')}';
-        final alocacoesDiaRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('dias')
-            .doc(keyDia)
-            .collection('alocacoes');
-        final todasAlocacoesDia = await alocacoesDiaRef.get();
-        final alocacoesDiaParaRemover = todasAlocacoesDia.docs.where((doc) {
-          final data = doc.data();
-          if (data['medicoId']?.toString() != medicoId) return false;
-          if (disponibilidade != null) {
-            return _alocacaoDoCartao(doc.id, data, disponibilidade);
-          }
-          if (serieId == null) return true;
-          final serieIdAloc = data['serieId']?.toString();
-          return serieIdAloc == serieId || doc.id.contains(serieId);
-        }).toList();
-
-        for (final doc in alocacoesDiaParaRemover) {
-          await doc.reference.delete();
-          houveRemocaoNoDia = true;
-        }
-
-        // 2. Remover disponibilidades únicas da coleção de ocupantes
-        final disponibilidadesRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('ocupantes')
-            .doc(medicoId)
-            .collection('disponibilidades')
-            .doc(ano)
-            .collection('registos');
-
-        final todasDisponibilidades = await disponibilidadesRef.get();
-        final disponibilidadesParaRemover =
-            todasDisponibilidades.docs.where((doc) {
-          final data = doc.data();
-          if (disponibilidade != null && doc.id != disponibilidade.id) {
-            return false;
-          }
-          final dataDisp = data['data']?.toString();
-          final tipoDisp = data['tipo']?.toString();
-          final medicoIdDisp = data['medicoId']?.toString();
-
-          if (dataDisp == null ||
-              tipoDisp != 'Única' ||
-              medicoIdDisp != medicoId) {
-            return false;
-          }
-
-          try {
-            final dataDispDateTime = DateTime.parse(dataDisp);
-            return dataDispDateTime.year == inicio.year &&
-                dataDispDateTime.month == inicio.month &&
-                dataDispDateTime.day == inicio.day;
-          } catch (e) {
-            return false;
-          }
-        }).toList();
-
-        for (final doc in disponibilidadesParaRemover) {
-          await doc.reference.delete();
-          disponibilidadesRemovidas++;
-          houveRemocaoNoDia = true;
-        }
-
-        // 3. Remover da vista diária (dias/{dayKey}/disponibilidades)
-        final diasDisponibilidadesRef = firestore
-            .collection('unidades')
-            .doc(unidadeId)
-            .collection('dias')
-            .doc(keyDia)
-            .collection('disponibilidades');
-
-        final todasDisponibilidadesDias = await diasDisponibilidadesRef.get();
-        final disponibilidadesDiasParaRemover =
-            todasDisponibilidadesDias.docs.where((doc) {
-          final data = doc.data();
-          final medicoIdDisp = data['medicoId']?.toString();
-          final tipoDisp = data['tipo']?.toString();
-          if (medicoIdDisp != medicoId || tipoDisp != 'Única') {
-            return false;
-          }
-          if (disponibilidade != null && doc.id != disponibilidade.id) {
-            return false;
-          }
-          final dataDisp = data['data']?.toString();
-          if (dataDisp == null) return false;
-          try {
-            final dataDispDateTime = DateTime.parse(dataDisp);
-            return dataDispDateTime.year == inicio.year &&
-                dataDispDateTime.month == inicio.month &&
-                dataDispDateTime.day == inicio.day;
-          } catch (e) {
-            return false;
-          }
-        }).toList();
-
-        for (final doc in disponibilidadesDiasParaRemover) {
-          await doc.reference.delete();
-          houveRemocaoNoDia = true;
-        }
-
-        if (houveRemocaoNoDia) {
-          AlocacaoMedicosLogic.invalidateCacheForDay(inicio);
-        }
-      } catch (e) {
-        // Erro ao remover - continuar para próxima data
+    for (var ano = inicio.year; ano <= fim.year; ano++) {
+      final alocacoesRef =
+          unidadeRef.collection('alocacoes').doc('$ano').collection('registos');
+      final disponibilidadesRef = medicoRef
+          .collection('disponibilidades')
+          .doc('$ano')
+          .collection('registos');
+      Query<Map<String, dynamic>> periodo(
+              CollectionReference<Map<String, dynamic>> ref) =>
+          ref
+              .where('medicoId', isEqualTo: medicoId)
+              .where('data', isGreaterThanOrEqualTo: inicio.toIso8601String())
+              .where('data', isLessThan: limite.toIso8601String());
+      final snapshots = await Future.wait([
+        consultar(periodo(alocacoesRef)),
+        consultar(periodo(disponibilidadesRef)),
+      ]);
+      for (final doc in snapshots[0].docs.where(alocacaoSelecionada)) {
+        adicionar(doc, 'alocacao');
       }
-
-      dataAtual = dataAtual.add(const Duration(days: 1));
+      for (final doc in snapshots[1].docs.where(disponibilidadeSelecionada)) {
+        adicionar(doc, 'disponibilidade');
+      }
     }
 
-    if (alocacoesRemovidas > 0 || disponibilidadesRemovidas > 0) {
-      await CacheVersionService.bumpVersions(
-        unidadeId: unidadeId,
-        fields: [
-          CacheVersionService.fieldAlocacoes,
-          CacheVersionService.fieldDisponibilidades,
-        ],
-      );
+    for (var dia = inicio;
+        dia.isBefore(limite);
+        dia = dia.add(const Duration(days: 1))) {
+      final key = '${dia.year}-${dia.month.toString().padLeft(2, '0')}-'
+          '${dia.day.toString().padLeft(2, '0')}';
+      final diaRef = unidadeRef.collection('dias').doc(key);
+      final snapshots = await Future.wait([
+        consultar(diaRef
+            .collection('alocacoes')
+            .where('medicoId', isEqualTo: medicoId)),
+        consultar(diaRef
+            .collection('disponibilidades')
+            .where('medicoId', isEqualTo: medicoId)),
+      ]);
+      for (final doc in snapshots[0].docs.where(alocacaoSelecionada)) {
+        adicionar(doc, 'vista');
+      }
+      for (final doc in snapshots[1].docs.where(disponibilidadeSelecionada)) {
+        adicionar(doc, 'vista');
+      }
     }
 
+    var alocacoesRemovidas = 0;
+    var disponibilidadesRemovidas = 0;
+    final documentos = remover.values.toList();
+    try {
+      for (var pos = 0; pos < documentos.length; pos += 400) {
+        final lote = documentos.skip(pos).take(400).toList();
+        final batch = db.batch();
+        for (final (ref, _) in lote) {
+          batch.delete(ref);
+        }
+        batch.set(
+            unidadeRef.collection('cache_control').doc('global'),
+            {
+              CacheVersionService.fieldAlocacoes: FieldValue.increment(1),
+              CacheVersionService.fieldDisponibilidades:
+                  FieldValue.increment(1),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true));
+        await batch.commit();
+        alocacoesRemovidas += lote.where((d) => d.$2 == 'alocacao').length;
+        disponibilidadesRemovidas +=
+            lote.where((d) => d.$2 == 'disponibilidade').length;
+      }
+    } finally {
+      if (documentos.isNotEmpty) {
+        for (var dia = inicio;
+            dia.isBefore(limite);
+            dia = dia.add(const Duration(days: 1))) {
+          AlocacaoMedicosLogic.invalidateCacheForDay(dia);
+        }
+      }
+    }
     return {
       'alocacoesRemovidas': alocacoesRemovidas,
-      'disponibilidadesRemovidas': disponibilidadesRemovidas,
+      'disponibilidadesRemovidas': disponibilidadesRemovidas
     };
   }
 
-  /// Remove alocações e disponibilidades únicas do Firestore para uma data específica
   static Future<Map<String, int>> removerAlocacoesEDisponibilidadesPorData(
-      String unidadeId, String medicoId, DateTime data,
-      {String? serieId, Disponibilidade? disponibilidade}) async {
-    return removerAlocacoesEDisponibilidades(
-      unidadeId,
-      medicoId,
-      data,
-      data,
-      serieId: serieId,
-      disponibilidade: disponibilidade,
-    );
-  }
+          String unidadeId, String medicoId, DateTime data,
+          {String? serieId, Disponibilidade? disponibilidade}) =>
+      removerAlocacoesEDisponibilidades(unidadeId, medicoId, data, data,
+          serieId: serieId, disponibilidade: disponibilidade);
 }

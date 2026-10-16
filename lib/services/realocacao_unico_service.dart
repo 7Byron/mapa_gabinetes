@@ -7,7 +7,6 @@ library;
 import 'package:flutter/material.dart';
 import '../models/alocacao.dart';
 import '../models/unidade.dart';
-import '../models/excecao_serie.dart';
 import '../utils/alocacao_medicos_logic.dart';
 import '../services/disponibilidade_serie_service.dart';
 import '../services/serie_service.dart';
@@ -126,59 +125,11 @@ class RealocacaoUnicoService {
             unidade: unidade,
           );
 
-          onProgresso(0.5, 'A verificar exceção...');
-
-          // Verificar se a exceção foi salva
-          bool excecaoEncontrada = false;
-          int tentativas = 0;
-          const maxTentativas = 5;
-
-          while (!excecaoEncontrada && tentativas < maxTentativas) {
-            await Future.delayed(const Duration(milliseconds: 800));
-            tentativas++;
-            onProgresso(0.5 + (tentativas / maxTentativas) * 0.3,
-                'A verificar exceção... ($tentativas/$maxTentativas)');
-
-            try {
-              final excecoes = await SerieService.carregarExcecoes(
-                medicoId,
-                unidade: unidade,
-                dataInicio: dataNormalizada,
-                dataFim: dataNormalizada.add(const Duration(days: 1)),
-                serieId: serieIdAlvo,
-                forcarServidor: true,
-              );
-
-              final excecao = excecoes.firstWhere(
-                (e) =>
-                    e.serieId == serieIdAlvo &&
-                    e.data.year == dataNormalizada.year &&
-                    e.data.month == dataNormalizada.month &&
-                    e.data.day == dataNormalizada.day &&
-                    e.gabineteId == gabineteDestino &&
-                    !e.cancelada,
-                orElse: () => ExcecaoSerie(
-                  id: '',
-                  serieId: '',
-                  data: DateTime(1900, 1, 1),
-                ),
-              );
-
-              if (excecao.id.isNotEmpty) {
-                excecaoEncontrada = true;
-              }
-            } catch (e) {
-              // Continuar tentando
-            }
-          }
-
-          onProgresso(0.8, 'A sincronizar...');
-          await Future.delayed(const Duration(milliseconds: 300));
-          onProgresso(0.9, 'A sincronizar com servidor...');
+          // A gravação aguardada acima já confirmou a persistência. Não reler
+          // todas as exceções do ano nem usar esperas fixas de sincronização.
+          onProgresso(0.9, 'A atualizar o mapa...');
           await onAtualizarEstado();
-          await Future.delayed(const Duration(milliseconds: 300));
           onProgresso(1.0, 'Completo!');
-          await Future.delayed(const Duration(milliseconds: 300));
 
           return true;
         }

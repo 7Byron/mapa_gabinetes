@@ -392,6 +392,7 @@ class AlocacaoMedicosLogic {
         final snapshot = await firestore
             .collectionGroup('registos')
             .where('data', isEqualTo: dataNormalizada.toIso8601String())
+            .where('cancelada', isEqualTo: true)
             .get(GetOptions(source: _getSourceForDay(data)));
         for (final doc in snapshot.docs) {
           final segmentos = doc.reference.path.split('/');
@@ -1617,11 +1618,11 @@ class AlocacaoMedicosLogic {
       } else if (anoEspecifico != null) {
         final ano = int.tryParse(anoEspecifico) ?? DateTime.now().year;
         dataInicioSeriesEmLote = null;
-        dataFimSeriesEmLote = DateTime(ano + 1, 1, 1);
+        dataFimSeriesEmLote = DateTime(ano, 12, 31);
       } else {
         final ano = DateTime.now().year;
         dataInicioSeriesEmLote = DateTime(ano, 1, 1);
-        dataFimSeriesEmLote = DateTime(ano + 1, 1, 1);
+        dataFimSeriesEmLote = DateTime(ano, 12, 31);
       }
       final forcarSeriesEmLote =
           (anoEspecifico != null && dataFiltroDia == null) ||
@@ -1673,11 +1674,11 @@ class AlocacaoMedicosLogic {
                 // e filtrar apenas séries que começam depois do fim do ano (não aplicáveis)
                 final ano = int.tryParse(anoEspecifico) ?? DateTime.now().year;
                 dataInicioParaCarregarSeries = null;
-                dataFimParaCarregarSeries = DateTime(ano + 1, 1, 1);
+                dataFimParaCarregarSeries = DateTime(ano, 12, 31);
               } else {
                 final ano = DateTime.now().year;
                 dataInicioParaCarregarSeries = DateTime(ano, 1, 1);
-                dataFimParaCarregarSeries = DateTime(ano + 1, 1, 1);
+                dataFimParaCarregarSeries = DateTime(ano, 12, 31);
               }
             }
 
@@ -1944,6 +1945,9 @@ class AlocacaoMedicosLogic {
             final registosRef =
                 alocacoesRef.doc(anoEspecifico).collection('registos');
             Query<Map<String, dynamic>> query = registosRef;
+            if (medicoIdFiltro != null) {
+              query = query.where('medicoId', isEqualTo: medicoIdFiltro);
+            }
             if (dataFiltroDia != null) {
               final inicio = DateTime(
                   dataFiltroDia.year, dataFiltroDia.month, dataFiltroDia.day);
@@ -2083,7 +2087,7 @@ class AlocacaoMedicosLogic {
                 ? int.tryParse(anoEspecifico) ?? DateTime.now().year
                 : DateTime.now().year;
             dataInicioExcecoes = DateTime(ano, 1, 1);
-            dataFimExcecoes = DateTime(ano + 1, 1, 1);
+            dataFimExcecoes = DateTime(ano, 12, 31);
           }
 
           // CORREÇÃO CRÍTICA: Forçar servidor se o cache estiver invalidado para este dia
@@ -2196,7 +2200,7 @@ class AlocacaoMedicosLogic {
             ? int.tryParse(anoEspecifico) ?? DateTime.now().year
             : DateTime.now().year;
         dataInicioExcecoes = DateTime(ano, 1, 1);
-        dataFimExcecoes = DateTime(ano + 1, 1, 1);
+        dataFimExcecoes = DateTime(ano, 12, 31);
       }
 
       // Só médicos com uma série efetivamente gerada neste dia podem ter uma

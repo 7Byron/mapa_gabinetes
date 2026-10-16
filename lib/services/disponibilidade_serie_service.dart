@@ -406,13 +406,11 @@ class DisponibilidadeSerieService {
 
     // Verificar se já existe uma exceção para esta série e data
     // CORREÇÃO: Forçar servidor para garantir que exceções recém-criadas sejam encontradas
-    final excecoesExistentes = await SerieService.carregarExcecoes(
-      medicoId,
-      unidade: unidade,
-      dataInicio: dataNormalizada,
-      dataFim: dataNormalizada,
+    final excecoesExistentes = await SerieService.carregarExcecoesDaData(
+      medicoId: medicoId,
       serieId: serieId,
-      forcarServidor: true, // Forçar servidor para garantir dados atualizados
+      data: dataNormalizada,
+      unidade: unidade,
     );
 
     ExcecaoSerie excecao;

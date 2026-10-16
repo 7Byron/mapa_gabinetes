@@ -185,24 +185,9 @@ class CadastroMedicosHelper {
   ) async {
     int salvas = 0;
     for (final serie in series) {
-      final serieComHorarios = SerieRecorrencia(
-        id: serie.id,
-        medicoId: serie.medicoId,
-        dataInicio: serie.dataInicio,
-        dataFim: serie.dataFim,
-        tipo: serie.tipo,
-        horarios: serie.horarios,
-        gabineteId: serie.gabineteId,
-        parametros: serie.parametros,
-        ativo: serie.ativo,
-      );
-      await SerieService.salvarSerie(serieComHorarios, unidade: unidade);
-
-      // CORREÇÃO CRÍTICA: Invalidar cache para TODOS os dias que esta série afeta
-      // Isso garante que quando o utilizador navega para qualquer dia da série,
-      // os dados serão recarregados do servidor e estarão atualizados
-      AlocacaoMedicosLogic.invalidateCacheParaSerie(serieComHorarios,
-          unidade: unidade);
+      // Persistir a série completa, incluindo as mudanças de gabinete.
+      await SerieService.salvarSerie(serie, unidade: unidade);
+      AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
 
       salvas++;
     }

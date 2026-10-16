@@ -14,6 +14,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('2026.10.16+2'), findsOneWidget);
+    expect(find.text('2026.10.16+3'), findsOneWidget);
   });
 }

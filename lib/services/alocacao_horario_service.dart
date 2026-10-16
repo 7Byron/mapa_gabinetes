@@ -1,3 +1,4 @@
+import '../utils/vista_diaria_sync.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/alocacao.dart';
@@ -105,7 +106,8 @@ class AlocacaoHorarioService {
         .doc(dia)
         .collection('disponibilidades')
         .doc(disponibilidadeId);
-    batch.set(disponibilidadeAnualRef, disponibilidadeAtualizada.toMap());
+    batch.set(disponibilidadeAnualRef,
+        VistaDiariaSync.marcar(disponibilidadeAtualizada.toMap()));
     batch.set(disponibilidadeDiariaRef, disponibilidadeAtualizada.toMap());
 
     Alocacao? alocacaoAtualizada;
@@ -247,7 +249,7 @@ class AlocacaoHorarioService {
           .doc(ano)
           .collection('registos')
           .doc(alocacao.id),
-      dados,
+      VistaDiariaSync.marcar(dados),
     );
     batch.set(
       unidadeRef

@@ -7,7 +7,7 @@ import '../models/excecao_serie.dart';
 import '../services/disponibilidade_unica_service.dart';
 import '../services/serie_service.dart';
 import '../utils/cadastro_medicos_helper.dart';
-import '../utils/alocacao_medicos_logic.dart';
+import '../utils/cadastro_persistencia_snapshot.dart';
 import 'medico_salvar_service.dart' as medico_salvar;
 
 /// Serviço para salvar médico completo com todas as suas dependências
@@ -36,6 +36,8 @@ class CadastroMedicoSalvarService {
     List<ExcecaoSerie> excecoes,
     List<Disponibilidade> disponibilidadesOriginais,
     Unidade? unidade, {
+    CadastroPersistenciaSnapshot? persistenciaSnapshot,
+    Medico? medicoOriginal,
     bool mostrarMensagensErro = true,
     bool ativo = true, // Campo ativo do médico
   }) async {
@@ -71,15 +73,16 @@ class CadastroMedicoSalvarService {
       await medico_salvar.salvarMedicoCompleto(
         medico,
         unidade: unidade,
+        medicoOriginal: medicoOriginal,
         disponibilidadesOriginais: disponibilidadesOriginais
             .where((d) => !(d.tipo == 'Única' && d.medicoId == medicoId))
             .toList(),
       );
 
-      // Salvar séries de recorrência
-      // CORREÇÃO CRÍTICA: As séries invalidam o cache automaticamente quando são salvas
-      // através do CadastroMedicosHelper.salvarSeries que chama invalidateCacheParaSerie
-      await CadastroMedicosHelper.salvarSeries(series, unidade);
+      final seriesPendentes =
+          persistenciaSnapshot?.seriesPendentes(series) ?? series;
+      final excecoesPendentes =
+          persistenciaSnapshot?.excecoesPendentes(excecoes) ?? excecoes;
 
       // Um único lote lógico: falhas propagam-se e impedem a saída da página.
       final resultadoUnicas = disponibilidadesUnicasParaSalvar.isEmpty
@@ -95,27 +98,15 @@ class CadastroMedicoSalvarService {
         throw StateError('Não foi possível guardar todos os cartões.');
       }
 
-      // Salvar exceções
-      // CORREÇÃO CRÍTICA: Exceções invalidam o cache automaticamente quando são salvas
-      // através do SerieService.salvarExcecao
-      for (final excecao in excecoes) {
-        await SerieService.salvarExcecao(excecao, medicoId, unidade: unidade);
-      }
-
-      // CORREÇÃO CRÍTICA: Invalidar cache para todas as disponibilidades
-      // Isso garante que mesmo disponibilidades que não foram salvas diretamente sejam atualizadas
-      CadastroMedicosHelper.invalidarCacheDisponibilidades(disponibilidades);
-
-      // CORREÇÃO CRÍTICA: Invalidar cache também para todas as séries
-      // Para garantir que todas as séries sejam recarregadas
-      for (final serie in series) {
-        AlocacaoMedicosLogic.invalidateCacheParaSerie(serie, unidade: unidade);
-      }
-
-      // Invalidar cache de médicos ativos
-      if (unidade != null) {
-        // Cache removido - não precisa invalidar
-      }
+      await SerieService.salvarAlteracoes(
+        series: seriesPendentes,
+        excecoes: excecoesPendentes,
+        originais: persistenciaSnapshot,
+        medicoId: medicoId,
+        unidade: unidade,
+      );
+      persistenciaSnapshot?.registarSeries(seriesPendentes);
+      persistenciaSnapshot?.registarExcecoes(excecoesPendentes);
 
       return {
         'sucesso': true,

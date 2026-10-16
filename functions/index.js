@@ -1,6 +1,7 @@
 // Firebase Functions v1 (1st Gen) para manter compatibilidade com funções já criadas
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
+const { vistaDiariaJaSincronizada } = require('./vista_diaria_sync');
 admin.initializeApp();
 
 // Util: normaliza yyyy-MM-dd
@@ -19,6 +20,14 @@ exports.onDisponibilidadeWrite = functions.firestore
     const { unidadeId } = context.params;
     const before = change.before.exists ? change.before.data() : null;
     const after = change.after.exists ? change.after.data() : null;
+
+    // O cliente escreveu origem e vista diária no mesmo lote. Updates feitos
+    // por clientes antigos mudam os dados sem renovar a assinatura e seguem
+    // o percurso normal. Se a data mudou, limpar sempre a vista do dia antigo.
+    if (vistaDiariaJaSincronizada(after) &&
+        (!before || dateKeyFromIso(before.data) === dateKeyFromIso(after.data))) {
+      return null;
+    }
 
     const db = admin.firestore();
     const batch = db.batch();
@@ -74,6 +83,14 @@ exports.onAlocacaoWrite = functions.firestore
     const { unidadeId } = context.params;
     const before = change.before.exists ? change.before.data() : null;
     const after = change.after.exists ? change.after.data() : null;
+
+    // O cliente escreveu origem e vista diária no mesmo lote. Updates feitos
+    // por clientes antigos mudam os dados sem renovar a assinatura e seguem
+    // o percurso normal. Se a data mudou, limpar sempre a vista do dia antigo.
+    if (vistaDiariaJaSincronizada(after) &&
+        (!before || dateKeyFromIso(before.data) === dateKeyFromIso(after.data))) {
+      return null;
+    }
 
     const db = admin.firestore();
     const batch = db.batch();

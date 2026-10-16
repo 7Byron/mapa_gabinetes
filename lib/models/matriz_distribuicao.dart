@@ -31,9 +31,20 @@ class MatrizDistribuicaoItem {
     this.ocorrencias = const {},
   });
 
-  String? get periodo => validadeInicio == null || validadeFim == null
-      ? null
-      : 'De ${_data(validadeInicio!)} a ${_data(validadeFim!)}';
+  String? get periodo {
+    final inicio = validadeInicio;
+    final fim = validadeFim;
+    if (inicio == null || fim == null) return null;
+    // A projeção anual já limita a validade ao ano selecionado. Mostrar
+    // datas apenas nos segmentos que não abrangem o ano completo.
+    final anoCompleto = inicio.year == fim.year &&
+        inicio.month == 1 &&
+        inicio.day == 1 &&
+        fim.month == 12 &&
+        fim.day == 31;
+    if (anoCompleto) return null;
+    return 'De ${_data(inicio)} a ${_data(fim)}';
+  }
 
   static String _data(DateTime data) =>
       '${data.day.toString().padLeft(2, '0')}/${data.month.toString().padLeft(2, '0')}/${data.year}';

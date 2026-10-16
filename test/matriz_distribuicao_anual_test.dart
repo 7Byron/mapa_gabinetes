@@ -56,6 +56,40 @@ void main() {
         DateTime.utc(2026, 3, 31));
   });
 
+  test('Oculta datas quando a regra abrange todo o ano selecionado', () {
+    final matriz = MatrizDistribuicaoService.gerarAnual(
+      medicos: medicos,
+      referencia: DateTime(2027),
+      series: [regra('x', DateTime(2025, 1, 6))],
+    );
+    final item = matriz.itens.single;
+    expect(item.validadeInicio, DateTime.utc(2027, 1, 1));
+    expect(item.validadeFim, DateTime.utc(2027, 12, 31));
+    expect(item.periodo, isNull);
+  });
+
+  test(
+      'Mudança a meio de 2027 mostra os dois gabinetes e os respetivos períodos',
+      () {
+    final matriz = MatrizDistribuicaoService.gerarAnual(
+      medicos: medicos,
+      referencia: DateTime(2027),
+      series: [
+        regra('x', DateTime(2025, 1, 6), gabinete: '21', mudancas: [
+          MudancaGabinete(dataInicio: DateTime(2027, 7, 1), gabineteId: '28'),
+        ])
+      ],
+    );
+    final primeiro = matriz.itens.singleWhere((i) => i.gabineteId == '21');
+    final segundo = matriz.itens.singleWhere((i) => i.gabineteId == '28');
+    expect(primeiro.periodo, 'De 01/01/2027 a 30/06/2027');
+    expect(segundo.periodo, 'De 01/07/2027 a 31/12/2027');
+    expect(primeiro.ocorrencias.every((d) => d.isBefore(DateTime.utc(2027, 7))),
+        isTrue);
+    expect(segundo.ocorrencias.every((d) => !d.isBefore(DateTime.utc(2027, 7))),
+        isTrue);
+  });
+
   test('Sem conflitos entre períodos separados ou quinzenas alternadas', () {
     final matriz = MatrizDistribuicaoService.gerarAnual(
         medicos: medicos,

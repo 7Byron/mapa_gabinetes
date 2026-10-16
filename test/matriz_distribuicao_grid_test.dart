@@ -5,6 +5,43 @@ import 'package:mapa_gabinetes/models/matriz_distribuicao.dart';
 import 'package:mapa_gabinetes/widgets/matriz_distribuicao_grid.dart';
 
 void main() {
+  testWidgets('Oculta o período anual e mantém datas dos cartões parciais',
+      (tester) async {
+    MatrizDistribuicaoItem item(String id, DateTime inicio, DateTime fim) =>
+        MatrizDistribuicaoItem(
+          serieId: id,
+          medicoId: id,
+          medicoNome: id,
+          especialidade: 'Clínica',
+          gabineteId: '21',
+          tipo: 'Semanal',
+          ciclo: 'Semanal',
+          dia: 1,
+          inicioMinutos: 540,
+          fimMinutos: 600,
+          validadeInicio: inicio,
+          validadeFim: fim,
+        );
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MatrizDistribuicaoGrid(
+      ano: 2027,
+      gabinetes: [
+        Gabinete(
+            id: '21', setor: 'Piso 1', nome: '21', especialidadesPermitidas: [])
+      ],
+      itens: [
+        item('Ano completo', DateTime.utc(2027), DateTime.utc(2027, 12, 31)),
+        item('Primeiro semestre', DateTime.utc(2027), DateTime.utc(2027, 6, 30))
+      ],
+    ))));
+    await tester.pumpAndSettle();
+    expect(find.text('Ano completo'), findsOneWidget);
+    expect(find.text('De 01/01/2027 a 31/12/2027'), findsNothing);
+    expect(find.text('De 01/01/2027 a 30/06/2027'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Reúne rotações na semana e mantém o gabinete e os conflitos',
       (tester) async {
     MatrizDistribuicaoItem item(

@@ -1,34 +1,12 @@
 // lib/services/serie_generator.dart
 
-// import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
 import 'package:flutter/foundation.dart';
-// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
+
 import '../models/serie_recorrencia.dart';
 import '../models/excecao_serie.dart';
 import '../models/mudanca_gabinete.dart';
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
-
-// #region agent log (COMENTADO - pode ser reativado se necessário)
-// helper
-//void _writeDebugLog(
-//    String location, String message, Map<String, dynamic> data) {
-//  try {
-//    final logEntry = {
-//      'timestamp': DateTime.now().millisecondsSinceEpoch,
-//      'location': location,
-//      'message': message,
-//      'data': data,
-//      'sessionId': 'debug-session',
-//      'runId': 'run1',
-//    };
-//    writeLogToFile(jsonEncode(logEntry));
-//  } catch (e) {
-    // Ignorar erros de escrita de log
-//  }
-//}
-
-// #endregion
 
 /// Gera cartões de disponibilidade/alocação dinamicamente baseado em regras de recorrência
 class SerieGenerator {
@@ -60,53 +38,12 @@ class SerieGenerator {
       if (excecao.cancelada) {
         debugPrint(
             '🚫 [EXCEÇÃO CANCELADA] Indexada: série=${excecao.serieId}, data=$dataKey, chave=$chave');
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//        if (dataNormalizada.year == 2026 &&
-//            (dataNormalizada.month == 2 &&
-//                (dataNormalizada.day == 9 ||
-//                    dataNormalizada.day == 12 ||
-//                    dataNormalizada.day == 16))) {
-//          _writeDebugLog(
-//              'serie_generator.dart:40', 'Exceção cancelada indexada', {
-//            'serieId': excecao.serieId,
-//            'data': dataKey,
-//            'chave': chave,
-//            'cancelada': excecao.cancelada,
-//            'hypothesisId': 'B'
-//          });
-//        }
-        
-// #endregion
       }
     }
 
     // Para cada série, gerar cartões no período
     for (final serie in series) {
       if (!serie.ativo) continue;
-
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//      try {
-//        final logEntry = {
-//          'timestamp': DateTime.now().millisecondsSinceEpoch,
-//          'location': 'serie_generator.dart:76',
-//          'message': 'Processando série',
-//          'data': {
-//            'serieId': serie.id,
-//            'tipo': serie.tipo,
-//            'medicoId': serie.medicoId,
-//            'dataInicio': serie.dataInicio.toString(),
-//            'dataFim': serie.dataFim?.toString(),
-//            'hypothesisId': 'E'
-//          },
-//          'sessionId': 'debug-session',
-//          'runId': 'run1',
-//        };
-//        writeLogToFile(jsonEncode(logEntry));
-//      } catch (e) {}
-      
-// #endregion
 
       final cartoes = _gerarCartoesDaSerie(
         serie: serie,
@@ -115,69 +52,11 @@ class SerieGenerator {
         excecoesMap: excecoesMap,
       );
 
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//      try {
-//        final logEntry = {
-//          'timestamp': DateTime.now().millisecondsSinceEpoch,
-//          'location': 'serie_generator.dart:76',
-//          'message': 'Série processada',
-//          'data': {
-//            'serieId': serie.id,
-//            'numCartoes': cartoes.length,
-//            'hypothesisId': 'E'
-//          },
-//          'sessionId': 'debug-session',
-//          'runId': 'run1',
-//        };
-//        writeLogToFile(jsonEncode(logEntry));
-//      } catch (e) {}
-      
-// #endregion
-
       disponibilidades.addAll(cartoes);
     }
 
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'serie_generator.dart:90',
-//        'message': 'Ordenando disponibilidades',
-//        'data': {
-//          'numDisponibilidades': disponibilidades.length,
-//          'hypothesisId': 'E'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-    
-// #endregion
-
     // Ordenar por data
     disponibilidades.sort((a, b) => a.data.compareTo(b.data));
-
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'serie_generator.dart:92',
-//        'message': 'gerarDisponibilidades concluído',
-//        'data': {
-//          'numDisponibilidades': disponibilidades.length,
-//          'hypothesisId': 'E'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-    
-// #endregion
 
     return disponibilidades;
   }
@@ -224,8 +103,8 @@ class SerieGenerator {
     // Para cada série com gabinete alocado, gerar alocações
     for (final serie in series) {
       // Verificar se série tem gabinete (padrão ou em mudanças)
-      final temGabinete = serie.gabineteId != null || 
-          serie.mudancasGabinete.isNotEmpty;
+      final temGabinete =
+          serie.gabineteId != null || serie.mudancasGabinete.isNotEmpty;
       if (!serie.ativo || !temGabinete) continue;
 
       final cartoes = _gerarCartoesDaSerie(
@@ -278,13 +157,15 @@ class SerieGenerator {
         } else {
           // Não há exceção individual: usar mudanças de gabinete da série
           // obterGabineteParaData retorna o gabineteId correto considerando mudanças por período
-          gabineteIdFinal = serie.obterGabineteParaData(disp.data) ?? serie.gabineteId ?? '';
+          gabineteIdFinal =
+              serie.obterGabineteParaData(disp.data) ?? serie.gabineteId ?? '';
           horariosFinal = disp.horarios;
           idAlocacao = 'serie_${serie.id}_${_dataKey(disp.data)}';
-          
+
           // Log apenas se houver mudanças de gabinete
           if (serie.mudancasGabinete.isNotEmpty) {
-            final dataNormalizada = DateTime(disp.data.year, disp.data.month, disp.data.day);
+            final dataNormalizada =
+                DateTime(disp.data.year, disp.data.month, disp.data.day);
             MudancaGabinete? mudancaAplicavel;
             for (final mudanca in serie.mudancasGabinete.reversed) {
               if (!dataNormalizada.isBefore(mudanca.dataInicioNormalizada)) {
@@ -292,7 +173,8 @@ class SerieGenerator {
                 break;
               }
             }
-            if (mudancaAplicavel != null && mudancaAplicavel.gabineteId.isNotEmpty) {
+            if (mudancaAplicavel != null &&
+                mudancaAplicavel.gabineteId.isNotEmpty) {
               debugPrint(
                   '📅 Gerando alocação com mudança de gabinete: data=$dataKey, gabinete=$gabineteIdFinal (mudança desde ${mudancaAplicavel.dataInicio.day}/${mudancaAplicavel.dataInicio.month})');
             }
@@ -414,8 +296,7 @@ class SerieGenerator {
     // Gerar cartões semanais com limite de iterações
     int iteracoes = 0;
     const maxIteracoes = 1000; // Máximo 1000 semanas (~19 anos)
-    while (dataAtual.isBefore(_addDias(fim, 1)) &&
-        iteracoes < maxIteracoes) {
+    while (dataAtual.isBefore(_addDias(fim, 1)) && iteracoes < maxIteracoes) {
       iteracoes++;
       // Normalizar a data para garantir correspondência exata
       final dataNormalizada = DateTime(
@@ -461,31 +342,6 @@ class SerieGenerator {
     DateTime fim,
     Map<String, ExcecaoSerie> excecoesMap,
   ) {
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'serie_generator.dart:411',
-//        'message': '🔵 [HYP-C] _gerarQuinzenal - ENTRADA',
-//        'data': {
-//          'serieId': serie.id,
-//          'serieTipo': serie.tipo,
-//          'serieDataInicio': serie.dataInicio.toString(),
-//          'serieDataFim': serie.dataFim?.toString() ?? 'null',
-//          'periodoInicio': inicio.toString(),
-//          'periodoFim': fim.toString(),
-//          'weekday': serie.dataInicio.weekday,
-//          'hypothesisId': 'C'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-    
-// #endregion
-
     final cartoes = <Disponibilidade>[];
     final base = DateTime(
         serie.dataInicio.year, serie.dataInicio.month, serie.dataInicio.day);
@@ -498,13 +354,14 @@ class SerieGenerator {
     // CORREÇÃO CRÍTICA: Cálculo simplificado da primeira data válida
     // Ao avançar de 14 em 14 dias a partir de 'base', sempre mantemos o mesmo weekday
     // Então basta calcular a primeira quinzena válida que seja >= inicio
-    
+
     DateTime dataAtual;
-    
+
     // Se a série começou antes ou no início do período solicitado
-    if (base.isBefore(inicioNormalizado) || base.isAtSameMomentAs(inicioNormalizado)) {
+    if (base.isBefore(inicioNormalizado) ||
+        base.isAtSameMomentAs(inicioNormalizado)) {
       final diffInicio = inicioNormalizado.difference(base).inDays;
-      
+
       // CORREÇÃO CRÍTICA: Primeiro verificar se 'inicio' é uma quinzena válida
       // Se sim, usar inicio; caso contrário, calcular a próxima quinzena >= inicio
       if (diffInicio >= 0 && diffInicio % 14 == 0) {
@@ -522,7 +379,7 @@ class SerieGenerator {
         // Usar ceil para arredondar para cima e garantir que estamos >= inicio
         final quinzenasParaAvancar = (diffInicio / 14).ceil();
         dataAtual = _addDias(base, quinzenasParaAvancar * 14);
-        
+
         // CORREÇÃO CRÍTICA: Se dataAtual calculada é menor que inicio, garantir que seja >= inicio
         // Isso pode acontecer quando diffInicio é negativo mas arredondado para 0
         if (dataAtual.isBefore(inicioNormalizado)) {
@@ -541,117 +398,41 @@ class SerieGenerator {
       // Verificar se base está dentro do período (entre inicio e fim, inclusive)
       // Se sim, começar do início da série; caso contrário, não gerar nada
       final baseNormalizado = DateTime(base.year, base.month, base.day);
-      
-      // Verificar se base está dentro do período: base >= inicio && base <= fim
-      final baseDentroDoPeriodo = (baseNormalizado.isAfter(inicioNormalizado) || 
-                                    (baseNormalizado.year == inicioNormalizado.year &&
-                                     baseNormalizado.month == inicioNormalizado.month &&
-                                     baseNormalizado.day == inicioNormalizado.day)) &&
-                                   (baseNormalizado.isBefore(_addDias(fimNormalizado, 1)) ||
-                                    (baseNormalizado.year == fimNormalizado.year &&
-                                     baseNormalizado.month == fimNormalizado.month &&
-                                     baseNormalizado.day == fimNormalizado.day));
-      
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
 
-//      try {
-//        final logEntry = {
-//          'timestamp': DateTime.now().millisecondsSinceEpoch,
-//          'location': 'serie_generator.dart:492',
-//          'message': '🟡 [HYP-C] _gerarQuinzenal - Verificando se base está no período',
-//          'data': {
-//            'serieId': serie.id,
-//            'base': baseNormalizado.toString(),
-//            'inicio': inicioNormalizado.toString(),
-//            'fim': fimNormalizado.toString(),
-//            'baseDentroDoPeriodo': baseDentroDoPeriodo,
-//            'baseMaiorIgualInicio': (baseNormalizado.isAfter(inicioNormalizado) || 
-//                                    (baseNormalizado.year == inicioNormalizado.year &&
-//                                     baseNormalizado.month == inicioNormalizado.month &&
-//                                     baseNormalizado.day == inicioNormalizado.day)),
-//            'baseMenorIgualFim': (baseNormalizado.isBefore(fimNormalizado.add(const Duration(days: 1))) ||
-//                                 (baseNormalizado.year == fimNormalizado.year &&
-//                                  baseNormalizado.month == fimNormalizado.month &&
-//                                  baseNormalizado.day == fimNormalizado.day)),
-//            'hypothesisId': 'C'
-//          },
-//          'sessionId': 'debug-session',
-//          'runId': 'run1',
-//        };
-//        writeLogToFile(jsonEncode(logEntry));
-//      } catch (e) {}
-      
-// #endregion
-      
+      // Verificar se base está dentro do período: base >= inicio && base <= fim
+      final baseDentroDoPeriodo = (baseNormalizado.isAfter(inicioNormalizado) ||
+              (baseNormalizado.year == inicioNormalizado.year &&
+                  baseNormalizado.month == inicioNormalizado.month &&
+                  baseNormalizado.day == inicioNormalizado.day)) &&
+          (baseNormalizado.isBefore(_addDias(fimNormalizado, 1)) ||
+              (baseNormalizado.year == fimNormalizado.year &&
+                  baseNormalizado.month == fimNormalizado.month &&
+                  baseNormalizado.day == fimNormalizado.day));
+
       if (baseDentroDoPeriodo) {
         // Base está dentro do período - começar do início da série
         dataAtual = base;
       } else {
         // Série começa fora do período - não gerar nada
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//        try {
-//          final logEntry = {
-//            'timestamp': DateTime.now().millisecondsSinceEpoch,
-//            'location': 'serie_generator.dart:521',
-//            'message': '🔴 [HYP-C] _gerarQuinzenal - Base fora do período, retornando vazio',
-//            'data': {
-//              'serieId': serie.id,
-//              'base': baseNormalizado.toString(),
-//              'inicio': inicioNormalizado.toString(),
-//              'fim': fimNormalizado.toString(),
-//              'hypothesisId': 'C'
-//            },
-//            'sessionId': 'debug-session',
-//            'runId': 'run1',
-//          };
-//          writeLogToFile(jsonEncode(logEntry));
-//        } catch (e) {}
-        
-// #endregion
         return [];
       }
     }
 
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
+    // Limitar iterações para evitar loops infinitos (máximo 1000 iterações = ~27 anos)
+    int iteracoes = 0;
+    const maxIteracoes = 1000;
 
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'serie_generator.dart:451',
-//        'message': '🟡 [HYP-C] _gerarQuinzenal - dataAtual calculada',
-//        'data': {
-//          'serieId': serie.id,
-//        'base': base.toString(),
-//        'inicio': inicioNormalizado.toString(),
-//        'dataAtual': dataAtual.toString(),
-//        'diff': dataAtual.difference(base).inDays,
-//        'weekday': weekday,
-//        'hypothesisId': 'C'
-//      },
-//      'sessionId': 'debug-session',
-//      'runId': 'run1',
-//    };
-//    writeLogToFile(jsonEncode(logEntry));
-//  } catch (e) {}
-  
-// #endregion
+    // CORREÇÃO: Simplificar o loop - avançar sempre de 14 em 14 dias
+    // e verificar apenas se está no período e se é uma quinzena válida
+    while (dataAtual.isBefore(_addDias(fimNormalizado, 1)) &&
+        iteracoes < maxIteracoes) {
+      iteracoes++;
 
-  // Limitar iterações para evitar loops infinitos (máximo 1000 iterações = ~27 anos)
-  int iteracoes = 0;
-  const maxIteracoes = 1000;
-
-  // CORREÇÃO: Simplificar o loop - avançar sempre de 14 em 14 dias
-  // e verificar apenas se está no período e se é uma quinzena válida
-  while (dataAtual.isBefore(_addDias(fimNormalizado, 1)) &&
-      iteracoes < maxIteracoes) {
-    iteracoes++;
-
-    // Verificar se está no período solicitado
-    if (!dataAtual.isBefore(inicioNormalizado) &&
-        dataAtual.isBefore(_addDias(fimNormalizado, 1))) {
+      // Verificar se está no período solicitado
+      if (!dataAtual.isBefore(inicioNormalizado) &&
+          dataAtual.isBefore(_addDias(fimNormalizado, 1))) {
         final diff = dataAtual.difference(base).inDays;
-        
+
         // Verificar se é múltiplo de 14 dias e tem o weekday correto
         if (diff >= 0 && diff % 14 == 0 && dataAtual.weekday == weekday) {
           // Normalizar a data para garantir correspondência exata
@@ -675,38 +456,6 @@ class SerieGenerator {
           // A disponibilidade será criada, mas a alocação não será criada em gerarAlocacoes
           // Isso permite que o médico apareça em "médicos por alocar"
 
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//          try {
-            // Log especial para séries quinzenais que começam em 9/2 para identificar Sara Valadares
-//            final serieInicio2026_02_09 = serie.dataInicio.year == 2026 && 
-//                                          serie.dataInicio.month == 2 && 
-//                                          serie.dataInicio.day == 9;
-//            final logEntry = {
-//              'timestamp': DateTime.now().millisecondsSinceEpoch,
-//              'location': 'serie_generator.dart:492',
-//              'message': serieInicio2026_02_09 ? '🔵 [HYP-C] Cartão quinzenal gerado - SÉRIE 9/2' : '🟢 [HYP-C] Cartão quinzenal gerado',
-//              'data': {
-//                'serieId': serie.id,
-//                'medicoId': serie.medicoId,
-//                'dataGerada': dataNormalizada.toString(),
-//                'dataKey': dataKey,
-//                'diff': diff,
-//                'weekday': dataAtual.weekday,
-//                'serieDataInicio': serie.dataInicio.toString(),
-//                'periodoInicio': inicioNormalizado.toString(),
-//                'periodoFim': fimNormalizado.toString(),
-//                'isSerie2026_02_09': serieInicio2026_02_09,
-//                'hypothesisId': 'C'
-//              },
-//              'sessionId': 'debug-session',
-//              'runId': 'run1',
-//            };
-//            writeLogToFile(jsonEncode(logEntry));
-//          } catch (e) {}
-          
-// #endregion
-
           cartoes.add(Disponibilidade(
             id: 'serie_${serie.id}_$dataKey',
             medicoId: serie.medicoId,
@@ -716,57 +465,10 @@ class SerieGenerator {
           ));
         }
       }
-      
+
       // Avançar sempre para a próxima quinzena (14 dias)
       dataAtual = _addDias(dataAtual, 14);
     }
-    
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'serie_generator.dart:520',
-//        'message': '🟢 [HYP-C] _gerarQuinzenal - SAÍDA',
-//        'data': {
-//          'serieId': serie.id,
-//          'totalCartoesGerados': cartoes.length,
-//          'datasGeradas': cartoes.map((c) => c.data.toString()).toList(),
-//          'iteracoes': iteracoes,
-//          'hypothesisId': 'C'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-    
-// #endregion
-
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    if (iteracoes >= maxIteracoes) {
-//      try {
-//        final logEntry = {
-//          'timestamp': DateTime.now().millisecondsSinceEpoch,
-//          'location': 'serie_generator.dart:467',
-//          'message': '⚠️ Loop Quinzenal atingiu limite de iterações',
-//          'data': {
-//            'serieId': serie.id,
-//            'iteracoes': iteracoes,
-//            'dataInicio': serie.dataInicio.toString(),
-//            'inicio': inicio.toString(),
-//            'fim': fim.toString(),
-//            'hypothesisId': 'G'
-//          },
-//          'sessionId': 'debug-session',
-//          'runId': 'run1',
-//        };
-//        writeLogToFile(jsonEncode(logEntry));
-//      } catch (e) {}
-//    }
-    
-// #endregion
 
     return cartoes;
   }
@@ -808,12 +510,12 @@ class SerieGenerator {
     // CORREÇÃO CRÍTICA: Adicionar proteção contra loops infinitos
     int iteracoesMensal = 0;
     const maxIteracoesMensal = 1000; // Máximo de ~83 anos
-    
+
     // CORREÇÃO: Usar fimLimite em vez de fim para comparação
     while (mesAtual.isBefore(_addDias(fimLimite, 1)) &&
         iteracoesMensal < maxIteracoesMensal) {
       iteracoesMensal++;
-      
+
       final data = _pegarNthWeekdayDoMes(
           mesAtual.year, mesAtual.month, weekday, ocorrencia,
           usarUltimoQuandoNaoExiste5: usarUltimoQuandoNaoExiste5,
@@ -860,10 +562,11 @@ class SerieGenerator {
         mesAtual = DateTime(mesAtual.year, mesAtual.month + 1, 1);
       }
     }
-    
+
     // CORREÇÃO: Avisar se atingiu limite de iterações
     if (iteracoesMensal >= maxIteracoesMensal) {
-      debugPrint('⚠️ [PROTEÇÃO] _gerarMensal atingiu limite de iterações ($maxIteracoesMensal) para série ${serie.id}');
+      debugPrint(
+          '⚠️ [PROTEÇÃO] _gerarMensal atingiu limite de iterações ($maxIteracoesMensal) para série ${serie.id}');
     }
 
     return cartoes;
@@ -899,8 +602,8 @@ class SerieGenerator {
     int iteracoes = 0;
     const maxIteracoes = 1000;
 
-    while (dataAtual.isBefore(_addDias(fimReal, 1)) &&
-        iteracoes < maxIteracoes) {
+    while (
+        dataAtual.isBefore(_addDias(fimReal, 1)) && iteracoes < maxIteracoes) {
       iteracoes++;
 
       // Verificar se ainda estamos dentro do período da série
@@ -938,31 +641,6 @@ class SerieGenerator {
 
       dataAtual = _addDias(dataAtual, 1);
     }
-
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    if (iteracoes >= maxIteracoes) {
-//      try {
-//        final logEntry = {
-//          'timestamp': DateTime.now().millisecondsSinceEpoch,
-//          'location': 'serie_generator.dart:578',
-//          'message': '⚠️ Loop Consecutivo atingiu limite de iterações',
-//          'data': {
-//            'serieId': serie.id,
-//            'iteracoes': iteracoes,
-//            'dataInicio': serie.dataInicio.toString(),
-//            'inicio': inicio.toString(),
-//            'fim': fim.toString(),
-//            'hypothesisId': 'F'
-//          },
-//          'sessionId': 'debug-session',
-//          'runId': 'run1',
-//        };
-//        writeLogToFile(jsonEncode(logEntry));
-//      } catch (e) {}
-//    }
-    
-// #endregion
 
     return cartoes;
   }

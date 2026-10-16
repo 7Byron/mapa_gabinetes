@@ -255,7 +255,12 @@ class RealocacaoSerieService {
 
       // NOVA LÓGICA: Salvar série com mudança de gabinete (não atualizar gabineteId padrão)
       // A mudança já foi adicionada via adicionarMudancaGabinete acima
-      await SerieService.salvarSerie(serie, unidade: unidade);
+      await SerieService.salvarRealocacaoSerie(
+        serie,
+        dataRefNormalizada,
+        gabineteDestino,
+        unidade: unidade,
+      );
 
       // Log para Chrome
       if (kIsWeb) {

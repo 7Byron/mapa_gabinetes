@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 
-
 class FiltrosSection extends StatelessWidget {
   final List<String> pisosSelecionados;
   final void Function(String setor, bool isSelected) onTogglePiso;
@@ -45,9 +44,9 @@ class FiltrosSection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                Icons.filter_list,
+                  Icons.filter_list,
                   color: MyAppTheme.azulEscuro,
-                size: 18,
+                  size: 18,
                 ),
               ),
               const SizedBox(width: 8),
@@ -90,9 +89,8 @@ class FiltrosSection extends StatelessWidget {
                 backgroundColor: Colors.grey.shade100,
                 checkmarkColor: Colors.white,
                 side: BorderSide(
-                  color: isSelected 
-                      ? MyAppTheme.azulEscuro 
-                      : Colors.grey.shade300,
+                  color:
+                      isSelected ? MyAppTheme.azulEscuro : Colors.grey.shade300,
                   width: 0.5,
                 ),
                 shape: RoundedRectangleBorder(
@@ -121,20 +119,20 @@ class FiltrosSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             constraints: const BoxConstraints(minHeight: 36),
             child: DropdownButton<String>(
-            value: filtroOcupacao,
+              value: filtroOcupacao,
               isExpanded: true,
               underline: const SizedBox(),
               style: const TextStyle(fontSize: 13),
               isDense: true,
-            items: const [
-              DropdownMenuItem(value: 'Todos', child: Text('Todos')),
-              DropdownMenuItem(value: 'Livres', child: Text('Livres')),
-              DropdownMenuItem(value: 'Ocupados', child: Text('Ocupados')),
-            ],
-            onChanged: (value) {
-              if (value != null) onFiltroOcupacaoChanged(value);
-            },
-          ),
+              items: const [
+                DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                DropdownMenuItem(value: 'Livres', child: Text('Livres')),
+                DropdownMenuItem(value: 'Ocupados', child: Text('Ocupados')),
+              ],
+              onChanged: (value) {
+                if (value != null) onFiltroOcupacaoChanged(value);
+              },
+            ),
           ),
           const SizedBox(height: 14),
           Text(
@@ -155,25 +153,28 @@ class FiltrosSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             constraints: const BoxConstraints(minHeight: 36),
             child: DropdownButton<String>(
-            value: filtroEspecialidadeGabinete,
+              value: filtroEspecialidadeGabinete,
               isExpanded: true,
               underline: const SizedBox(),
               style: const TextStyle(fontSize: 13),
               isDense: true,
-            hint: const Text('Todas especialidades', style: TextStyle(fontSize: 13)),
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('Todas especialidades', style: TextStyle(fontSize: 13)),
-              ),
-              ...especialidadesGabinetes
-                  .map((especialidade) => DropdownMenuItem(
-                        value: especialidade,
-                        child: Text(especialidade, style: const TextStyle(fontSize: 13)),
-                      )),
-            ],
-            onChanged: onFiltroEspecialidadeGabineteChanged,
-          ),
+              hint: const Text('Todas especialidades',
+                  style: TextStyle(fontSize: 13)),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('Todas especialidades',
+                      style: TextStyle(fontSize: 13)),
+                ),
+                ...especialidadesGabinetes
+                    .map((especialidade) => DropdownMenuItem(
+                          value: especialidade,
+                          child: Text(especialidade,
+                              style: const TextStyle(fontSize: 13)),
+                        )),
+              ],
+              onChanged: onFiltroEspecialidadeGabineteChanged,
+            ),
           ),
           const SizedBox(height: 14),
           Container(
@@ -191,13 +192,14 @@ class FiltrosSection extends StatelessWidget {
                   fontSize: 13,
                 ),
               ),
-            controlAffinity: ListTileControlAffinity.leading,
-            value: mostrarConflitos,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: mostrarConflitos,
               activeColor: MyAppTheme.azulEscuro,
-            onChanged: (val) {
-              if (val != null) onMostrarConflitosChanged(val);
-            },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              onChanged: (val) {
+                if (val != null) onMostrarConflitosChanged(val);
+              },
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
               dense: true,
             ),
           ),

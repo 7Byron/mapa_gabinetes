@@ -62,12 +62,14 @@ void main() {
     });
   }
 
-  test('Mudança de referência mantém dados mas recalcula fase quinzenal', () {
+  test('Datas do mesmo ano reutilizam a matriz anual', () {
     guardar('a');
     final primeira = dados.matrizPara(referencia);
     final segunda = dados.matrizPara(DateTime(2026, 2, 9));
-    expect(primeira.itens.map((i) => i.dia), [1, 15, 29]);
-    expect(segunda.itens.map((i) => i.dia), [8, 22]);
+    expect(segunda, same(primeira));
+    expect(primeira.itens.single.dia, 1);
+    expect(primeira.itens.single.validadeFim, DateTime.utc(2026, 12, 31));
+    expect(dados.matrizPara(DateTime(2027)), isNot(same(primeira)));
     expect(dados.matrizPara(referencia), same(primeira));
     expect(MatrizDistribuicaoCacheService.buscar('a', versoes), same(dados));
   });
@@ -84,7 +86,7 @@ void main() {
     expect(matriz.itens.first.medicoNome, 'Maria');
     expect(matriz.itens.first.gabineteId, '101');
     expect(matriz.itens.first.inicioMinutos, 480);
-    expect(matriz.itens.length, 3);
+    expect(matriz.itens.length, 1);
   });
 
   test('Matriz vazia também fica em cache', () {

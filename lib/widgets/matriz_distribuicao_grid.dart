@@ -10,12 +10,14 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
   final List<Gabinete> gabinetes;
   final List<MatrizDistribuicaoItem> itens;
   final double zoom;
+  final int? ano;
 
   const MatrizDistribuicaoGrid({
     super.key,
     required this.gabinetes,
     required this.itens,
     this.zoom = 1.0,
+    this.ano,
   }) : assert(zoom > 0);
 
   @override
@@ -89,6 +91,8 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
                   fontSize: 11,
                   color: SerieTipoColors.para(item.tipo),
                   fontWeight: FontWeight.w600)),
+          if (item.periodo != null)
+            Text(item.periodo!, style: const TextStyle(fontSize: 10)),
           if (item.conflito)
             const Text('Possível coincidência',
                 style: TextStyle(fontSize: 10, color: MyAppTheme.vermelho)),
@@ -114,7 +118,9 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
     if (item.ciclo.contains('última')) {
       return '${feminino ? 'Última' : 'Último'} ${dias[dia]} do mês';
     }
-    final ocorrencia = (item.dia - 1) ~/ 7 + 1;
+    final ocorrencia = int.tryParse(
+            RegExp(r'(\d+)\.ª').firstMatch(item.ciclo)?.group(1) ?? '') ??
+        (item.dia - 1) ~/ 7 + 1;
     return '$ocorrencia.${feminino ? 'ª' : 'º'} ${dias[dia]} do mês';
   }
 
@@ -126,16 +132,18 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
     final gabinetes = widget.gabinetes;
     final porId = {for (final gabinete in gabinetes) gabinete.id: gabinete};
     final celulas = <String, List<MatrizDistribuicaoItem>>{};
-    // A projeção mantém as coincidências por semana; a apresentação reúne
-    // as ocorrências da mesma regra sem criar conflitos entre quinzenas alternadas.
-    final unicos = <(String, String, int, int, int), MatrizDistribuicaoItem>{};
+    // Reúne repetições sem perder períodos distintos da mesma regra.
+    final unicos = <(String, String, int, int, int, DateTime?, DateTime?),
+        MatrizDistribuicaoItem>{};
     for (final item in widget.itens) {
       final chave = (
         item.serieId,
         item.gabineteId,
         (item.dia - 1) % 7 + 1,
         item.inicioMinutos,
-        item.fimMinutos
+        item.fimMinutos,
+        item.validadeInicio,
+        item.validadeFim
       );
       if (!unicos.containsKey(chave) || item.conflito) unicos[chave] = item;
     }
@@ -180,8 +188,16 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
                           (constraints.maxWidth - larguraIdentificacao) / 7);
                       final larguraSemana = larguraDia * 7;
                       final larguraCartao = larguraDia - 14;
-                      final medidasCartoes =
-                          <(String, String, int, int, String, bool), double>{};
+                      final medidasCartoes = <(
+                        String,
+                        String,
+                        int,
+                        int,
+                        String,
+                        bool,
+                        String?
+                      ),
+                          double>{};
                       double medir(MatrizDistribuicaoItem item) =>
                           medidasCartoes.putIfAbsent((
                             item.medicoNome,
@@ -189,7 +205,8 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
                             item.inicioMinutos,
                             item.fimMinutos,
                             item.ciclo,
-                            item.conflito
+                            item.conflito,
+                            item.periodo
                           ), () => _alturaCartao(context, item, larguraCartao));
                       final alturas = <String, double>{};
                       final posicoes = <String, List<double>>{};
@@ -230,7 +247,10 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
                                                 vertical: BorderSide(
                                                     color:
                                                         Colors.blue.shade200))),
-                                        child: Text('Semana tipo',
+                                        child: Text(
+                                            widget.ano == null
+                                                ? 'Semana tipo'
+                                                : 'Semana tipo · ${widget.ano}',
                                             style: const TextStyle(
                                                 fontWeight: FontWeight.bold))),
                                     Row(children: [
@@ -481,6 +501,7 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
         _rotacao(item),
         const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)
       ),
+      if (item.periodo != null) (item.periodo!, const TextStyle(fontSize: 10)),
       if (item.conflito)
         ('Possível coincidência', const TextStyle(fontSize: 10)),
     ];

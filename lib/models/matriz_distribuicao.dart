@@ -10,6 +10,9 @@ class MatrizDistribuicaoItem {
   final int inicioMinutos;
   final int fimMinutos;
   final bool conflito;
+  final DateTime? validadeInicio;
+  final DateTime? validadeFim;
+  final Set<DateTime> ocorrencias;
 
   const MatrizDistribuicaoItem({
     required this.serieId,
@@ -23,7 +26,17 @@ class MatrizDistribuicaoItem {
     required this.inicioMinutos,
     required this.fimMinutos,
     this.conflito = false,
+    this.validadeInicio,
+    this.validadeFim,
+    this.ocorrencias = const {},
   });
+
+  String? get periodo => validadeInicio == null || validadeFim == null
+      ? null
+      : 'De ${_data(validadeInicio!)} a ${_data(validadeFim!)}';
+
+  static String _data(DateTime data) =>
+      '${data.day.toString().padLeft(2, '0')}/${data.month.toString().padLeft(2, '0')}/${data.year}';
 
   String get horario => '${_hora(inicioMinutos)} – ${_hora(fimMinutos)}';
   static String _hora(int minutos) =>
@@ -41,6 +54,9 @@ class MatrizDistribuicaoItem {
         inicioMinutos: inicioMinutos,
         fimMinutos: fimMinutos,
         conflito: true,
+        validadeInicio: validadeInicio,
+        validadeFim: validadeFim,
+        ocorrencias: ocorrencias,
       );
 }
 

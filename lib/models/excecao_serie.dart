@@ -22,6 +22,20 @@ class ExcecaoSerie {
     this.gabineteId,
   });
 
+  /// Exceções anteriores e de outras séries não pertencem à realocação.
+  /// O chamador persiste só gabineteId, preservando os restantes campos.
+  bool deveSubstituirGabineteNaRealocacao({
+    required String serieId,
+    required DateTime dataRef,
+    required String gabineteDestino,
+  }) {
+    final dia = DateTime(data.year, data.month, data.day);
+    final inicio = DateTime(dataRef.year, dataRef.month, dataRef.day);
+    return this.serieId == serieId &&
+        !dia.isBefore(inicio) &&
+        gabineteId != gabineteDestino;
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

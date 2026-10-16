@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
-import 'dart:convert';
 import '../models/gabinete.dart';
 import '../models/alocacao.dart';
 import '../models/medico.dart';
@@ -1330,47 +1328,6 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 '   - Alocação: id=${a.id}, gabinete=${a.gabineteId}, data=${a.data.day}/${a.data.month}/${a.data.year}');
                           }
 
-                          // #region agent log
-                          try {
-                            final logFile = await File(
-                                    '/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log')
-                                .open(mode: FileMode.append);
-                            await logFile.writeString('${jsonEncode({
-                                  "id":
-                                      "log_${DateTime.now().millisecondsSinceEpoch}",
-                                  "timestamp":
-                                      DateTime.now().millisecondsSinceEpoch,
-                                  "location":
-                                      "gabinetes_section.dart:onAcceptWithDetails:FASE1",
-                                  "message":
-                                      "FASE 1 - Busca em widget.alocacoes",
-                                  "data": {
-                                    "medicoId": medicoId,
-                                    "gabineteDestino": gabinete.id,
-                                    "dataAlvo":
-                                        "${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}",
-                                    "totalAlocacoes":
-                                        todasAlocacoesMedico.length,
-                                    "alocacoes": todasAlocacoesMedico
-                                        .map((a) => ({
-                                              "id": a.id,
-                                              "gabineteId": a.gabineteId,
-                                              "data":
-                                                  "${a.data.year}-${a.data.month}-${a.data.day}"
-                                            }))
-                                        .toList()
-                                  },
-                                  "sessionId": "debug-session",
-                                  "runId": "run1",
-                                  "hypothesisId": "H3"
-                                })}\n');
-                            await logFile.close();
-                          } catch (e) {
-                            debugPrint(
-                                '⚠️ Erro ao gravar debug log (FASE 1): $e');
-                          }
-                          // #endregion
-
                           // Se encontrou alocações, verificar se alguma está em outro gabinete
                           if (todasAlocacoesMedico.isNotEmpty) {
                             final alocacaoOutroGabinete =
@@ -1610,42 +1567,6 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                             debugPrint(
                                 '🟢 [DRAG-ACCEPT] Chamando _realocarMedicoEntreGabinetes: origem=${alocacaoEmOutroGabinete.gabineteId}, destino=${gabinete.id}');
 
-                            // #region agent log
-                            try {
-                              final logFile = await File(
-                                      '/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log')
-                                  .open(mode: FileMode.append);
-                              await logFile.writeString('${jsonEncode({
-                                    "id":
-                                        "log_${DateTime.now().millisecondsSinceEpoch}",
-                                    "timestamp":
-                                        DateTime.now().millisecondsSinceEpoch,
-                                    "location":
-                                        "gabinetes_section.dart:onAcceptWithDetails:ANTES_REALOCAR",
-                                    "message":
-                                        "Antes de chamar _realocarMedicoEntreGabinetes",
-                                    "data": {
-                                      "medicoId": medicoId,
-                                      "gabineteOrigem":
-                                          alocacaoEmOutroGabinete.gabineteId,
-                                      "gabineteDestino": gabinete.id,
-                                      "dataAlvo":
-                                          "${dataAlvo.year}-${dataAlvo.month}-${dataAlvo.day}",
-                                      "alocacaoId": alocacaoEmOutroGabinete.id,
-                                      "eTipoSerie": eTipoSerie,
-                                      "tipoDisponibilidade": tipoDisponibilidade
-                                    },
-                                    "sessionId": "debug-session",
-                                    "runId": "run1",
-                                    "hypothesisId": "H3"
-                                  })}\n');
-                              await logFile.close();
-                            } catch (e) {
-                              debugPrint(
-                                  '⚠️ Erro ao gravar debug log (ANTES_REALOCAR): $e');
-                            }
-                            // #endregion
-
                             await _realocarMedicoEntreGabinetes(
                               medicoId: medicoId,
                               gabineteOrigem:
@@ -1654,37 +1575,6 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               dataAlvo: dataAlvo,
                               alocacaoId: alocacaoEmOutroGabinete.id,
                             );
-
-                            // #region agent log
-                            try {
-                              final logFile = await File(
-                                      '/Users/byronrodrigues/Documents/Flutter Projects/mapa_gabinetes/.cursor/debug.log')
-                                  .open(mode: FileMode.append);
-                              await logFile.writeString('${jsonEncode({
-                                    "id":
-                                        "log_${DateTime.now().millisecondsSinceEpoch}",
-                                    "timestamp":
-                                        DateTime.now().millisecondsSinceEpoch,
-                                    "location":
-                                        "gabinetes_section.dart:onAcceptWithDetails:DEPOIS_REALOCAR",
-                                    "message":
-                                        "Depois de chamar _realocarMedicoEntreGabinetes",
-                                    "data": {
-                                      "medicoId": medicoId,
-                                      "gabineteOrigem":
-                                          alocacaoEmOutroGabinete.gabineteId,
-                                      "gabineteDestino": gabinete.id
-                                    },
-                                    "sessionId": "debug-session",
-                                    "runId": "run1",
-                                    "hypothesisId": "H3"
-                                  })}\n');
-                              await logFile.close();
-                            } catch (e) {
-                              debugPrint(
-                                  '⚠️ Erro ao gravar debug log (DEPOIS_REALOCAR): $e');
-                            }
-                            // #endregion
 
                             debugPrint(
                                 '✅ [DRAG-ACCEPT] _realocarMedicoEntreGabinetes concluído');

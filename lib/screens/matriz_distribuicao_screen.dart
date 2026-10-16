@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/gabinete.dart';
 import '../models/matriz_distribuicao.dart';
 import '../models/medico.dart';
@@ -203,22 +202,37 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
   }
 
   Future<void> _escolherReferencia() async {
-    final data = await showDatePicker(
-        context: context,
-        initialDate: _referencia,
-        firstDate: DateTime(2000),
-        lastDate: DateTime(2100, 12, 31),
-        helpText: 'Data de referência das regras habituais');
-    if (data == null || !mounted) return;
+    final ano = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ano da matriz'),
+        content: SizedBox(
+          width: 300,
+          height: 350,
+          child: YearPicker(
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2100),
+            selectedDate: _referencia,
+            onChanged: (data) => Navigator.of(context).pop(data.year),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'))
+        ],
+      ),
+    );
+    if (ano == null || !mounted) return;
     setState(() {
-      _referencia = data;
+      _referencia = DateTime(ano);
       _recalcular();
     });
   }
 
   Widget _tituloAppBar() => LayoutBuilder(builder: (context, constraints) {
         final compacto = constraints.maxWidth < 600;
-        final data = DateFormat('dd/MM/yyyy').format(_referencia);
+        final ano = _referencia.year;
         return Row(mainAxisSize: MainAxisSize.min, children: [
           const Flexible(
             child: Text('Matriz de Distribuição',
@@ -230,7 +244,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
           if (compacto)
             IconButton(
               onPressed: _escolherReferencia,
-              tooltip: 'Regras em vigor: $data',
+              tooltip: 'Ano da matriz: $ano',
               icon: const Icon(Icons.calendar_month_outlined),
             )
           else
@@ -241,7 +255,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
                   side: BorderSide(
                       color: Theme.of(context).colorScheme.onPrimary)),
               icon: const Icon(Icons.calendar_month_outlined, size: 18),
-              label: Text('Regras em vigor: $data'),
+              label: Text('Ano da matriz: $ano'),
             ),
           PopupMenuButton<String>(
             tooltip: _piso == null ? 'Todos os pisos' : 'Filtrar: $_piso',
@@ -260,7 +274,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
           if (_matriz.regrasSemGabinete.isNotEmpty)
             Tooltip(
               message:
-                  'Regras sem gabinete base: ${_matriz.regrasSemGabinete.join('; ')}.',
+                  'Períodos sem gabinete: ${_matriz.regrasSemGabinete.join('; ')}.',
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8),
                 child: Icon(Icons.info_outline, size: 20),
@@ -274,6 +288,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
             _gabinetes.where((g) => _piso == null || g.setor == _piso).toList(),
         itens: _matriz.itens,
         zoom: _zoom,
+        ano: _referencia.year,
       );
 
   @override

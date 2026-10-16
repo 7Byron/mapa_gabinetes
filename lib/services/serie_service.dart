@@ -272,26 +272,6 @@ class SerieService {
       final serieMap = serie.toMap();
       await serieRef.set(serieMap);
 
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-      // try {
-      //   final logEntry = {
-      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-      //     'location': 'serie_service.dart:salvarSerie',
-      //     'message': 'Série salva no Firestore',
-      //     'data': {
-      //       'serieId': serie.id,
-      //       'medicoId': serie.medicoId,
-      //       'gabineteId': serie.gabineteId,
-      //       'unidadeId': unidadeId,
-      //       'hypothesisId': 'F'
-      //     },
-      //     'sessionId': 'debug-session',
-      //     'runId': 'run1',
-      //   };
-      //   writeLogToFile(jsonEncode(logEntry));
-      // } catch (e) {}
-      // #endregion
-
       // Invalidar cache de séries após salvar
       invalidateCacheSeries(unidadeId, serie.medicoId);
       await CacheVersionService.bumpVersion(
@@ -303,6 +283,50 @@ class SerieService {
       debugPrint('❌ Erro ao salvar série: $e');
       rethrow;
     }
+  }
+
+  /// A mudança de período substitui os gabinetes pontuais já existentes.
+  /// Atualiza apenas gabineteId: ausências, cartões ocultos e horários mantêm-se.
+  static Future<void> salvarRealocacaoSerie(
+    SerieRecorrencia serie,
+    DateTime dataRef,
+    String gabineteDestino, {
+    Unidade? unidade,
+  }) async {
+    final unidadeId = unidade?.id ?? 'fyEj6kOXvCuL65sMfCaR';
+    final medicoRef = _firestore
+        .collection('unidades')
+        .doc(unidadeId)
+        .collection('ocupantes')
+        .doc(serie.medicoId);
+    // Inclui todos os anos, mesmo quando a série não tem data de fim.
+    final snapshot = await _firestore
+        .collectionGroup('registos')
+        .where('serieId', isEqualTo: serie.id)
+        .get(const GetOptions(source: Source.server));
+    final prefixo = '${medicoRef.path}/excecoes/';
+    final alteracoes = snapshot.docs.where((doc) {
+      if (!doc.reference.path.startsWith(prefixo)) return false;
+      return ExcecaoSerie.fromMap(doc.data())
+          .deveSubstituirGabineteNaRealocacao(
+        serieId: serie.id,
+        dataRef: dataRef,
+        gabineteDestino: gabineteDestino,
+      );
+    }).toList();
+
+    // Publicar a regra só depois de atualizar todas as exceções. Repetir uma
+    // tentativa interrompida é seguro, pois apenas o gabinete é substituído.
+    for (var inicio = 0; inicio < alteracoes.length; inicio += 450) {
+      final batch = _firestore.batch();
+      for (final doc in alteracoes.skip(inicio).take(450)) {
+        batch.update(doc.reference, {'gabineteId': gabineteDestino});
+      }
+      await batch.commit();
+    }
+    _invalidarCacheExcecoes(unidadeId, medicoId: serie.medicoId);
+    AlocacaoMedicosLogic.invalidateCacheFromDate(dataRef);
+    await salvarSerie(serie, unidade: unidade);
   }
 
   /// Persiste, numa única operação, apenas a numeração das séries antigas.
@@ -432,24 +456,6 @@ class SerieService {
       // Buscar apenas séries ativas (filtro na query para reduzir dados transferidos)
       // CORREÇÃO: Usar Source.server quando forçar servidor ou quando não há cache válido
 
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-      // try {
-      //   final logEntry = {
-      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-      //     'location': 'serie_service.dart:carregarSeries-antes-query',
-      //     'message': 'Antes de buscar séries do Firestore',
-      //     'data': {
-      //       'medicoId': medicoId,
-      //       'unidadeId': unidadeId,
-      //       'forcarServidor': forcarServidor,
-      //       'hypothesisId': 'G'
-      //     },
-      //     'sessionId': 'debug-session',
-      //     'runId': 'run1',
-      //   };
-      //   writeLogToFile(jsonEncode(logEntry));
-      // } catch (e) {}
-      // #endregion
       final source = forcarServidor ? Source.server : Source.serverAndCache;
       final series = <SerieRecorrencia>[];
       final seriesIdsProcessados = <String>{};
@@ -468,28 +474,6 @@ class SerieService {
         _log(
             '⚡ [OTIMIZAÇÃO] Tentando usar queries otimizadas para período: ${dataInicio.toString()} até ${dataFim.toString()}');
 
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-        // try {
-        //   final logEntry = {
-        //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-        //     'location': 'serie_service.dart:carregarSeries-otimizacao-tentativa',
-        //     'message': '⚡ Tentando usar queries otimizadas',
-        //     'data': {
-        //       'medicoId': medicoId,
-        //       'unidadeId': unidadeId,
-        //       'dataInicio': dataInicio?.toIso8601String(),
-        //       'dataFim': dataFim?.toIso8601String(),
-        //       'dataMinimaFiltro': dataMinimaFiltro.toIso8601String(),
-        //       'forcarServidor': forcarServidor,
-        //       'hypothesisId': 'OPT-1'
-        //     },
-        //     'sessionId': 'debug-session',
-        //     'runId': 'run1',
-        //   };
-        //   writeLogToFile(jsonEncode(logEntry));
-        // } catch (e) {}
-        // #endregion
-
         try {
           // Query 1: Séries com dataFim >= dataMinimaFiltro (séries que ainda estão ativas no período)
           // Isso exclui séries que já terminaram antes do período
@@ -501,24 +485,6 @@ class SerieService {
 
           _log(
               '📊 [OTIMIZAÇÃO] Query 1 (com dataFim): ${snapshotComDataFim.docs.length} séries encontradas');
-
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-          // try {
-          //   final logEntry = {
-          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-          //     'location': 'serie_service.dart:carregarSeries-otimizacao-query1',
-          //     'message': '📊 Query 1 (com dataFim) executada',
-          //     'data': {
-          //       'medicoId': medicoId,
-          //       'seriesEncontradas': snapshotComDataFim.docs.length,
-          //       'hypothesisId': 'OPT-1'
-          //     },
-          //     'sessionId': 'debug-session',
-          //     'runId': 'run1',
-          //   };
-          //   writeLogToFile(jsonEncode(logEntry));
-          // } catch (e) {}
-          // #endregion
 
           for (final doc in snapshotComDataFim.docs) {
             if (seriesIdsProcessados.contains(doc.id)) continue;
@@ -540,24 +506,6 @@ class SerieService {
           _log(
               '📊 [OTIMIZAÇÃO] Query 2 (infinitas): ${snapshotInfinitas.docs.length} séries encontradas');
 
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-          // try {
-          //   final logEntry = {
-          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-          //     'location': 'serie_service.dart:carregarSeries-otimizacao-query2',
-          //     'message': '📊 Query 2 (infinitas) executada',
-          //     'data': {
-          //       'medicoId': medicoId,
-          //       'seriesEncontradas': snapshotInfinitas.docs.length,
-          //       'hypothesisId': 'OPT-1'
-          //     },
-          //     'sessionId': 'debug-session',
-          //     'runId': 'run1',
-          //   };
-          //   writeLogToFile(jsonEncode(logEntry));
-          // } catch (e) {}
-          // #endregion
-
           for (final doc in snapshotInfinitas.docs) {
             if (seriesIdsProcessados.contains(doc.id)) continue;
             final data = doc.data();
@@ -571,48 +519,10 @@ class SerieService {
           usarQueryOtimizada = true;
           _log(
               '✅ [OTIMIZAÇÃO] Queries otimizadas executadas com sucesso! Total: ${series.length} séries');
-
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-          // try {
-          //   final logEntry = {
-          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-          //     'location': 'serie_service.dart:carregarSeries-otimizacao-sucesso',
-          //     'message': '✅ Queries otimizadas executadas com sucesso',
-          //     'data': {
-          //       'medicoId': medicoId,
-          //       'totalSeriesCarregadas': series.length,
-          //       'query1Count': snapshotComDataFim.docs.length,
-          //       'query2Count': snapshotInfinitas.docs.length,
-          //       'hypothesisId': 'OPT-1'
-          //     },
-          //     'sessionId': 'debug-session',
-          //     'runId': 'run1',
-          //   };
-          //   writeLogToFile(jsonEncode(logEntry));
-          // } catch (e) {}
-          // #endregion
         } catch (e) {
           // Se as queries otimizadas falharem (ex: índice não existe), usar query original
           _log(
               '⚠️ [OTIMIZAÇÃO] Queries otimizadas falharam ($e), usando query original (fallback seguro)');
-
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-          // try {
-          //   final logEntry = {
-          //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-          //     'location': 'serie_service.dart:carregarSeries-otimizacao-falha',
-          //     'message': '⚠️ Queries otimizadas falharam, usando fallback',
-          //     'data': {
-          //       'medicoId': medicoId,
-          //       'erro': e.toString(),
-          //       'hypothesisId': 'OPT-1'
-          //     },
-          //     'sessionId': 'debug-session',
-          //     'runId': 'run1',
-          //   };
-          //   writeLogToFile(jsonEncode(logEntry));
-          // } catch (e2) {}
-          // #endregion
 
           series.clear();
           seriesIdsProcessados.clear();
@@ -627,25 +537,6 @@ class SerieService {
         final snapshot = await seriesRef
             .where('ativo', isEqualTo: true)
             .get(GetOptions(source: source));
-
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-        // try {
-        //   final logEntry = {
-        //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-        //     'location': 'serie_service.dart:carregarSeries-query-original',
-        //     'message': '📊 Usando query original (sem otimização)',
-        //     'data': {
-        //       'medicoId': medicoId,
-        //       'totalDocsNoFirestore': snapshot.docs.length,
-        //       'motivo': dataInicio == null && dataFim == null ? 'sem_periodo' : 'otimizacao_falhou',
-        //       'hypothesisId': 'OPT-1'
-        //     },
-        //     'sessionId': 'debug-session',
-        //     'runId': 'run1',
-        //   };
-        //   writeLogToFile(jsonEncode(logEntry));
-        // } catch (e) {}
-        // #endregion
 
         for (final doc in snapshot.docs) {
           final data = doc.data();
@@ -673,26 +564,6 @@ class SerieService {
           final dataFimNormalizada =
               DateTime(dataFim.year, dataFim.month, dataFim.day);
           if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
-            // #region agent log (COMENTADO - pode ser reativado se necessário)
-            // try {
-            //   final logEntry = {
-            //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-            //     'location': 'serie_service.dart:153',
-            //     'message': '🔴 [HYP-B] Série filtrada - começou depois do dataFim',
-            //     'data': {
-            //       'serieId': serie.id,
-            //       'medicoId': serie.medicoId,
-            //       'serieTipo': serie.tipo,
-            //       'serieDataInicio': serieDataInicioNormalizada.toString(),
-            //       'dataFim': dataFimNormalizada.toString(),
-            //       'hypothesisId': 'B'
-            //     },
-            //     'sessionId': 'debug-session',
-            //     'runId': 'run1',
-            //   };
-            //   writeLogToFile(jsonEncode(logEntry));
-            // } catch (e) {}
-            // #endregion
             continue;
           }
         } else if (dataFim != null && dataInicio == null) {
@@ -703,26 +574,6 @@ class SerieService {
           final dataFimNormalizada =
               DateTime(dataFim.year, dataFim.month, dataFim.day);
           if (serieDataInicioNormalizada.isAfter(dataFimNormalizada)) {
-            // #region agent log (COMENTADO - pode ser reativado se necessário)
-            // try {
-            //   final logEntry = {
-            //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-            //     'location': 'serie_service.dart:153',
-            //     'message': '🔴 [HYP-B] Série filtrada - começou depois do dataFim (dataInicio null)',
-            //     'data': {
-            //       'serieId': serie.id,
-            //       'medicoId': serie.medicoId,
-            //       'serieTipo': serie.tipo,
-            //       'serieDataInicio': serieDataInicioNormalizada.toString(),
-            //       'dataFim': dataFimNormalizada.toString(),
-            //       'hypothesisId': 'B'
-            //     },
-            //     'sessionId': 'debug-session',
-            //     'runId': 'run1',
-            //   };
-            //   writeLogToFile(jsonEncode(logEntry));
-            // } catch (e) {}
-            // #endregion
             continue;
           }
         }
@@ -736,26 +587,6 @@ class SerieService {
             final dataInicioNormalizada =
                 DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
             if (serieDataFimNormalizada.isBefore(dataInicioNormalizada)) {
-              // #region agent log (COMENTADO - pode ser reativado se necessário)
-              // try {
-              //   final logEntry = {
-              //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-              //     'location': 'serie_service.dart:159',
-              //     'message': '🔴 [HYP-B] Série filtrada - terminou antes do dataInicio',
-              //     'data': {
-              //       'serieId': serie.id,
-              //       'medicoId': serie.medicoId,
-              //       'serieTipo': serie.tipo,
-              //       'serieDataFim': serieDataFimNormalizada.toString(),
-              //       'dataInicio': dataInicioNormalizada.toString(),
-              //       'hypothesisId': 'B'
-              //     },
-              //     'sessionId': 'debug-session',
-              //     'runId': 'run1',
-              //   };
-              //   writeLogToFile(jsonEncode(logEntry));
-              // } catch (e) {}
-              // #endregion
               continue; // Série terminou antes do período
             }
           }
@@ -764,101 +595,15 @@ class SerieService {
           // (já verificado acima com isAfter)
         }
 
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-        // try {
-        //   final logEntry = {
-        //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-        //     'location': 'serie_service.dart:168',
-        //     'message': '🟢 [HYP-B] Série adicionada à lista de retorno',
-        //     'data': {
-        //       'serieId': serie.id,
-        //       'medicoId': serie.medicoId,
-        //       'tipo': serie.tipo,
-        //       'dataInicio': serie.dataInicio.toString(),
-        //       'dataFim': serie.dataFim?.toString() ?? 'null',
-        //       'ativo': serie.ativo,
-        //       'hypothesisId': 'B'
-        //     },
-        //     'sessionId': 'debug-session',
-        //     'runId': 'run1',
-        //   };
-        //   writeLogToFile(jsonEncode(logEntry));
-        // } catch (e) {}
-        // #endregion
-
         seriesFiltradas.add(serie);
       }
 
       _log(
           '✅ [RESULTADO FINAL] Total de séries após filtros: ${seriesFiltradas.length} (de ${series.length} carregadas do Firestore)');
 
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-      // try {
-      //   final logEntry = {
-      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-      //     'location': 'serie_service.dart:carregarSeries-resultado-final',
-      //     'message': '✅ Resultado final - séries carregadas e filtradas',
-      //     'data': {
-      //       'medicoId': medicoId,
-      //       'totalSeriesCarregadasFirestore': series.length,
-      //       'totalSeriesFiltradas': seriesFiltradas.length,
-      //       'usarQueryOtimizada': usarQueryOtimizada,
-      //       'reducaoPercentual': series.length > 0 ? ((series.length - seriesFiltradas.length) / series.length * 100).toStringAsFixed(1) : '0',
-      //       'hypothesisId': 'OPT-1'
-      //     },
-      //     'sessionId': 'debug-session',
-      //     'runId': 'run1',
-      //   };
-      //   writeLogToFile(jsonEncode(logEntry));
-      // } catch (e) {}
-      // #endregion
-
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-      // try {
-      //   final logEntry = {
-      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-      //     'location': 'serie_service.dart:185',
-      //     'message': '🟢 [HYP-B] Total de séries retornadas',
-      //     'data': {
-      //       'medicoId': medicoId,
-      //       'totalSeries': seriesFiltradas.length,
-      //       'tipos': seriesFiltradas.map((s) => s.tipo).toList(),
-      //       'serieIds': seriesFiltradas.map((s) => s.id).toList(),
-      //       'hypothesisId': 'B'
-      //     },
-      //     'sessionId': 'debug-session',
-      //     'runId': 'run1',
-      //   };
-      //   writeLogToFile(jsonEncode(logEntry));
-      // } catch (e) {}
-      // #endregion
-
       // Armazenar no cache (armazenar todas as séries carregadas, não apenas as filtradas)
       // O filtro por período será feito quando necessário
       setSeriesInCache(unidadeId, medicoId, series);
-
-      // #region agent log (COMENTADO - pode ser reativado se necessário)
-      // try {
-      //   final logEntry = {
-      //     'timestamp': DateTime.now().millisecondsSinceEpoch,
-      //     'location': 'serie_service.dart:carregarSeries-retornar',
-      //     'message': 'Séries carregadas do Firestore e retornadas',
-      //     'data': {
-      //       'medicoId': medicoId,
-      //       'unidadeId': unidadeId,
-      //       'forcarServidor': forcarServidor,
-      //       'usarQueryOtimizada': usarQueryOtimizada,
-      //       'totalSeries': seriesFiltradas.length,
-      //       'seriesIds': seriesFiltradas.map((s) => s.id).toList(),
-      //       'seriesGabineteIds': seriesFiltradas.map((s) => s.gabineteId).toList(),
-      //       'hypothesisId': 'G'
-      //     },
-      //     'sessionId': 'debug-session',
-      //     'runId': 'run1',
-      //   };
-      //   writeLogToFile(jsonEncode(logEntry));
-      // } catch (e) {}
-      // #endregion
 
       return seriesFiltradas;
     } catch (e) {

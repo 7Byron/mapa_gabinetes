@@ -34,22 +34,24 @@ class MatrizDistribuicaoDados {
               tipo: s.tipo,
               horarios: List.from(s.horarios),
               gabineteId: s.gabineteId,
+              mudancasGabinete:
+                  SerieRecorrencia.fromMap(s.toMap()).mudancasGabinete,
               ativo: s.ativo,
               parametros: Map.from(s.parametros),
             )));
 
   MatrizDistribuicao matrizPara(DateTime referencia) {
-    final dia = DateTime(referencia.year, referencia.month, referencia.day);
+    final dia = DateTime(referencia.year);
     final cached = _matrizes[dia];
     if (cached != null) return cached;
-    final gerada = MatrizDistribuicaoService.gerar(
+    final gerada = MatrizDistribuicaoService.gerarAnual(
         medicos: _medicos, series: _series, referencia: dia);
     return _guardarMatriz(dia, gerada);
   }
 
   Future<MatrizDistribuicao> matrizParaProgressiva(DateTime referencia,
       {void Function(double)? onProgresso}) async {
-    final dia = DateTime(referencia.year, referencia.month, referencia.day);
+    final dia = DateTime(referencia.year);
     final cached = _matrizes[dia];
     if (cached != null) {
       onProgresso?.call(1);
@@ -59,7 +61,8 @@ class MatrizDistribuicaoDados {
         medicos: _medicos,
         series: _series,
         referencia: dia,
-        onProgresso: onProgresso);
+        onProgresso: onProgresso,
+        anual: true);
     return _guardarMatriz(dia, gerada);
   }
 

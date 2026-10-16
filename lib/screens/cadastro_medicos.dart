@@ -43,8 +43,7 @@ import '../utils/series_helper.dart';
 import '../utils/serie_numeracao_utils.dart';
 import '../utils/cadastro_medicos_helper.dart';
 import '../utils/alocacao_medicos_logic.dart';
-// import '../utils/ui_modificar_gabinete_cartao.dart'; // Comentado - não usado no momento
-// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
+
 import 'alocacao_medicos_screen.dart';
 
 class CadastroMedico extends StatefulWidget {
@@ -1033,30 +1032,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         series.isNotEmpty &&
         series.first.medicoId == medicoId;
 
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'cadastro_medicos.dart:_carregarDisponibilidadesFirestore',
-//        'message': 'Verificando séries já carregadas',
-//        'data': {
-//          'medicoId': medicoId,
-//          'forcarRecarregamentoSeries': forcarRecarregamentoSeries,
-//          'seriesJaCarregadas': seriesJaCarregadas,
-//          'totalSeriesLocal': series.length,
-//          'seriesIdsLocal': series.map((s) => s.id).toList(),
-//          'seriesGabineteIdsLocal': series.map((s) => s.gabineteId).toList(),
-//          'hypothesisId': 'D'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-
-// #endregion
-
     // NOVO MODELO: Apenas séries - carregar séries e gerar disponibilidades dinamicamente
     final disponibilidades = <Disponibilidade>[];
     try {
@@ -1094,58 +1069,9 @@ class CadastroMedicoState extends State<CadastroMedico> {
         if (onProgressoExterno != null) {
           onProgressoExterno(0.50, 'A carregar exceções...');
         }
-
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//        try {
-//          final logEntry = {
-//            'timestamp': DateTime.now().millisecondsSinceEpoch,
-//            'location': 'cadastro_medicos.dart:863',
-//            'message': '🟢 [HYP-D] Séries carregadas do servidor',
-//            'data': {
-//              'medicoId': medicoId,
-//              'totalSeries': seriesCarregadas.length,
-//              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
-//              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
-//              'seriesDataInicio':
-//                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
-//              'hypothesisId': 'D'
-//            },
-//            'sessionId': 'debug-session',
-//            'runId': 'run1',
-//          };
-//          writeLogToFile(jsonEncode(logEntry));
-//        } catch (e) {}
-
-// #endregion
       } else {
         // Usar séries já carregadas
         seriesCarregadas = series;
-
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//        try {
-//          final logEntry = {
-//            'timestamp': DateTime.now().millisecondsSinceEpoch,
-//            'location': 'cadastro_medicos.dart:866',
-//            'message':
-//                '🟡 [HYP-D] Usando séries já carregadas (NÃO recarregou do servidor)',
-//            'data': {
-//              'medicoId': medicoId,
-//              'totalSeries': seriesCarregadas.length,
-//              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
-//              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
-//              'seriesDataInicio':
-//                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
-//              'hypothesisId': 'D'
-//            },
-//            'sessionId': 'debug-session',
-//            'runId': 'run1',
-//          };
-//          writeLogToFile(jsonEncode(logEntry));
-//        } catch (e) {}
-
-// #endregion
       }
 
       // Migração retrocompatível: atribuir números estáveis às séries antigas
@@ -1186,33 +1112,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         // CORREÇÃO CRÍTICA: Se forcarRecarregamentoSeries é true, substituir completamente as séries
         // para garantir que séries atualizadas (ex: com novo gabineteId) substituam as antigas
         if (forcarRecarregamentoSeries) {
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//          try {
-//            final logEntry = {
-//              'timestamp': DateTime.now().millisecondsSinceEpoch,
-//              'location':
-//                  'cadastro_medicos.dart:_carregarDisponibilidadesFirestore-substituir-series',
-//              'message':
-//                  'Substituindo séries completamente (forcarRecarregamentoSeries=true)',
-//              'data': {
-//                'medicoId': medicoId,
-//                'seriesAntesTamanho': series.length,
-//                'seriesCarregadasTamanho': seriesCarregadas.length,
-//                'seriesCarregadasIds':
-//                    seriesCarregadas.map((s) => s.id).toList(),
-//                'seriesCarregadasGabineteIds':
-//                    seriesCarregadas.map((s) => s.gabineteId).toList(),
-//                'hypothesisId': 'H'
-//              },
-//              'sessionId': 'debug-session',
-//              'runId': 'run1',
-//            };
-//            writeLogToFile(jsonEncode(logEntry));
-//          } catch (e) {}
-
-// #endregion
-
           // Substituir completamente para garantir dados atualizados
           setState(() {
             series = seriesCarregadas;
@@ -1391,32 +1290,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
           onProgressoExterno(0.78, 'A gerar disponibilidades...');
         }
 
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//        try {
-//          final logEntry = {
-//            'timestamp': DateTime.now().millisecondsSinceEpoch,
-//            'location': 'cadastro_medicos.dart:1014',
-//            'message': '🔵 [HYP-C] Gerando disponibilidades - ANTES',
-//            'data': {
-//              'medicoId': medicoId,
-//              'totalSeries': seriesCarregadas.length,
-//              'seriesTipo': seriesCarregadas.map((s) => s.tipo).toList(),
-//              'seriesIds': seriesCarregadas.map((s) => s.id).toList(),
-//              'seriesDataInicio':
-//                  seriesCarregadas.map((s) => s.dataInicio.toString()).toList(),
-//              'periodoInicio': dataInicio.toString(),
-//              'periodoFim': dataFim.toString(),
-//              'hypothesisId': 'C'
-//            },
-//            'sessionId': 'debug-session',
-//            'runId': 'run1',
-//          };
-//          writeLogToFile(jsonEncode(logEntry));
-//        } catch (e) {}
-
-// #endregion
-
         final dispsGeradas = SerieGenerator.gerarDisponibilidades(
           series: seriesCarregadas,
           excecoes: excecoesCarregadas,
@@ -1428,28 +1301,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
         if (onProgressoExterno != null) {
           onProgressoExterno(0.85, 'A organizar dados...');
         }
-
-        // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//        try {
-//          final logEntry = {
-//            'timestamp': DateTime.now().millisecondsSinceEpoch,
-//            'location': 'cadastro_medicos.dart:1030',
-//            'message': '🟢 [HYP-C] Disponibilidades geradas - DEPOIS',
-//            'data': {
-//              'medicoId': medicoId,
-//              'totalDisponibilidades': dispsGeradas.length,
-//              'tipos': dispsGeradas.map((d) => d.tipo).toList(),
-//              'datas': dispsGeradas.map((d) => d.data.toString()).toList(),
-//              'hypothesisId': 'C'
-//            },
-//            'sessionId': 'debug-session',
-//            'runId': 'run1',
-//          };
-//          writeLogToFile(jsonEncode(logEntry));
-//        } catch (e) {}
-
-// #endregion
 
         if (mostrarProgressoInterno && mounted) {
           setState(() {
@@ -2560,28 +2411,6 @@ class CadastroMedicoState extends State<CadastroMedico> {
                   onAtualizarEstado: () async {
                     // CORREÇÃO: Não recarregar disponibilidades - já fizemos update otimista
                     // Apenas recarregar alocações para garantir sincronização com servidor
-                    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//                    try {
-//                      final logEntry = {
-//                        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//                        'location':
-//                            'cadastro_medicos.dart:onAtualizarEstado-realocacao',
-//                        'message':
-//                            'onAtualizarEstado chamado - recarregando apenas alocações',
-//                        'data': {
-//                          'medicoId': _medicoAtual?.id,
-//                          'anoVisualizado': _anoVisualizado,
-//                          'totalAlocacoesAntes': alocacoes.length,
-//                          'hypothesisId': 'P2'
-//                        },
-//                        'sessionId': 'debug-session',
-//                        'runId': 'run1',
-//                      };
-//                      writeLogToFile(jsonEncode(logEntry));
-//                    } catch (e) {}
-
-// #endregion
                     if (_medicoAtual != null &&
                         _anoVisualizado != null &&
                         mounted) {

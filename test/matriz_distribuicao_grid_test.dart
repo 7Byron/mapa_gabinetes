@@ -57,6 +57,46 @@ void main() {
     expect(find.byKey(const ValueKey('celula_101_8')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('Mostra períodos distintos no mesmo gabinete e rotação mensal',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+      body: MatrizDistribuicaoGrid(
+        ano: 2026,
+        gabinetes: [
+          Gabinete(
+              id: '101',
+              setor: 'Piso 1',
+              nome: '101',
+              especialidadesPermitidas: ['Psicologia'])
+        ],
+        itens: [
+          for (final mes in [2, 11])
+            MatrizDistribuicaoItem(
+                serieId: 'x',
+                medicoId: 'x',
+                medicoNome: 'Dr. X',
+                especialidade: 'Psicologia',
+                gabineteId: '101',
+                tipo: 'Mensal',
+                ciclo: 'Mensal · 2.ª semana',
+                dia: 1,
+                inicioMinutos: 540,
+                fimMinutos: 600,
+                validadeInicio: DateTime.utc(2026, mes),
+                validadeFim: DateTime.utc(2026, mes + 1, 0)),
+        ],
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Semana tipo · 2026'), findsOneWidget);
+    expect(find.text('Dr. X'), findsNWidgets(2));
+    expect(find.text('2.ª segunda-feira do mês'), findsNWidgets(2));
+    expect(find.text('De 01/02/2026 a 28/02/2026'), findsOneWidget);
+    expect(find.text('De 01/11/2026 a 30/11/2026'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Identificação com várias linhas cabe em gabinetes vazios',
       (tester) async {
     for (final escala in [1.0, 1.8]) {

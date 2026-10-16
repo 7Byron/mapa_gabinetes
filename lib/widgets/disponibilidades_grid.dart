@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-// import 'dart:convert'; // Comentado - usado apenas na instrumentação de debug
+
 import '../models/disponibilidade.dart';
 import '../models/alocacao.dart';
 import '../models/gabinete.dart';
@@ -17,7 +17,6 @@ import '../utils/serie_numeracao_utils.dart';
 import '../utils/series_helper.dart';
 import '../utils/excecoes_canceladas_utils.dart';
 import '../services/disponibilidade_data_gestao_service.dart';
-// import '../utils/debug_log_file.dart'; // Comentado - usado apenas na instrumentação de debug
 
 class DisponibilidadesGrid extends StatefulWidget {
   final List<Disponibilidade> disponibilidades;
@@ -110,25 +109,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
   @override
   void didUpdateWidget(DisponibilidadesGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'disponibilidades_grid.dart:didUpdateWidget',
-//        'message': 'didUpdateWidget chamado',
-//        'data': {
-//          'alocacoesAntes': oldWidget.alocacoes?.length ?? 0,
-//          'alocacoesDepois': widget.alocacoes?.length ?? 0,
-//          'hypothesisId': 'P1'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-
-// #endregion
 
     // CORREÇÃO: Detectar mudanças significativas nas alocações e forçar rebuild
     final currentHashList =
@@ -147,29 +127,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
             numAlocacoesAtual < numAlocacoesAntigo - 5;
 
         if (hashChanged || desalocacaoSignificativa) {
-          // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//          try {
-//            final logEntry = {
-//              'timestamp': DateTime.now().millisecondsSinceEpoch,
-//              'location': 'disponibilidades_grid.dart:didUpdateWidget',
-//              'message': 'Alocações mudaram - forçando rebuild',
-//              'data': {
-//                'alocacoesAntes': _lastAlocacoesHash!.length,
-//                'alocacoesDepois': currentHashList.length,
-//                'numAlocacoesAntigo': numAlocacoesAntigo,
-//                'numAlocacoesAtual': numAlocacoesAtual,
-//                'desalocacaoSignificativa': desalocacaoSignificativa,
-//                'rebuildCounter': _rebuildCounter + 1,
-//                'hypothesisId': 'P1'
-//              },
-//              'sessionId': 'debug-session',
-//              'runId': 'run1',
-//            };
-//            writeLogToFile(jsonEncode(logEntry));
-//          } catch (e) {}
-
-// #endregion
           _rebuildCounter++;
           _lastAlocacoesHash = currentHashList;
           // CORREÇÃO CRÍTICA: Sempre criar nova UniqueKey quando há desalocação significativa
@@ -475,26 +432,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
       ...?widget.alocacoes?.where((a) => !idsAusentes.contains(a.id)),
       ...ausentes.alocacoes,
     ];
-    // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//    try {
-//      final logEntry = {
-//        'timestamp': DateTime.now().millisecondsSinceEpoch,
-//        'location': 'disponibilidades_grid.dart:build',
-//        'message': 'DisponibilidadesGrid.build chamado',
-//        'data': {
-//          'totalAlocacoes': widget.alocacoes?.length ?? 0,
-//          'totalDisponibilidades': widget.disponibilidades.length,
-//          'rebuildCounter': _rebuildCounter,
-//          'hypothesisId': 'P1'
-//        },
-//        'sessionId': 'debug-session',
-//        'runId': 'run1',
-//      };
-//      writeLogToFile(jsonEncode(logEntry));
-//    } catch (e) {}
-
-// #endregion
 
     // CORREÇÃO CRÍTICA: Forçar rebuild completo quando as alocações mudam drasticamente
     // Calcular hash das alocações ANTES do LayoutBuilder para garantir detecção precisa
@@ -583,29 +520,6 @@ class DisponibilidadesGridState extends State<DisponibilidadesGrid> {
                 }
               }
             }
-            // #region agent log (COMENTADO - pode ser reativado se necessário)
-
-//            try {
-//              final logEntry = {
-//                'timestamp': DateTime.now().millisecondsSinceEpoch,
-//                'location': 'disponibilidades_grid.dart:itemBuilder',
-//                'message': 'Construindo cartão',
-//                'data': {
-//                  'index': index,
-//                  'disponibilidadeId': disponibilidade.id,
-//                  'data': disponibilidade.data.toString().substring(0, 10),
-//                  'gabineteKey': gabineteKey,
-//                  'totalAlocacoes': widget.alocacoes?.length ?? 0,
-//                  'alocacoesParaEsteDia': alocacoesDoDia.length,
-//                  'hypothesisId': 'P1'
-//                },
-//                'sessionId': 'debug-session',
-//                'runId': 'run1',
-//              };
-//              writeLogToFile(jsonEncode(logEntry));
-//            } catch (e) {}
-
-// #endregion
             // CORREÇÃO CRÍTICA: Incluir data na key para garantir que cada cartão tem uma key única
             // mesmo quando não há alocação (gabineteKey = 'sem_gabinete' para todos)
             // Isso força o Flutter a reconstruir todos os cartões quando as alocações mudam

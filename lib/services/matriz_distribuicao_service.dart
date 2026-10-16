@@ -2,10 +2,114 @@ import '../models/matriz_distribuicao.dart';
 import '../models/medico.dart';
 import '../models/serie_recorrencia.dart';
 import '../utils/time_utils.dart';
+import '../utils/series_helper.dart';
 
-/// Projeta apenas regras habituais num mês esquemático com dia 1 à segunda.
-/// Não recebe exceções, férias, alocações pontuais ou mudanças de gabinete.
+/// Projeta as regras habituais da distribuição, sem exceções pontuais ou férias.
 class MatrizDistribuicaoService {
+  /// Regras habituais do ano, separadas por períodos de gabinete.
+  /// Não inclui exceções pontuais nem férias.
+  static MatrizDistribuicao gerarAnual({
+    required List<Medico> medicos,
+    required List<SerieRecorrencia> series,
+    required DateTime referencia,
+  }) {
+    final anoInicio = DateTime.utc(referencia.year);
+    final anoFim = DateTime.utc(referencia.year, 12, 31);
+    final porId = {for (final m in medicos.where((m) => m.ativo)) m.id: m};
+    final itens = <MatrizDistribuicaoItem>[];
+    final semGabinete = <String>[];
+    for (final original in series) {
+      // Snapshot ordenado: não altera as regras partilhadas com outros ecrãs.
+      final serie = SerieRecorrencia.fromMap(original.toMap());
+      final medico = porId[serie.medicoId];
+      if (medico == null ||
+          !serie.ativo ||
+          !['Semanal', 'Quinzenal', 'Mensal'].contains(serie.tipo)) {
+        continue;
+      }
+      final ancora = _dia(serie.dataInicio);
+      final inicio = ancora.isAfter(anoInicio) ? ancora : anoInicio;
+      final fimRegra = serie.dataFim == null ? anoFim : _dia(serie.dataFim!);
+      final fim = fimRegra.isBefore(anoFim) ? fimRegra : anoFim;
+      if (inicio.isAfter(fim)) continue;
+      final limites = <DateTime>{inicio, fim.add(const Duration(days: 1))};
+      for (final mudanca in serie.mudancasGabinete) {
+        final data = _dia(mudanca.dataInicio);
+        if (data.isAfter(inicio) && !data.isAfter(fim)) limites.add(data);
+      }
+      final ordenados = limites.toList()..sort();
+      final ocorrencia = (ancora.day - 1) ~/ 7 + 1;
+      final ultima = (ocorrencia == 4 &&
+              serie.parametros['usarUltimoQuandoExiste5'] == true) ||
+          (ocorrencia == 5 &&
+              serie.parametros['usarUltimoQuandoNaoExiste5'] == true);
+      final ciclo = serie.tipo == 'Mensal'
+          ? (ultima
+              ? 'Mensal · última semana'
+              : 'Mensal · $ocorrencia.ª semana')
+          : serie.tipo;
+      final horarios = serie.horarios
+          .expand((h) => h.split(','))
+          .map((h) => h.trim())
+          .toList();
+      for (var segmento = 0; segmento + 1 < ordenados.length; segmento++) {
+        final de = ordenados[segmento];
+        final ate = ordenados[segmento + 1].subtract(const Duration(days: 1));
+        final datas = <DateTime>{};
+        for (var data = de;
+            !data.isAfter(ate);
+            data = data.add(const Duration(days: 1))) {
+          final corresponde = serie.tipo == 'Quinzenal'
+              ? data.difference(ancora).inDays % 14 == 0
+              : SeriesHelper.verificarDataCorrespondeAoPadraoSerie(data, serie);
+          if (corresponde) datas.add(data);
+        }
+        if (datas.isEmpty) continue;
+        final gabinete = serie.obterGabineteParaData(de);
+        if (gabinete == null || gabinete.trim().isEmpty) {
+          semGabinete.add('${medico.nome} · ${serie.tipo} · '
+              '${de.day}/${de.month}/${de.year} a ${ate.day}/${ate.month}/${ate.year}');
+          continue;
+        }
+        for (var h = 0; h + 1 < horarios.length; h += 2) {
+          final inicioMinutos = _minutos(horarios[h]);
+          final fimMinutos = _minutos(horarios[h + 1]);
+          if (inicioMinutos == null ||
+              fimMinutos == null ||
+              fimMinutos <= inicioMinutos) {
+            continue;
+          }
+          itens.add(MatrizDistribuicaoItem(
+            serieId: serie.id,
+            medicoId: medico.id,
+            medicoNome: medico.nome,
+            especialidade: medico.especialidade,
+            gabineteId: gabinete,
+            tipo: serie.tipo,
+            ciclo: ciclo,
+            dia: ancora.weekday,
+            inicioMinutos: inicioMinutos,
+            fimMinutos: fimMinutos,
+            validadeInicio: de,
+            validadeFim: ate,
+            ocorrencias: Set.unmodifiable(datas),
+          ));
+        }
+      }
+    }
+    final celulas = <String, List<MatrizDistribuicaoItem>>{};
+    for (final item in itens) {
+      celulas.putIfAbsent('${item.gabineteId}_${item.dia}', () => []).add(item);
+    }
+    return MatrizDistribuicao(
+      itens: celulas.values.expand(_marcarConflitos).toList(),
+      regrasSemGabinete: semGabinete,
+    );
+  }
+
+  static DateTime _dia(DateTime data) =>
+      DateTime.utc(data.year, data.month, data.day);
+
   static MatrizDistribuicao gerar({
     required List<Medico> medicos,
     required List<SerieRecorrencia> series,
@@ -36,7 +140,9 @@ class MatrizDistribuicaoService {
               DateTime.utc(fim.year, fim.month, fim.day).isBefore(hoje))) {
         continue;
       }
-      if (!['Semanal', 'Quinzenal', 'Mensal'].contains(serie.tipo)) continue;
+      if (!['Semanal', 'Quinzenal', 'Mensal'].contains(serie.tipo)) {
+        continue;
+      }
       // Usa deliberadamente o gabinete base da regra, sem realocações.
       final gabinete = serie.gabineteId;
       if (gabinete == null || gabinete.trim().isEmpty) {
@@ -121,7 +227,10 @@ class MatrizDistribuicaoService {
       final conflito = celula.any((outro) =>
           outro.medicoId != item.medicoId &&
           outro.inicioMinutos < item.fimMinutos &&
-          outro.fimMinutos > item.inicioMinutos);
+          outro.fimMinutos > item.inicioMinutos &&
+          (item.validadeInicio == null ||
+              outro.validadeInicio == null ||
+              item.ocorrencias.any(outro.ocorrencias.contains)));
       yield conflito ? item.comConflito() : item;
     }
   }
@@ -132,13 +241,15 @@ class MatrizDistribuicaoService {
     required List<SerieRecorrencia> series,
     required DateTime referencia,
     void Function(double)? onProgresso,
+    bool anual = false,
   }) async {
     final itens = <MatrizDistribuicaoItem>[];
     final semGabinete = <String>[];
     const tamanhoLote = 20;
     for (var inicio = 0; inicio < series.length; inicio += tamanhoLote) {
       final fim = (inicio + tamanhoLote).clamp(0, series.length);
-      final lote = gerar(
+      final gerarLote = anual ? gerarAnual : gerar;
+      final lote = gerarLote(
           medicos: medicos,
           series: series.sublist(inicio, fim),
           referencia: referencia);

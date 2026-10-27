@@ -1,8 +1,9 @@
 // Firebase Functions v1 (1st Gen) para manter compatibilidade com funções já criadas
 const functions = require('firebase-functions/v1');
-const admin = require('firebase-admin');
+const { initializeApp } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
 const { vistaDiariaJaSincronizada } = require('./vista_diaria_sync');
-admin.initializeApp();
+initializeApp();
 
 // Util: normaliza yyyy-MM-dd
 function dateKeyFromIso(iso) {
@@ -29,7 +30,7 @@ exports.onDisponibilidadeWrite = functions.firestore
       return null;
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const batch = db.batch();
 
     function upsert(dayKey, payload) {
@@ -92,7 +93,7 @@ exports.onAlocacaoWrite = functions.firestore
       return null;
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const batch = db.batch();
 
     function upsert(dayKey, payload) {

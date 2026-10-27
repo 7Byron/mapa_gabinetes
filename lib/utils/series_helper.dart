@@ -44,7 +44,10 @@ class SeriesHelper {
         return data.weekday == serie.dataInicio.weekday;
       case 'Quinzenal':
         // Para quinzenal, verificar se a diferença em dias é múltipla de 14
-        final diffDias = data.difference(serie.dataInicio).inDays;
+        final inicio = serie.dataInicio;
+        final diffDias = DateTime.utc(data.year, data.month, data.day)
+            .difference(DateTime.utc(inicio.year, inicio.month, inicio.day))
+            .inDays;
         return diffDias >= 0 && diffDias % 14 == 0;
       case 'Mensal':
         // Para mensal, verificar ocorrência e dia da semana (ex: 2ª sexta)

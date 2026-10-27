@@ -2,4 +2,4 @@
 ///
 /// Deve acompanhar o campo `version` do pubspec.yaml. O formato visual mantém
 /// o zero do mês para facilitar a leitura da data.
-const String appDisplayVersion = '2026.10.16+5';
+const String appDisplayVersion = '2026.10.27+6';

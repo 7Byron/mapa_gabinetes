@@ -360,7 +360,7 @@ class SerieGenerator {
     // Se a série começou antes ou no início do período solicitado
     if (base.isBefore(inicioNormalizado) ||
         base.isAtSameMomentAs(inicioNormalizado)) {
-      final diffInicio = inicioNormalizado.difference(base).inDays;
+      final diffInicio = _diasCalendarioEntre(inicioNormalizado, base);
 
       // CORREÇÃO CRÍTICA: Primeiro verificar se 'inicio' é uma quinzena válida
       // Se sim, usar inicio; caso contrário, calcular a próxima quinzena >= inicio
@@ -385,7 +385,7 @@ class SerieGenerator {
         if (dataAtual.isBefore(inicioNormalizado)) {
           dataAtual = inicioNormalizado;
           // Se inicio não é uma quinzena válida, avançar para a próxima
-          final diffDesdeBase = dataAtual.difference(base).inDays;
+          final diffDesdeBase = _diasCalendarioEntre(dataAtual, base);
           if (diffDesdeBase % 14 != 0 || dataAtual.weekday != weekday) {
             // Avançar para a próxima quinzena válida
             final quinzenasAteInicio = (diffInicio / 14).floor();
@@ -431,7 +431,7 @@ class SerieGenerator {
       // Verificar se está no período solicitado
       if (!dataAtual.isBefore(inicioNormalizado) &&
           dataAtual.isBefore(_addDias(fimNormalizado, 1))) {
-        final diff = dataAtual.difference(base).inDays;
+        final diff = _diasCalendarioEntre(dataAtual, base);
 
         // Verificar se é múltiplo de 14 dias e tem o weekday correto
         if (diff >= 0 && diff % 14 == 0 && dataAtual.weekday == weekday) {
@@ -711,6 +711,13 @@ class SerieGenerator {
   /// Gera chave de data no formato yyyy-MM-dd
   static String _dataKey(DateTime data) {
     return '${data.year}-${data.month.toString().padLeft(2, '0')}-${data.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Conta dias de calendário sem a hora perdida/ganha na mudança de horário.
+  static int _diasCalendarioEntre(DateTime data, DateTime base) {
+    return DateTime.utc(data.year, data.month, data.day)
+        .difference(DateTime.utc(base.year, base.month, base.day))
+        .inDays;
   }
 
   /// Soma dias preservando o dia local (evita drift por DST).

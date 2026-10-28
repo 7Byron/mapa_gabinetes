@@ -1,12 +1,13 @@
+import '../utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../models/alocacao.dart';
 import '../models/disponibilidade.dart';
 import '../models/medico.dart';
-import '../utils/app_theme.dart';
-import '../utils/medicos_disponiveis_layout_utils.dart';
+
 import '../widgets/medicos_disponiveis_section.dart';
 
 class MedicosDisponiveisContainer extends StatelessWidget {
+  final Widget resumo;
   final List<Medico> medicosDisponiveis;
   final List<Disponibilidade> disponibilidades;
   final List<Alocacao> alocacoes;
@@ -14,20 +15,19 @@ class MedicosDisponiveisContainer extends StatelessWidget {
   final DateTime selectedDate;
   final Future<void> Function(String medicoId, {String? alocacaoId})
       onDesalocarMedicoComPergunta;
-  final Function(String) onDesalocarMedico;
   final Function(Medico)? onEditarMedico;
   final VoidCallback onMostrarMedicosNaoAlocadosAno;
   final VoidCallback onMostrarConflitosAno;
 
   const MedicosDisponiveisContainer({
     super.key,
+    required this.resumo,
     required this.medicosDisponiveis,
     required this.disponibilidades,
     required this.alocacoes,
     required this.cartoesEmAlocacao,
     required this.selectedDate,
     required this.onDesalocarMedicoComPergunta,
-    required this.onDesalocarMedico,
     this.onEditarMedico,
     required this.onMostrarMedicosNaoAlocadosAno,
     required this.onMostrarConflitosAno,
@@ -58,139 +58,85 @@ class MedicosDisponiveisContainer extends StatelessWidget {
     );
   }
 
+  Widget _acoes() => Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          tooltip: 'Médicos não alocados no ano',
+          onPressed: onMostrarMedicosNaoAlocadosAno,
+          icon: const Icon(Icons.list_alt, size: 18, color: AppColors.acao),
+        ),
+        IconButton(
+          tooltip: 'Conflitos de gabinete no ano',
+          onPressed: onMostrarConflitosAno,
+          icon: const Icon(Icons.warning_amber_rounded,
+              size: 18, color: AppColors.textoConflito),
+        ),
+      ]);
+
   @override
   Widget build(BuildContext context) {
     final hasMedicos = medicosDisponiveis.isNotEmpty;
-    final idsDisponiveis = medicosDisponiveis.map((m) => m.id).toSet();
-    final dataSelecionada =
-        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-    final totalCartoes = disponibilidades.where((d) {
-      final data = DateTime(d.data.year, d.data.month, d.data.day);
-      return data == dataSelecionada && idsDisponiveis.contains(d.medicoId);
-    }).length;
-    final containerHeight =
-        MedicosDisponiveisLayoutUtils.calcularAlturaContainer(
-      totalMedicos: totalCartoes,
-    );
-
+    final escala = MediaQuery.textScalerOf(context).scale(13) / 13;
     return DragTarget<String>(
       onWillAcceptWithDetails: (details) => _podeDesalocar(details.data),
       onAcceptWithDetails: (details) => _desalocar(details.data),
       builder: (context, candidateData, rejectedData) {
         final isHovering = candidateData.isNotEmpty;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          constraints: hasMedicos
-              ? BoxConstraints(
-                  minHeight: containerHeight,
-                  maxHeight: containerHeight,
-                )
-              : null,
-          width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+        // Manter a zona de desalocação visível, mesmo sem médicos pendentes.
+        return Container(
           decoration: BoxDecoration(
-            color: isHovering ? Colors.blue.shade50 : MyAppTheme.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: isHovering
-                ? Border.all(color: MyAppTheme.azulEscuro, width: 3)
-                : null,
-            boxShadow: MyAppTheme.shadowCard,
+            color: isHovering ? AppColors.selecao : Colors.transparent,
+            border: isHovering ? Border.all(color: AppColors.acao) : null,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: MyAppTheme.azulEscuro.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.people_outline,
-                          size: 18,
-                          color: MyAppTheme.azulEscuro,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Médicos por Alocar',
-                        style: MyAppTheme.heading2.copyWith(
-                          fontSize: 17,
-                          color: MyAppTheme.azulEscuro,
-                        ),
-                      ),
-                      const Spacer(),
-                      Tooltip(
-                        message: 'Médicos não alocados no ano',
-                        child: InkWell(
-                          onTap: onMostrarMedicosNaoAlocadosAno,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color:
-                                  MyAppTheme.azulEscuro.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              Icons.list_alt,
-                              size: 18,
-                              color: MyAppTheme.azulEscuro,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Tooltip(
-                        message: 'Conflitos de gabinete no ano',
-                        child: InkWell(
-                          onTap: onMostrarConflitosAno,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              Icons.warning_amber_rounded,
-                              size: 18,
-                              color: Colors.red.shade700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            resumo,
+            Container(
+              key: const ValueKey('faixa_medicos_por_alocar'),
+              height: hasMedicos
+                  ? (escala > 1 ? 60 * escala + 16 : 76)
+                  : (escala > 1 ? 32 * escala + 16 : 48),
+              margin: const EdgeInsets.fromLTRB(20, 2, 20, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: isHovering ? AppColors.selecao : AppColors.superficie,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: isHovering ? AppColors.acao : AppColors.borda),
               ),
-              if (hasMedicos)
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    child: RepaintBoundary(
-                      child: MedicosDisponiveisSection(
-                        medicosDisponiveis: medicosDisponiveis,
-                        disponibilidades: disponibilidades,
-                        alocacoes: alocacoes,
-                        cartoesEmAlocacao: cartoesEmAlocacao,
-                        selectedDate: selectedDate,
-                        onDesalocarMedico: onDesalocarMedico,
-                        onEditarMedico: onEditarMedico,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+              child: LayoutBuilder(
+                  builder: (context, constraints) => Row(children: [
+                        if (hasMedicos && constraints.maxWidth > 600) ...[
+                          const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text('Por alocar',
+                                  style: TextStyle(
+                                      color: AppColors.texto,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600))),
+                          const SizedBox(width: 8),
+                        ],
+                        if (!hasMedicos)
+                          const Expanded(
+                              child: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            child: Text('Arraste um médico para desalocar',
+                                style: TextStyle(
+                                    fontSize: 12, color: AppColors.secundario)),
+                          ))
+                        else
+                          Expanded(
+                              child: RepaintBoundary(
+                                  child: MedicosDisponiveisSection(
+                            medicosDisponiveis: medicosDisponiveis,
+                            disponibilidades: disponibilidades,
+                            alocacoes: alocacoes,
+                            cartoesEmAlocacao: cartoesEmAlocacao,
+                            selectedDate: selectedDate,
+                            onEditarMedico: onEditarMedico,
+                          ))),
+                        _acoes(),
+                      ])),
+            ),
+          ]),
         );
       },
     );

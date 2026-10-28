@@ -14,16 +14,8 @@ class UnidadeService {
       await FirebaseInitService.ensureInitialized();
       debugPrint('🔍 Buscando unidades no Firebase...');
 
-      // Primeiro, vamos buscar todas as unidades sem filtro para debug
       final snapshotAll = await _firestore.collection('unidades').get();
-
-      debugPrint(
-          '📊 Total de documentos encontrados (sem filtro): ${snapshotAll.docs.length}');
-
-      for (final doc in snapshotAll.docs) {
-        debugPrint('📄 Documento ID: ${doc.id}');
-        debugPrint('📄 Dados completos: ${doc.data()}');
-      }
+      // Evitar registar documentos completos (incluem configurações de acesso).
 
       // Tentar buscar unidades ativas
       List<Unidade> unidades = [];

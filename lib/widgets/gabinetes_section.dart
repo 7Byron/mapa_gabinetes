@@ -1,3 +1,4 @@
+import '../utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../models/gabinete.dart';
 import '../models/alocacao.dart';
@@ -1839,10 +1840,10 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                           // Aplicar cores e estilos de hover quando há um cartão sendo arrastado
                           final corBordaHover =
                               isHovering ? MyAppTheme.azulEscuro : corBorda;
-                          final larguraBordaHover = isHovering ? 3.0 : 2.0;
+                          final larguraBordaHover = isHovering ? 1.5 : 1.0;
                           final corFundoHover = isHovering
                               ? (corFundo == MyAppTheme.gabineteLivre
-                                  ? MyAppTheme.azulClaro.withValues(alpha: 0.3)
+                                  ? AppColors.selecao
                                   : corFundo.withValues(alpha: 0.9))
                               : corFundo;
                           final sombraHover = isHovering
@@ -1857,7 +1858,7 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                               child: Card(
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(10),
                                   side: BorderSide(
                                     color: corBordaHover,
                                     width: larguraBordaHover,
@@ -1865,53 +1866,54 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                 ),
                                 color: corFundoHover,
                                 child: Container(
-                                  padding: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(10),
                                   height: 200,
                                   decoration: BoxDecoration(
                                     color: corFundoHover,
-                                    borderRadius: BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(10),
                                     boxShadow: sombraHover,
                                   ),
                                   child: Column(
                                     children: [
-                                      // Nome do gabinete e especialidade na mesma linha com ícone de status
-                                      Row(
-                                        children: [
-                                          // Ícone de status (ocupado/livre/conflito)
-                                          Icon(
-                                            alocacoesDoGabineteUnicas.isEmpty
-                                                ? Icons.check_circle_outline
-                                                : Icons.check_circle,
-                                            size: 14,
-                                            color: temConflitoGabinete
-                                                ? Colors.red.shade300
-                                                : alocacoesDoGabineteUnicas
-                                                        .isEmpty
-                                                    ? Colors.grey[400]
-                                                    : MyAppTheme.azulEscuro,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Expanded(
-                                            child: Text(
-                                              '${gabinete.nome} ${gabinete.especialidadesPermitidas.join(", ")}',
-                                              style: MyAppTheme.bodyMedium
-                                                  .copyWith(
-                                                fontSize: 12,
+                                      Row(children: [
+                                        Text(gabinete.nome,
+                                            style: const TextStyle(
+                                                fontSize: 13,
                                                 fontWeight: FontWeight.w600,
-                                                color: temConflitoGabinete
-                                                    ? Colors.red.shade700
-                                                    : alocacoesDoGabineteUnicas
-                                                            .isEmpty
-                                                        ? Colors.grey[700]
-                                                        : MyAppTheme.azulEscuro,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
+                                                color: AppColors.texto)),
+                                        if (temConflitoGabinete) ...[
+                                          const SizedBox(width: 4),
+                                          const Tooltip(
+                                            message: 'Conflito de horários',
+                                            child: Icon(
+                                                Icons.warning_amber_rounded,
+                                                size: 14,
+                                                color: AppColors.textoConflito),
                                           ),
                                         ],
-                                      ),
-                                      const SizedBox(height: 8),
+                                        if (gabinete.especialidadesPermitidas
+                                            .isNotEmpty) ...[
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                              child: Tooltip(
+                                            message: gabinete
+                                                .especialidadesPermitidas
+                                                .join(', '),
+                                            child: Text(
+                                                gabinete
+                                                    .especialidadesPermitidas
+                                                    .join(', '),
+                                                textAlign: TextAlign.right,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 10,
+                                                    color:
+                                                        AppColors.secundario)),
+                                          )),
+                                        ],
+                                      ]),
+                                      const SizedBox(height: 6),
                                       Expanded(
                                         child: CartoesGabineteLayout(
                                           horarioInicio:
@@ -1956,7 +1958,6 @@ class _GabinetesSectionState extends State<GabinetesSection> {
                                                 ausente
                                                     ? Colors.grey.shade200
                                                     : Colors.white,
-                                                true,
                                                 ausente: ausente,
                                                 corDestaque: corDestaque,
                                               );

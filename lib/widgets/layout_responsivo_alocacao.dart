@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/layout_responsivo_toggle.dart';
 import '../widgets/zoomable_container.dart';
+import '../utils/app_colors.dart';
+import 'painel_lateral_tema.dart';
 
 class LayoutResponsivoAlocacao extends StatelessWidget {
   final bool mostrarColunaEsquerda;
@@ -31,7 +33,11 @@ class LayoutResponsivoAlocacao extends StatelessWidget {
         ),
         Expanded(
           child: mostrarColunaEsquerda
-              ? colunaEsquerda
+              ? Theme(
+                  data: temaPainelLateral(context),
+                  child: Material(
+                      color: AppColors.navegacao,
+                      child: SingleChildScrollView(child: colunaEsquerda)))
               : ZoomableContainer(
                   zoomLevel: zoomLevel,
                   child: colunaDireita,

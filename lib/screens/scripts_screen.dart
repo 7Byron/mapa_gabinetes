@@ -1,8 +1,9 @@
+import '../utils/app_colors.dart';
+import '../utils/matriz_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
-import '../utils/app_theme.dart';
 
 /// Tela de scripts para operações diretas na base de dados do Firebase
 /// Apenas visível em modo debug
@@ -34,8 +35,8 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Scripts...'),
-          backgroundColor: MyAppTheme.azulEscuro,
-          foregroundColor: Colors.white,
+          backgroundColor: MatrizColors.barra,
+          foregroundColor: AppColors.texto,
         ),
         body: const Center(
           child: Text('Nenhuma unidade selecionada'),
@@ -51,12 +52,13 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Scripts...'),
-        backgroundColor: MyAppTheme.azulEscuro,
-        foregroundColor: Colors.white,
+        backgroundColor: MatrizColors.barra,
+        foregroundColor: AppColors.texto,
         actions: [
           if (kDebugMode)
             Tooltip(
-              message: 'Esta área permite executar scripts diretamente na base de dados do Firebase. Use com cuidado!',
+              message:
+                  'Esta área permite executar scripts diretamente na base de dados do Firebase. Use com cuidado!',
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Icon(Icons.warning, color: Colors.orange[300]),
@@ -83,7 +85,8 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
                 children: [
                   Text(
                     widget.unidade!.nome,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -94,7 +97,7 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Título da seção
             Text(
               'Documentos na coleção "ocupantes":',
@@ -105,7 +108,7 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Lista de documentos (visualização em árvore)
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
@@ -362,7 +365,8 @@ class _SubcolecaoSection extends StatelessWidget {
               padding: const EdgeInsets.only(left: 24, top: 4, bottom: 4),
               child: Row(
                 children: [
-                  Icon(Icons.insert_drive_file, size: 14, color: Colors.grey[600]),
+                  Icon(Icons.insert_drive_file,
+                      size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

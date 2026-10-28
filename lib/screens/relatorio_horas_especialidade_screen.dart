@@ -5,7 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:file_saver/file_saver.dart';
 import '../services/medico_salvar_service.dart';
 import '../services/relatorio_horas_excel_service.dart';
-import '../utils/app_theme.dart';
+import '../utils/matriz_colors.dart';
+import '../widgets/relatorio_layout.dart';
 
 import '../models/relatorio_horas_especialidade.dart';
 import '../models/unidade.dart';
@@ -135,7 +136,11 @@ class _RelatorioHorasEspecialidadeScreenState
     });
   }
 
-  Future<void> _carregarRelatorio({bool forcarServidor = false}) async {
+  Future<void> _carregarRelatorio({bool forcarServidor = false}) =>
+      CacheVersionService.comVersoesPartilhadas(
+          () => _carregarRelatorioInterno(forcarServidor: forcarServidor));
+
+  Future<void> _carregarRelatorioInterno({bool forcarServidor = false}) async {
     if (_selecionadas.isEmpty || _carregando) return;
     setState(() {
       _carregando = true;
@@ -353,16 +358,10 @@ class _RelatorioHorasEspecialidadeScreenState
         title: 'Horas de Especialidade',
         onRefresh: _forcarAtualizacao,
       ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1400),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _carregando ? _buildCarregamento() : _buildConteudo(),
-          ),
-        ),
-      ),
+      backgroundColor: MatrizColors.fundo,
+      body: _carregando && _especialidades.isEmpty
+          ? _buildCarregamento()
+          : _buildConteudo(),
     );
   }
 
@@ -393,139 +392,107 @@ class _RelatorioHorasEspecialidadeScreenState
   }
 
   Widget _quadro(Widget child) => Card(
+        color: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: MatrizColors.borda)),
         child: Padding(padding: const EdgeInsets.all(16), child: child),
       );
 
   Widget _buildConteudo() {
     final relatorio = _relatorio;
-    return ListView(children: [
-      _buildSelecaoCard(),
-      _buildFiltrosCard(),
-      Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Center(
-              child: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size(280, 60),
-                    textStyle: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold)),
-                onPressed: _selecionadas.isEmpty || _carregando || _exportando
-                    ? null
-                    : _carregarRelatorio,
-                icon: const Icon(Icons.assessment_outlined),
-                label: const Text('Gerar relatório'),
-              ),
-              OutlinedButton.icon(
-                style:
-                    OutlinedButton.styleFrom(minimumSize: const Size(180, 60)),
-                onPressed:
-                    relatorio == null || _exportando ? null : _exportarExcel,
-                icon: const Icon(Icons.download_outlined),
-                label: Text(_exportando ? 'A exportar…' : 'Exportar Excel'),
-              ),
-            ],
-          ))),
-      if (_erro != null)
-        _quadro(Column(children: [
-          Text(_erro!),
-          TextButton(
-              onPressed: _especialidades.isEmpty
-                  ? _carregarEspecialidades
-                  : _carregarRelatorio,
-              child: const Text('Tentar novamente')),
-        ]))
-      else if (_selecionadas.isEmpty)
-        _quadro(const Text(
-            'Selecione pelo menos uma especialidade para gerar o relatório.'))
-      else if (relatorio != null) ...[
-        _buildResumoCard(relatorio),
-        const SizedBox(height: 12),
-        _buildListaEspecialidades(relatorio),
+    return RelatorioLayout(
+      ocupado: _carregando || _exportando,
+      filtros: [
+        RelatorioPeriodoFiltros<PeriodoHorasEspecialidade>(
+          opcoes: [
+            for (final p in PeriodoHorasEspecialidade.values
+                .where((p) => p != PeriodoHorasEspecialidade.personalizado))
+              (p, _rotuloPeriodo(p))
+          ],
+          selecionado: _periodoSelecionado,
+          onChanged: (p) => setState(() {
+            _periodoSelecionado = p;
+            _dataReferencia = _inicioRelatorio;
+            _atualizarIntervalo();
+            _relatorio = null;
+            _erro = null;
+          }),
+          inicio: _buildBotaoData(inicial: true),
+          fim: _buildBotaoData(inicial: false),
+        ),
+        const Divider(),
+        RelatorioFiltroSecao(
+            titulo:
+                'Especialidades · ${_selecionadas.length}/${_especialidades.length}',
+            child: Column(children: [
+              if (_especialidades.isEmpty)
+                const Text(
+                    'Esta unidade não tem especialidades com médicos ativos.'),
+              CheckboxListTile(
+                  key: const ValueKey('relatorio_todas_especialidades'),
+                  title: const Text('Todas', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _selecionadas.length == _especialidades.length
+                      ? true
+                      : _selecionadas.isEmpty
+                          ? false
+                          : null,
+                  tristate: true,
+                  onChanged: (_) => _selecionarEspecialidades(_especialidades,
+                      _selecionadas.length != _especialidades.length)),
+              for (final especialidade in _especialidades)
+                CheckboxListTile(
+                    title: Text(especialidade,
+                        style: const TextStyle(fontSize: 12)),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _selecionadas.contains(especialidade),
+                    onChanged: (valor) => _selecionarEspecialidades(
+                        [especialidade], valor ?? false)),
+            ])),
       ],
-    ]);
+      acoes: RelatorioAcoes(
+        onGerar: _selecionadas.isEmpty || _carregando || _exportando
+            ? null
+            : _carregarRelatorio,
+        onExportar: relatorio == null || _exportando || _carregando
+            ? null
+            : _exportarExcel,
+        gerando: _carregando,
+        exportando: _exportando,
+      ),
+      resultado: _carregando
+          ? _buildCarregamento()
+          : _erro != null
+              ? Center(
+                  child:
+                      _quadro(Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(_erro!),
+                  TextButton(
+                      onPressed: _especialidades.isEmpty
+                          ? _carregarEspecialidades
+                          : _carregarRelatorio,
+                      child: const Text('Tentar novamente')),
+                ])))
+              : _selecionadas.isEmpty
+                  ? const RelatorioEstadoVazio(
+                      texto:
+                          'Selecione pelo menos uma especialidade para gerar o relatório.')
+                  : relatorio == null
+                      ? const RelatorioEstadoVazio()
+                      : ListView(children: [
+                          _buildResumoCard(relatorio),
+                          const SizedBox(height: 12),
+                          _buildListaEspecialidades(relatorio),
+                        ]),
+    );
   }
-
-  Widget _buildSelecaoCard() =>
-      _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        LayoutBuilder(builder: (context, constraints) {
-          final titulo = Text('1. Selecionar especialidades',
-              style: Theme.of(context).textTheme.titleLarge);
-          final acoes = Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                    '${_selecionadas.length} de ${_especialidades.length} selecionadas'),
-                TextButton(
-                    onPressed: () =>
-                        _selecionarEspecialidades(_especialidades, true),
-                    child: const Text('Selecionar todas')),
-                TextButton(
-                    onPressed: () =>
-                        _selecionarEspecialidades(_especialidades, false),
-                    child: const Text('Desselecionar todas')),
-              ]);
-          if (constraints.maxWidth >= 860) {
-            return Row(children: [titulo, const Spacer(), acoes]);
-          }
-          return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                titulo,
-                Align(alignment: Alignment.centerRight, child: acoes)
-              ]);
-        }),
-        const SizedBox(height: 12),
-        if (_especialidades.isEmpty)
-          const Text('Esta unidade não tem especialidades com médicos ativos.'),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final especialidade in _especialidades)
-            FilterChip(
-              label: Text(especialidade),
-              selected: _selecionadas.contains(especialidade),
-              backgroundColor: MyAppTheme.gabineteLivre,
-              selectedColor: MyAppTheme.gabineteOcupado,
-              side: const BorderSide(color: MyAppTheme.bordaGabineteOcupado),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              onSelected: (valor) =>
-                  _selecionarEspecialidades([especialidade], valor),
-            ),
-        ]),
-      ]));
-
-  Widget _buildFiltrosCard() =>
-      _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('2. Escolher período',
-            style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final periodo in PeriodoHorasEspecialidade.values
-              .where((p) => p != PeriodoHorasEspecialidade.personalizado))
-            ChoiceChip(
-                label: Text(_rotuloPeriodo(periodo)),
-                selected: _periodoSelecionado == periodo,
-                onSelected: (_) => setState(() {
-                      _periodoSelecionado = periodo;
-                      _dataReferencia = _inicioRelatorio;
-                      _atualizarIntervalo();
-                      _relatorio = null;
-                      _erro = null;
-                    })),
-        ]),
-        const SizedBox(height: 12),
-        Wrap(spacing: 12, runSpacing: 10, children: [
-          _buildBotaoData(inicial: true),
-          _buildBotaoData(inicial: false)
-        ]),
-      ]));
 
   Widget _buildBotaoData({required bool inicial}) => OutlinedButton.icon(
         onPressed: () => _selecionarData(inicial: inicial),
@@ -585,9 +552,9 @@ class _RelatorioHorasEspecialidadeScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: MatrizColors.identificacao,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.blue.shade100),
+        border: Border.all(color: MatrizColors.borda),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -596,7 +563,7 @@ class _RelatorioHorasEspecialidadeScreenState
           Text(
             titulo,
             style: TextStyle(
-              color: Colors.blueGrey.shade700,
+              color: MatrizColors.texto,
               fontSize: 12,
             ),
           ),
@@ -604,7 +571,7 @@ class _RelatorioHorasEspecialidadeScreenState
           Text(
             valor,
             style: TextStyle(
-              color: Colors.blue.shade900,
+              color: MatrizColors.iconeClaro,
               fontWeight: FontWeight.w700,
               fontSize: 14,
             ),

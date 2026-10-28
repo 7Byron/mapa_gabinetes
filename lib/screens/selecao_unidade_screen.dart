@@ -1,5 +1,7 @@
+import '../utils/app_colors.dart';
+import '../utils/app_version.dart';
+import '../utils/matriz_colors.dart';
 // lib/screens/selecao_unidade_screen.dart
-import '../utils/app_theme.dart';
 
 import 'package:flutter/material.dart';
 import '../models/unidade.dart';
@@ -200,7 +202,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: MyAppTheme.azulEscuro,
+              backgroundColor: AppColors.marca,
               foregroundColor: Colors.white,
             ),
             child: const Text('Confirmar'),
@@ -215,8 +217,8 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
     return Scaffold(
       appBar: AppBar(
         //title: const Text('AlocMap'),
-        backgroundColor: MyAppTheme.azulEscuro,
-        foregroundColor: Colors.white,
+        backgroundColor: MatrizColors.barra,
+        foregroundColor: AppColors.texto,
         elevation: 0,
       ),
       body: Column(
@@ -226,7 +228,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: const BoxDecoration(
-              color: MyAppTheme.azulEscuro,
+              color: AppColors.marca,
             ),
             child: Column(
               children: [
@@ -234,6 +236,16 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
                   'images/am_icon.png',
                   height: 80,
                   fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  appDisplayVersion,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                    letterSpacing: 0.3,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -268,7 +280,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
                   icon: const Icon(Icons.add),
                   label: const Text('Nova Unidade'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: MyAppTheme.azulEscuro,
+                    backgroundColor: AppColors.marca,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
@@ -341,7 +353,7 @@ class _SelecaoUnidadeScreenState extends State<SelecaoUnidadeScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Criar Primeira Unidade'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: MyAppTheme.azulEscuro,
+                backgroundColor: AppColors.marca,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,

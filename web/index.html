@@ -175,12 +175,18 @@
       document.addEventListener('DOMContentLoaded', async function() {
         const versionUrl = 'version.json';
         const storageKey = 'alocmap_web_version';
-        let loadedVersion = localStorage.getItem(storageKey);
+        function readStorage(storage, key) {
+          try { return window[storage].getItem(key); } catch (_) { return null; }
+        }
+        function writeStorage(storage, key, value) {
+          try { window[storage].setItem(key, value); } catch (_) { /* Armazenamento indisponível. */ }
+        }
+        let loadedVersion = readStorage('localStorage', storageKey);
 
         async function fetchPublishedVersion() {
           const response = await fetch(
             `${versionUrl}?t=${Date.now()}`,
-            { cache: 'no-store' }
+            { cache: 'no-store', signal: AbortSignal.timeout(4000) }
           );
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
@@ -189,9 +195,9 @@
 
         async function activateNewVersion(version) {
           const reloadKey = `alocmap_reloaded_${version}`;
-          if (sessionStorage.getItem(reloadKey) === '1') return;
-          sessionStorage.setItem(reloadKey, '1');
-          localStorage.setItem(storageKey, version);
+          if (readStorage('sessionStorage', reloadKey) === '1') return;
+          writeStorage('sessionStorage', reloadKey, '1');
+          writeStorage('localStorage', storageKey, version);
 
           // Retirar o service worker anterior antes da recarga para impedir
           // que volte a servir o bundle antigo.
@@ -214,7 +220,7 @@
               return publishedVersion;
             }
             loadedVersion = publishedVersion;
-            localStorage.setItem(storageKey, publishedVersion);
+            writeStorage('localStorage', storageKey, publishedVersion);
             return publishedVersion;
           } catch (error) {
             // Sem rede ou Hosting temporariamente indisponível: abrir a app

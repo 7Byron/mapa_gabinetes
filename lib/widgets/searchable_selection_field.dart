@@ -16,6 +16,7 @@ class SearchableSelectionField<T> extends StatelessWidget {
   final List<SearchableSelectionOption<T>> options;
   final String label;
   final String hint;
+  final bool showLabel;
   final String dialogTitle;
   final String searchHint;
   final IconData suffixIcon;
@@ -27,6 +28,7 @@ class SearchableSelectionField<T> extends StatelessWidget {
     required this.options,
     required this.label,
     required this.hint,
+    this.showLabel = true,
     required this.dialogTitle,
     required this.searchHint,
     required this.suffixIcon,
@@ -46,14 +48,15 @@ class SearchableSelectionField<T> extends StatelessWidget {
       child: InputDecorator(
         isEmpty: value == null,
         decoration: InputDecoration(
-          labelText: label,
+          labelText: showLabel ? label : null,
           // O campo apresenta sempre um texto próprio (placeholder ou valor).
           // Manter a legenda flutuante evita que ambos ocupem a mesma linha.
           floatingLabelBehavior: FloatingLabelBehavior.always,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey.shade400, width: 0.8),
+            borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.outline, width: 0.8),
           ),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -64,7 +67,9 @@ class SearchableSelectionField<T> extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: value == null ? Colors.grey.shade700 : null,
+            color: value == null
+                ? Theme.of(context).colorScheme.onSurfaceVariant
+                : null,
           ),
         ),
       ),

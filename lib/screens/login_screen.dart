@@ -1,5 +1,6 @@
+import '../utils/app_colors.dart';
+import '../utils/matriz_colors.dart';
 import 'package:flutter/material.dart';
-import '../utils/app_theme.dart';
 import 'package:flutter/foundation.dart';
 import '../services/password_service.dart';
 import '../services/unidade_selecionada_service.dart';
@@ -233,8 +234,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Aceder a ${widget.unidade.nome}'),
-        backgroundColor: MyAppTheme.azulEscuro,
-        foregroundColor: Colors.white,
+        backgroundColor: MatrizColors.barra,
+        foregroundColor: AppColors.marca,
         elevation: 0,
         actions: [
           IconButton(
@@ -260,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.orange,
+                        color: AppColors.marca,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Row(
@@ -293,7 +294,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: Colors.grey[600],
+                      color: AppColors.marca,
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -305,7 +306,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: MyAppTheme.azulEscuro,
+                      color: AppColors.marca,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -317,7 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey,
+                      color: AppColors.marca,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -328,7 +329,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Digite a password para aceder ao sistema',
                     style: TextStyle(
                       fontSize: 16,
-                      color: Colors.grey,
+                      color: AppColors.marca,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -344,8 +345,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Campo de password
                           TextFormField(
                             controller: _passwordController,
+                            style: const TextStyle(color: AppColors.marca),
                             decoration: InputDecoration(
                               labelText: 'Password',
+                              labelStyle:
+                                  const TextStyle(color: AppColors.marca),
+                              hintStyle:
+                                  const TextStyle(color: AppColors.marca),
+                              prefixIconColor: AppColors.marca,
+                              suffixIconColor: AppColors.marca,
+                              focusedBorder: const OutlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: AppColors.marca)),
                               border: const OutlineInputBorder(),
                               prefixIcon: const Icon(Icons.lock),
                               hintText:
@@ -388,14 +399,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                     _lembrarPassword = value ?? true;
                                   });
                                 },
-                                activeColor: MyAppTheme.azulEscuro,
+                                activeColor: AppColors.marca,
+                                side: const BorderSide(color: AppColors.marca),
                               ),
                               const Expanded(
                                 child: Text(
                                   'Lembrar password neste dispositivo',
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: Colors.grey,
+                                    color: AppColors.marca,
                                   ),
                                 ),
                               ),
@@ -409,7 +421,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _login,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: MyAppTheme.azulEscuro,
+                                backgroundColor: AppColors.marca,
                                 foregroundColor: Colors.white,
                                 // Aumento de 30% da altura: padding vertical de 16 -> 21 (16 * 1.3 ≈ 21)
                                 padding:
@@ -443,7 +455,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         : 'Utilize a password do projeto para acesso normal\nou a password do administrador para acesso completo',
                     style: const TextStyle(
                       fontSize: 12,
-                      color: Colors.grey,
+                      color: AppColors.marca,
                       fontStyle: FontStyle.italic,
                     ),
                     textAlign: TextAlign.center,

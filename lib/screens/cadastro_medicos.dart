@@ -1,3 +1,4 @@
+import '../utils/app_colors.dart';
 import '../utils/cadastro_persistencia_snapshot.dart';
 import 'dart:async';
 import '../utils/app_theme.dart';
@@ -4973,7 +4974,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                   onTap: () => Navigator.of(context).maybePop(),
                   child: const Padding(
                     padding: EdgeInsets.all(16.0),
-                    child: Icon(Icons.arrow_back, color: Colors.white),
+                    child: Icon(Icons.arrow_back, color: AppColors.texto),
                   ),
                 ),
               ),
@@ -4985,7 +4986,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                     onTap: () => _navegarParaAlocacao(),
                     child: const Padding(
                       padding: EdgeInsets.all(16.0),
-                      child: Icon(Icons.map, color: Colors.white, size: 22),
+                      child: Icon(Icons.map, color: AppColors.texto, size: 22),
                     ),
                   ),
                 ),
@@ -5001,18 +5002,18 @@ class CadastroMedicoState extends State<CadastroMedico> {
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.save, color: Colors.white),
+              icon: const Icon(Icons.save, color: AppColors.texto),
               tooltip: 'Salvar',
               onPressed: () => _salvarMedicoSemSair(),
             ),
             IconButton(
-              icon: const Icon(Icons.add, color: Colors.white),
+              icon: const Icon(Icons.add, color: AppColors.texto),
               tooltip: 'Novo médico',
               onPressed: () => _criarNovo(),
             ),
             if (_medicoAtual != null)
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.white),
+                icon: const Icon(Icons.delete_outline, color: AppColors.texto),
                 tooltip: 'Apagar médico',
                 onPressed: () => _mostrarDialogoApagarMedico(),
               ),

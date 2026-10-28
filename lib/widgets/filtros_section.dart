@@ -29,6 +29,12 @@ class FiltrosSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textoSeletor = TextStyle(
+      fontSize: 13,
+      color: Theme.of(context).brightness == Brightness.dark
+          ? Colors.white
+          : Theme.of(context).colorScheme.onSurface,
+    );
     return Padding(
       padding: const EdgeInsets.all(10), // Espaçamento interno reduzido
       child: Column(
@@ -45,7 +51,7 @@ class FiltrosSection extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.filter_list,
-                  color: MyAppTheme.azulEscuro,
+                  color: Theme.of(context).colorScheme.primary,
                   size: 18,
                 ),
               ),
@@ -54,7 +60,7 @@ class FiltrosSection extends StatelessWidget {
                 'Filtros',
                 style: MyAppTheme.heading2.copyWith(
                   fontSize: 16,
-                  color: MyAppTheme.azulEscuro,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ],
@@ -65,7 +71,7 @@ class FiltrosSection extends StatelessWidget {
             style: MyAppTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               fontSize: 14,
-              color: Colors.grey[800],
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
@@ -78,19 +84,22 @@ class FiltrosSection extends StatelessWidget {
                 label: Text(
                   setor,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.grey[800],
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurface,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                     fontSize: 12,
                   ),
                 ),
                 selected: isSelected,
                 onSelected: (selected) => onTogglePiso(setor, selected),
-                selectedColor: MyAppTheme.azulEscuro,
-                backgroundColor: Colors.grey.shade100,
-                checkmarkColor: Colors.white,
+                selectedColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                checkmarkColor: Theme.of(context).colorScheme.onPrimary,
                 side: BorderSide(
-                  color:
-                      isSelected ? MyAppTheme.azulEscuro : Colors.grey.shade300,
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.outline,
                   width: 0.5,
                 ),
                 shape: RoundedRectangleBorder(
@@ -106,15 +115,16 @@ class FiltrosSection extends StatelessWidget {
             style: MyAppTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               fontSize: 14,
-              color: Colors.grey[800],
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Container(
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300, width: 0.5),
+              border: Border.all(
+                  color: Theme.of(context).colorScheme.outline, width: 0.5),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             constraints: const BoxConstraints(minHeight: 36),
@@ -122,7 +132,7 @@ class FiltrosSection extends StatelessWidget {
               value: filtroOcupacao,
               isExpanded: true,
               underline: const SizedBox(),
-              style: const TextStyle(fontSize: 13),
+              style: textoSeletor,
               isDense: true,
               items: const [
                 DropdownMenuItem(value: 'Todos', child: Text('Todos')),
@@ -140,15 +150,16 @@ class FiltrosSection extends StatelessWidget {
             style: MyAppTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               fontSize: 14,
-              color: Colors.grey[800],
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Container(
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300, width: 0.5),
+              border: Border.all(
+                  color: Theme.of(context).colorScheme.outline, width: 0.5),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             constraints: const BoxConstraints(minHeight: 36),
@@ -156,15 +167,13 @@ class FiltrosSection extends StatelessWidget {
               value: filtroEspecialidadeGabinete,
               isExpanded: true,
               underline: const SizedBox(),
-              style: const TextStyle(fontSize: 13),
+              style: textoSeletor,
               isDense: true,
-              hint: const Text('Todas especialidades',
-                  style: TextStyle(fontSize: 13)),
+              hint: Text('Todas especialidades', style: textoSeletor),
               items: [
-                const DropdownMenuItem<String>(
+                DropdownMenuItem<String>(
                   value: null,
-                  child: Text('Todas especialidades',
-                      style: TextStyle(fontSize: 13)),
+                  child: Text('Todas especialidades', style: textoSeletor),
                 ),
                 ...especialidadesGabinetes
                     .map((especialidade) => DropdownMenuItem(
@@ -179,9 +188,10 @@ class FiltrosSection extends StatelessWidget {
           const SizedBox(height: 14),
           Container(
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300, width: 0.5),
+              border: Border.all(
+                  color: Theme.of(context).colorScheme.outline, width: 0.5),
             ),
             constraints: const BoxConstraints(minHeight: 40),
             child: CheckboxListTile(
@@ -190,11 +200,12 @@ class FiltrosSection extends StatelessWidget {
                 style: MyAppTheme.bodyMedium.copyWith(
                   fontWeight: FontWeight.w500,
                   fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               controlAffinity: ListTileControlAffinity.leading,
               value: mostrarConflitos,
-              activeColor: MyAppTheme.azulEscuro,
+              activeColor: Theme.of(context).colorScheme.primary,
               onChanged: (val) {
                 if (val != null) onMostrarConflitosChanged(val);
               },

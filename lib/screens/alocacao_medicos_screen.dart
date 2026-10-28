@@ -1,3 +1,4 @@
+import '../services/cache_version_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
@@ -321,7 +322,12 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     }
   }
 
-  Future<void> _carregarDadosIniciais({bool recarregarMedicos = false}) async {
+  Future<void> _carregarDadosIniciais({bool recarregarMedicos = false}) =>
+      CacheVersionService.comVersoesPartilhadas(() =>
+          _carregarDadosIniciaisInterno(recarregarMedicos: recarregarMedicos));
+
+  Future<void> _carregarDadosIniciaisInterno(
+      {bool recarregarMedicos = false}) async {
     // CORREÇÃO: Permitir carregamento mesmo se já estiver carregando se for refresh forçado
     // Mas ainda prevenir múltiplas chamadas simultâneas desnecessárias
     if (_isCarregandoDadosIniciais && !recarregarMedicos) {
@@ -868,7 +874,11 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
   bool _isUpdatingDate = false;
   DateTime? _lastUpdateDate;
 
-  Future<void> _onDateChanged(DateTime newDate) async {
+  Future<void> _onDateChanged(DateTime newDate) =>
+      CacheVersionService.comVersoesPartilhadas(
+          () => _onDateChangedInterno(newDate));
+
+  Future<void> _onDateChangedInterno(DateTime newDate) async {
     if (!mounted) return;
 
     // Verificar se é a mesma data (evitar atualizações desnecessárias)
@@ -1685,30 +1695,29 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
     // Se há dados, mostrar o conteúdo normal
     final gabinetesFiltrados = _getGabinetesFiltrados();
 
+    final resumo = EstatisticasAlocacaoCard(
+      data: AlocacaoEstatisticasService.calcular(
+        selectedDate: selectedDate,
+        alocacoes: alocacoes,
+        gabinetes: gabinetes,
+        numMedicosPorAlocar: medicosDisponiveis.length,
+      ),
+    );
     return Column(
       children: [
-        const SizedBox(height: 12),
-
-        // Widget de Estatísticas
-        EstatisticasAlocacaoCard(
-          data: AlocacaoEstatisticasService.calcular(
-            selectedDate: selectedDate,
-            alocacoes: alocacoes,
-            gabinetes: gabinetes,
-            numMedicosPorAlocar: medicosDisponiveis.length,
-          ),
-        ),
+        const SizedBox(height: 8),
+        if (!widget.isAdmin) resumo,
 
         // Seção de médicos disponíveis - apenas para administradores
         if (widget.isAdmin)
           MedicosDisponiveisContainer(
+            resumo: resumo,
             medicosDisponiveis: medicosDisponiveis,
             disponibilidades: disponibilidades,
             alocacoes: alocacoes,
             cartoesEmAlocacao: _cartoesEmAlocacao,
             selectedDate: selectedDate,
             onDesalocarMedicoComPergunta: _desalocarMedicoComPergunta,
-            onDesalocarMedico: (mId) => _desalocarMedicoDiaUnico(mId),
             onEditarMedico: widget.isAdmin ? _abrirCadastroMedico : null,
             onMostrarMedicosNaoAlocadosAno: _mostrarMedicosNaoAlocadosAno,
             onMostrarConflitosAno: _mostrarConflitosAno,

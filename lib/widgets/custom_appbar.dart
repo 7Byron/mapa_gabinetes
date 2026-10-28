@@ -1,3 +1,5 @@
+import '../utils/matriz_colors.dart';
+import '../utils/app_colors.dart';
 import 'package:flutter/material.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -7,6 +9,8 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onZoomOut;
   final double? currentZoom;
   final VoidCallback? onRefresh;
+  final Color? backgroundColor;
+  final Color refreshColor;
 
   const CustomAppBar({
     super.key,
@@ -16,22 +20,31 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onZoomOut,
     this.currentZoom,
     this.onRefresh,
+    this.backgroundColor = MatrizColors.barra,
+    this.refreshColor = MatrizColors.iconeClaro,
   });
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
       centerTitle: true,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      shape: const Border(bottom: BorderSide(color: AppColors.borda)),
+      backgroundColor: backgroundColor,
+      foregroundColor: AppColors.texto,
       title: titleWidget ??
           Text(
             title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
       actions: [
-        // Botão de refresh (laranja)
+        // Botão de atualizar
         if (onRefresh != null)
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.orange),
+            icon: Icon(Icons.refresh, color: refreshColor),
             onPressed: onRefresh,
             tooltip: 'Atualizar dados (limpar cache e recarregar)',
           ),

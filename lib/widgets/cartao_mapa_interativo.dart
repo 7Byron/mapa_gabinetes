@@ -109,7 +109,6 @@ class _CartaoMapaInterativoState extends State<CartaoMapaInterativo> {
         widget.medico,
         widget.horarios,
         widget.ausente ? Colors.grey.shade200 : Colors.white,
-        true,
         ausente: widget.ausente,
         corDestaque: widget.corDestaque,
       );

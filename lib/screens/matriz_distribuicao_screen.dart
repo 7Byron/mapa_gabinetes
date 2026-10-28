@@ -1,10 +1,13 @@
 import '../widgets/matriz_distribuicao_ajuda.dart';
 import 'package:flutter/material.dart';
 import '../models/gabinete.dart';
+import '../utils/matriz_colors.dart';
 import '../models/matriz_distribuicao.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../services/gabinete_service.dart';
+import '../services/alocacao_clinica_config_service.dart';
+import '../services/matriz_gabinetes_livres_service.dart';
 import '../services/matriz_distribuicao_cache_service.dart';
 import '../services/cache_version_service.dart';
 import '../services/matriz_progresso_controller.dart';
@@ -12,11 +15,13 @@ import '../services/medico_salvar_service.dart';
 import '../services/serie_service.dart';
 import '../widgets/custom_appbar.dart';
 import '../widgets/carregamento_overlay.dart';
-import '../widgets/matriz_distribuicao_grid.dart';
+import '../widgets/matriz_distribuicao_painel.dart';
 
 class MatrizDistribuicaoScreen extends StatefulWidget {
   final Unidade unidade;
-  const MatrizDistribuicaoScreen({super.key, required this.unidade});
+  final bool mostrarLivres;
+  const MatrizDistribuicaoScreen(
+      {super.key, required this.unidade, this.mostrarLivres = false});
 
   @override
   State<MatrizDistribuicaoScreen> createState() =>
@@ -24,12 +29,16 @@ class MatrizDistribuicaoScreen extends StatefulWidget {
 }
 
 class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
+  String get _titulo =>
+      widget.mostrarLivres ? 'Matriz Livre' : 'Matriz de ocupação';
+  ClinicaConfiguracoes? _config;
+  Set<DateTime> _encerramentos = {};
   List<Gabinete> _gabinetes = [];
   MatrizDistribuicaoDados? _dados;
   MatrizDistribuicao _matriz =
       const MatrizDistribuicao(itens: [], regrasSemGabinete: []);
   DateTime _referencia = DateTime.now();
-  String? _piso;
+  Set<String> _gabinetesOcultos = {};
   double _zoom = 1.0;
   bool _carregando = true;
   final _progresso = MatrizProgressoController();
@@ -80,7 +89,11 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
     setState(() => _carregando = false);
   }
 
-  Future<void> _carregar({bool atualizar = false}) async {
+  Future<void> _carregar({bool atualizar = false}) =>
+      CacheVersionService.comVersoesPartilhadas(
+          () => _carregarInterno(atualizar: atualizar));
+
+  Future<void> _carregarInterno({bool atualizar = false}) async {
     _progresso.iniciar();
     setState(() {
       _carregando = true;
@@ -97,6 +110,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
       }
       final revisaoAntesVerificacao =
           MatrizDistribuicaoCacheService.revisao(widget.unidade.id);
+      if (widget.mostrarLivres) await _carregarFuncionamento(atualizar);
       final versoes =
           await CacheVersionService.fetchVersions(unidadeId: widget.unidade.id);
       if (!mounted) return;
@@ -194,12 +208,44 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
   void _usarDados(MatrizDistribuicaoDados dados) {
     _dados = dados;
     _gabinetes = dados.gabinetes;
-    if (_piso != null && !_gabinetes.any((g) => g.setor == _piso)) _piso = null;
     _recalcular();
   }
 
   void _recalcular() {
-    if (_dados != null) _matriz = _dados!.matrizPara(_referencia);
+    if (_dados == null) return;
+    final ocupacao = _dados!.matrizPara(_referencia);
+    _matriz = widget.mostrarLivres && _config != null
+        ? MatrizGabinetesLivresService.gerar(
+            gabinetes: _gabinetes,
+            ocupacao: ocupacao,
+            ano: _referencia.year,
+            config: _config!,
+            encerramentos: _encerramentos)
+        : ocupacao;
+  }
+
+  Future<void> _carregarFuncionamento(bool atualizar) async {
+    final id = widget.unidade.id;
+    await AlocacaoClinicaConfigService.sincronizarVersao(id);
+    _config = await AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
+        unidadeId: id, forcarServidor: atualizar, verificarVersao: false);
+    final encerramentos =
+        await AlocacaoClinicaConfigService.carregarDiasEncerramento(
+            unidadeId: id,
+            anoSelecionado: _referencia.year,
+            forcarServidor: atualizar,
+            verificarVersao: false);
+    final feriados = _config!.encerraFeriados && !_config!.nuncaEncerra
+        ? await AlocacaoClinicaConfigService.carregarFeriados(
+            unidadeId: id,
+            anoSelecionado: _referencia.year,
+            forcarServidor: atualizar,
+            verificarVersao: false)
+        : <Map<String, String>>[];
+    _encerramentos = [...encerramentos, ...feriados]
+        .map((r) => DateTime.tryParse(r['data'] as String? ?? ''))
+        .whereType<DateTime>()
+        .toSet();
   }
 
   Future<void> _escolherReferencia() async {
@@ -225,78 +271,48 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
       ),
     );
     if (ano == null || !mounted) return;
+    if (widget.mostrarLivres) {
+      _referencia = DateTime(ano);
+      await _carregar();
+      return;
+    }
     setState(() {
       _referencia = DateTime(ano);
       _recalcular();
     });
   }
 
-  Widget _tituloAppBar() => LayoutBuilder(builder: (context, constraints) {
-        final compacto = constraints.maxWidth < 600;
-        final ano = _referencia.year;
-        return Row(mainAxisSize: MainAxisSize.min, children: [
-          const Flexible(
-            child: Text('Matriz de Distribuição',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          ),
-          const MatrizDistribuicaoAjuda(),
-          const SizedBox(width: 12),
-          if (compacto)
-            IconButton(
-              onPressed: _escolherReferencia,
-              tooltip: 'Ano da matriz: $ano',
-              icon: const Icon(Icons.calendar_month_outlined),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: _escolherReferencia,
-              style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  side: BorderSide(
-                      color: Theme.of(context).colorScheme.onPrimary)),
-              icon: const Icon(Icons.calendar_month_outlined, size: 18),
-              label: Text('Ano da matriz: $ano'),
-            ),
-          PopupMenuButton<String>(
-            tooltip: _piso == null ? 'Todos os pisos' : 'Filtrar: $_piso',
-            icon: Icon(
-                _piso == null ? Icons.filter_alt_outlined : Icons.filter_alt),
-            onSelected: (piso) =>
-                setState(() => _piso = piso == '__todos__' ? null : piso),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                  value: '__todos__', child: Text('Todos os pisos')),
-              for (final piso in _gabinetes.map((g) => g.setor).toSet())
-                PopupMenuItem(
-                    value: piso, child: Text(piso.isEmpty ? 'Sem piso' : piso)),
-            ],
-          ),
-          if (_matriz.regrasSemGabinete.isNotEmpty)
-            Tooltip(
-              message:
-                  'Períodos sem gabinete: ${_matriz.regrasSemGabinete.join('; ')}.',
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Icon(Icons.info_outline, size: 20),
-              ),
-            ),
-        ]);
-      });
+  Widget _tituloAppBar() => Row(mainAxisSize: MainAxisSize.min, children: [
+        Flexible(
+          child: Text(_titulo,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        ),
+        MatrizDistribuicaoAjuda(mostrarLivres: widget.mostrarLivres),
+      ]);
 
-  Widget _grelha() => MatrizDistribuicaoGrid(
-        gabinetes:
-            _gabinetes.where((g) => _piso == null || g.setor == _piso).toList(),
+  Widget _grelha() => MatrizDistribuicaoPainel(
+        gabinetes: _gabinetes,
         itens: _matriz.itens,
-        zoom: _zoom,
+        gabinetesOcultos: _gabinetesOcultos,
+        onOcultosChanged: (ocultos) =>
+            setState(() => _gabinetesOcultos = ocultos),
+        onEscolherAno: _escolherReferencia,
         ano: _referencia.year,
+        zoom: _zoom,
+        regrasSemGabinete: _matriz.regrasSemGabinete,
+        mostrarLivres: widget.mostrarLivres,
       );
 
   @override
   Widget build(BuildContext context) => Scaffold(
+        backgroundColor: MatrizColors.fundo,
         appBar: CustomAppBar(
-            title: 'Matriz de Distribuição',
+            backgroundColor: MatrizColors.barra,
+            refreshColor: MatrizColors.iconeClaro,
+            title: _titulo,
             titleWidget: _tituloAppBar(),
             currentZoom: _zoom,
             onZoomIn: () => setState(

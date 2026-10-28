@@ -1,158 +1,56 @@
 import 'package:flutter/material.dart';
 import '../models/estatisticas_alocacao.dart';
-import '../utils/app_theme.dart';
+import '../utils/app_colors.dart';
 
+/// Resumo numa linha; em ecrãs pequenos passa para duas linhas.
 class EstatisticasAlocacaoCard extends StatelessWidget {
   final EstatisticasAlocacaoData data;
-
-  const EstatisticasAlocacaoCard({
-    super.key,
-    required this.data,
-  });
+  const EstatisticasAlocacaoCard({super.key, required this.data});
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 600;
-
-        if (isNarrow) {
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: MyAppTheme.cardBackground,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: MyAppTheme.shadowCard,
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Expanded(
-                      child: _buildItem(
-                        data.numMedicosAlocados.toString(),
-                        'médicos alocados',
-                        MyAppTheme.azulEscuro,
-                      ),
-                    ),
-                    _buildDivisor(),
-                    Expanded(
-                      child: _buildItem(
-                        data.numMedicosPorAlocar.toString(),
-                        'médicos por alocar',
-                        MyAppTheme.laranja,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Expanded(
-                      child: _buildItem(
-                        data.numGabinetesOcupados.toString(),
-                        'gabinetes ocupados',
-                        MyAppTheme.verde,
-                      ),
-                    ),
-                    _buildDivisor(),
-                    Expanded(
-                      child: _buildItem(
-                        data.numGabinetesLivres.toString(),
-                        'gabinetes livres',
-                        MyAppTheme.cinzento,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: MyAppTheme.cardBackground,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: MyAppTheme.shadowCard,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              Expanded(
-                child: _buildItem(
-                  data.numMedicosAlocados.toString(),
-                  'médicos alocados',
-                  MyAppTheme.azulEscuro,
-                ),
-              ),
-              _buildDivisor(),
-              Expanded(
-                child: _buildItem(
-                  data.numMedicosPorAlocar.toString(),
-                  'médicos por alocar',
-                  MyAppTheme.laranja,
-                ),
-              ),
-              _buildDivisor(),
-              Expanded(
-                child: _buildItem(
-                  data.numGabinetesOcupados.toString(),
-                  'gabinetes ocupados',
-                  MyAppTheme.verde,
-                ),
-              ),
-              _buildDivisor(),
-              Expanded(
-                child: _buildItem(
-                  data.numGabinetesLivres.toString(),
-                  'gabinetes livres',
-                  MyAppTheme.cinzento,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildItem(String numero, String label, Color cor) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          numero,
-          style: MyAppTheme.heading2.copyWith(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: cor,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: MyAppTheme.bodySmall.copyWith(
-            fontSize: 11,
-            color: MyAppTheme.cinzento,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDivisor() {
+    final valores = [
+      (data.numMedicosAlocados, 'médicos alocados', AppColors.acao),
+      (data.numMedicosPorAlocar, 'por alocar', AppColors.textoAtencao),
+      (data.numGabinetesOcupados, 'gabinetes ocupados', AppColors.textoOcupado),
+      (data.numGabinetesLivres, 'livres', AppColors.acao),
+    ];
     return Container(
-      width: 1,
-      height: 40,
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      color: Colors.grey.shade300,
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.superficie,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.borda),
+      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final escala = MediaQuery.textScalerOf(context).scale(13) / 13;
+        final colunas = constraints.maxWidth >= 680 * escala
+            ? 4
+            : constraints.maxWidth >= 290 * escala
+                ? 2
+                : 1;
+        return Wrap(runSpacing: 8, children: [
+          for (final (numero, texto, cor) in valores)
+            SizedBox(
+                width: constraints.maxWidth / colunas,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text.rich(TextSpan(children: [
+                    TextSpan(
+                        text: '$numero ',
+                        style: TextStyle(
+                            color: cor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700)),
+                    TextSpan(
+                        text: texto,
+                        style: const TextStyle(
+                            color: AppColors.secundario, fontSize: 12)),
+                  ])),
+                )),
+        ]);
+      }),
     );
   }
 }

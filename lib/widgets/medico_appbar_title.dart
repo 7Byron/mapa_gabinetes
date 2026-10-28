@@ -1,3 +1,4 @@
+import '../utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../models/medico.dart';
 import '../utils/cadastro_medicos_helper.dart';
@@ -54,10 +55,10 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
         const SizedBox(width: 12),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.2),
+            color: AppColors.identificacao,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.3),
+              color: AppColors.borda,
               width: 1,
             ),
           ),
@@ -73,7 +74,8 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(AppColors.texto),
                         ),
                       ),
                     ),
@@ -85,7 +87,7 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                           enabled: false,
                           textAlignVertical: TextAlignVertical.center,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: AppColors.texto,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                             height: 1.0,
@@ -93,7 +95,7 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                           decoration: InputDecoration(
                             hintText: 'Pesquisar médico...',
                             hintStyle: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
+                              color: AppColors.texto.withValues(alpha: 0.5),
                               fontSize: 14,
                             ),
                             border: InputBorder.none,
@@ -109,23 +111,30 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                         height: 40,
                         child: Autocomplete<Medico>(
                           optionsBuilder: (TextEditingValue textEditingValue) {
-                            final texto = CadastroMedicosHelper.normalizarString(textEditingValue.text.trim());
+                            final texto =
+                                CadastroMedicosHelper.normalizarString(
+                                    textEditingValue.text.trim());
                             if (texto.isEmpty) {
                               return widget.listaMedicos;
                             }
-                            return widget.listaMedicos
-                                .where((medico) {
-                                  final nomeNormalizado = CadastroMedicosHelper.normalizarString(medico.nome);
-                                  return nomeNormalizado.contains(texto);
-                                })
-                                .toList()
+                            return widget.listaMedicos.where((medico) {
+                              final nomeNormalizado =
+                                  CadastroMedicosHelper.normalizarString(
+                                      medico.nome);
+                              return nomeNormalizado.contains(texto);
+                            }).toList()
                               ..sort((a, b) {
-                                final nomeA = CadastroMedicosHelper.normalizarString(a.nome);
-                                final nomeB = CadastroMedicosHelper.normalizarString(b.nome);
+                                final nomeA =
+                                    CadastroMedicosHelper.normalizarString(
+                                        a.nome);
+                                final nomeB =
+                                    CadastroMedicosHelper.normalizarString(
+                                        b.nome);
                                 return nomeA.compareTo(nomeB);
                               });
                           },
-                          displayStringForOption: (Medico medico) => medico.nome,
+                          displayStringForOption: (Medico medico) =>
+                              medico.nome,
                           onSelected: widget.onMedicoSelecionado,
                           fieldViewBuilder: (
                             BuildContext context,
@@ -144,15 +153,18 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                             return StatefulBuilder(
                               builder: (context, setStateLocal) {
                                 // CORREÇÃO: Remover listener anterior se existir
-                                final listenerAnterior = _listeners[textEditingController];
+                                final listenerAnterior =
+                                    _listeners[textEditingController];
                                 if (listenerAnterior != null) {
-                                  textEditingController.removeListener(listenerAnterior);
+                                  textEditingController
+                                      .removeListener(listenerAnterior);
                                 }
 
                                 // Criar novo listener
                                 void listener() {
                                   if (textEditingController.text !=
-                                      widget.medicoAutocompleteController.text) {
+                                      widget
+                                          .medicoAutocompleteController.text) {
                                     widget.medicoAutocompleteController.text =
                                         textEditingController.text;
                                   }
@@ -170,7 +182,7 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                                   focusNode: focusNode,
                                   textAlignVertical: TextAlignVertical.center,
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: AppColors.texto,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
                                     height: 1.0,
@@ -178,7 +190,8 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                                   decoration: InputDecoration(
                                     hintText: 'Pesquisar médico...',
                                     hintStyle: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.7),
+                                      color: AppColors.texto
+                                          .withValues(alpha: 0.7),
                                       fontSize: 14,
                                     ),
                                     border: InputBorder.none,
@@ -187,16 +200,20 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                                       vertical: 12,
                                     ),
                                     isDense: true,
-                                    suffixIcon: textEditingController.text.isNotEmpty
+                                    suffixIcon: textEditingController
+                                            .text.isNotEmpty
                                         ? IconButton(
                                             icon: Icon(
                                               Icons.clear,
                                               size: 18,
-                                              color: Colors.white.withValues(alpha: 0.8),
+                                              color: AppColors.texto
+                                                  .withValues(alpha: 0.8),
                                             ),
                                             onPressed: () {
                                               textEditingController.clear();
-                                              widget.medicoAutocompleteController.clear();
+                                              widget
+                                                  .medicoAutocompleteController
+                                                  .clear();
                                               setStateLocal(() {});
                                               focusNode.requestFocus();
                                             },
@@ -231,10 +248,14 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                                     shrinkWrap: true,
                                     padding: EdgeInsets.zero,
                                     itemCount: options.length,
-                                    itemBuilder: (BuildContext context, int index) {
-                                      final Medico medico = options.elementAt(index);
-                                      final bool isSelected = widget.medicoAtual != null &&
-                                          medico.id == widget.medicoAtual!.id;
+                                    itemBuilder:
+                                        (BuildContext context, int index) {
+                                      final Medico medico =
+                                          options.elementAt(index);
+                                      final bool isSelected =
+                                          widget.medicoAtual != null &&
+                                              medico.id ==
+                                                  widget.medicoAtual!.id;
                                       return InkWell(
                                         onTap: () {
                                           onSelected(medico);
@@ -246,7 +267,8 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
                                           ),
                                           decoration: BoxDecoration(
                                             color: isSelected
-                                                ? Colors.blue.withValues(alpha: 0.2)
+                                                ? Colors.blue
+                                                    .withValues(alpha: 0.2)
                                                 : Colors.transparent,
                                           ),
                                           child: Row(
@@ -292,7 +314,7 @@ class _MedicoAppBarTitleState extends State<MedicoAppBarTitle> {
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: AppColors.texto,
             ),
           ),
         ],

@@ -44,21 +44,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'AlocMap',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primaryColor: MyAppTheme.azulEscuro,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: MyAppTheme.azulEscuro,
-          primary: MyAppTheme.azulEscuro,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: MyAppTheme.azulEscuro,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        scaffoldBackgroundColor: Colors.white,
-        useMaterial3: true,
-        fontFamily: 'Montserrat',
-      ),
+      theme: MyAppTheme.claro,
       home: const AppBootstrap(),
     );
   }

@@ -116,13 +116,15 @@ class ColunaEsquerdaAlocacao extends StatelessWidget {
           ),
           Container(
             decoration: BoxDecoration(
-              color: MyAppTheme.cardBackground,
-              borderRadius: BorderRadius.circular(16),
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: Colors.grey.shade300,
-                width: 2,
+                color: Theme.of(context).colorScheme.outline,
+                width: 1,
               ),
-              boxShadow: MyAppTheme.shadowCard3D,
+              boxShadow: Theme.of(context).brightness == Brightness.dark
+                  ? const []
+                  : MyAppTheme.shadowCard,
             ),
             margin: const EdgeInsets.only(bottom: 16),
             clipBehavior: Clip.none,

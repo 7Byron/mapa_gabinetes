@@ -1,3 +1,21 @@
+class MatrizDisponibilidadePeriodo {
+  final String descricao;
+  final Set<DateTime> datas;
+  final Set<DateTime> excecoes;
+
+  const MatrizDisponibilidadePeriodo(
+      {required this.descricao, required this.datas, this.excecoes = const {}});
+
+  String? get observacao {
+    if (excecoes.isEmpty) return null;
+    final ordenadas = excecoes.toList()..sort();
+    return 'Exceto: ${ordenadas.map((d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}').join(', ')}';
+  }
+
+  String get resumo =>
+      observacao == null ? descricao : '$descricao\n$observacao';
+}
+
 class MatrizDistribuicaoItem {
   final String serieId;
   final String medicoId;
@@ -13,6 +31,7 @@ class MatrizDistribuicaoItem {
   final DateTime? validadeInicio;
   final DateTime? validadeFim;
   final Set<DateTime> ocorrencias;
+  final List<MatrizDisponibilidadePeriodo> disponibilidades;
 
   const MatrizDistribuicaoItem({
     required this.serieId,
@@ -29,6 +48,7 @@ class MatrizDistribuicaoItem {
     this.validadeInicio,
     this.validadeFim,
     this.ocorrencias = const {},
+    this.disponibilidades = const [],
   });
 
   String? get periodo {
@@ -69,6 +89,7 @@ class MatrizDistribuicaoItem {
         validadeInicio: validadeInicio,
         validadeFim: validadeFim,
         ocorrencias: ocorrencias,
+        disponibilidades: disponibilidades,
       );
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
+import '../widgets/horario_abertura_quadro.dart';
 import '../utils/ui_atualizar_dia.dart';
 
 /// Tela para configurar horários de funcionamento da clínica
@@ -14,7 +15,7 @@ import '../utils/ui_atualizar_dia.dart';
 /// - Checkbox "Nunca encerra" para clínicas 24h
 /// - Opções de encerramento por dia específico
 /// - Configuração de encerramento em feriados
-/// - Interface com largura máxima de 600px para melhor responsividade
+/// - Interface com largura máxima de 720px para melhor responsividade
 /// - Caixas uniformes para checkboxes "Encerrado" com estilo consistente
 
 class ConfigClinicaScreen extends StatefulWidget {
@@ -295,237 +296,40 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         appBar: CustomAppBar(title: 'Horário de Abertura'),
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
+            constraints: const BoxConstraints(maxWidth: 720),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    // Card principal com todas as configurações
-                    Card(
-                      color: Colors.blue.shade50,
-                      margin: const EdgeInsets.all(8.0),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Checkbox Nunca Encerra
-                            CheckboxListTile(
-                              title: const Text(
-                                'Nunca encerra',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 16),
-                              ),
-                              value: nuncaEncerra,
-                              onChanged: (bool? value) {
-                                setState(() {
-                                  nuncaEncerra = value ?? false;
-                                  // Se "nunca encerra" está ativo, desativa todas as outras opções
-                                  if (nuncaEncerra) {
-                                    for (int i = 1; i <= 7; i++) {
-                                      encerraDias[i] = false;
-                                    }
-                                    encerraFeriados = false;
-                                  }
-                                });
-                                _gravarAlteracoes();
-                              },
-                              controlAffinity: ListTileControlAffinity.leading,
-                            ),
-
-                            const Divider(),
-
-                            // Configurações por dia da semana
-                            if (!nuncaEncerra) ...[
-                              // Cabeçalho da tabela
-                              Row(
-                                children: [
-                                  SizedBox(
-                                    width: 80,
-                                    child: const Text(
-                                      'Dia',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  SizedBox(
-                                    width: 70,
-                                    child: const Text(
-                                      'Início',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  SizedBox(
-                                    width: 70,
-                                    child: const Text(
-                                      'Fim',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  SizedBox(
-                                    width: 70,
-                                    child: const Text(
-                                      'Encerrado',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                      width:
-                                          48), // Espaço para o botão eliminar
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Linhas dos dias da semana
-                              for (int ds = 1; ds <= 7; ds++) ...[
-                                Row(
-                                  children: [
-                                    // Nome do dia
-                                    SizedBox(
-                                      width: 80,
-                                      child: Text(diasSemana[ds - 1]),
-                                    ),
-
-                                    const SizedBox(width: 8),
-
-                                    // Horário de início
-                                    SizedBox(
-                                      width: 70,
-                                      child: InkWell(
-                                        onTap: () => _escolherHora(ds, true),
-                                        child: InputDecorator(
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          child: Text(horarios[ds]![0]),
-                                        ),
-                                      ),
-                                    ),
-
-                                    const SizedBox(width: 8),
-
-                                    // Horário de fim
-                                    SizedBox(
-                                      width: 70,
-                                      child: InkWell(
-                                        onTap: () => _escolherHora(ds, false),
-                                        child: InputDecorator(
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          child: Text(horarios[ds]![1]),
-                                        ),
-                                      ),
-                                    ),
-
-                                    const SizedBox(width: 8),
-
-                                    // Checkbox Encerrado (à direita)
-                                    SizedBox(
-                                      width: 70,
-                                      child: Center(
-                                        child: Checkbox(
-                                          value: encerraDias[ds],
-                                          onChanged: (bool? value) {
-                                            setState(() {
-                                              encerraDias[ds] = value ?? false;
-                                            });
-                                            _gravarAlteracoes();
-                                          },
-                                        ),
-                                      ),
-                                    ),
-
-                                    // Botão eliminar
-                                    IconButton(
-                                      tooltip: "Eliminar",
-                                      icon: const Icon(Icons.delete,
-                                          color: Colors.red),
-                                      onPressed: () => _apagarHorarios(ds),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                              ],
-
-                              const Divider(),
-
-                              // Configuração para Feriados
-                              Row(
-                                children: [
-                                  // Nome "Feriados"
-                                  SizedBox(
-                                    width: 80,
-                                    child: const Text('Feriados'),
-                                  ),
-
-                                  const SizedBox(width: 8),
-
-                                  // Horário de início (desabilitado para feriados)
-                                  SizedBox(
-                                    width: 70,
-                                    child: InputDecorator(
-                                      decoration: const InputDecoration(
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      child: const Text(''),
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 8),
-
-                                  // Horário de fim (desabilitado para feriados)
-                                  SizedBox(
-                                    width: 70,
-                                    child: InputDecorator(
-                                      decoration: const InputDecoration(
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      child: const Text(''),
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 8),
-
-                                  // Checkbox Encerrado para feriados (à direita)
-                                  SizedBox(
-                                    width: 70,
-                                    child: Center(
-                                      child: Checkbox(
-                                        value: encerraFeriados,
-                                        onChanged: (bool? value) {
-                                          setState(() {
-                                            encerraFeriados = value ?? false;
-                                          });
-                                          _gravarAlteracoes();
-                                        },
-                                      ),
-                                    ),
-                                  ),
-
-                                  // Espaço vazio para alinhar com os outros dias
-                                  const SizedBox(width: 48),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                    HorarioAberturaQuadro(
+                      horarios: horarios,
+                      diasSemana: diasSemana,
+                      nuncaEncerra: nuncaEncerra,
+                      encerraDias: encerraDias,
+                      encerraFeriados: encerraFeriados,
+                      onNuncaEncerraChanged: (valor) {
+                        setState(() {
+                          nuncaEncerra = valor;
+                          if (nuncaEncerra) {
+                            for (var dia = 1; dia <= 7; dia++) {
+                              encerraDias[dia] = false;
+                            }
+                            encerraFeriados = false;
+                          }
+                        });
+                        _gravarAlteracoes();
+                      },
+                      onEncerradoChanged: (dia, valor) {
+                        setState(() => encerraDias[dia] = valor);
+                        _gravarAlteracoes();
+                      },
+                      onFeriadosChanged: (valor) {
+                        setState(() => encerraFeriados = valor);
+                        _gravarAlteracoes();
+                      },
+                      onEscolherHora: _escolherHora,
+                      onApagar: _apagarHorarios,
                     ),
                   ],
                 ),

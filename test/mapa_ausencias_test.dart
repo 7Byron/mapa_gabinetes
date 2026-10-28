@@ -93,7 +93,7 @@ void main() {
             body: SizedBox(
       width: 200,
       child: MedicoCard.buildSmallMedicoCard(
-          medico, '09:00 - 13:00', Colors.white, true,
+          medico, '09:00 - 13:00', Colors.white,
           ausente: true),
     ))));
     expect(find.text('Ausente'), findsOneWidget);

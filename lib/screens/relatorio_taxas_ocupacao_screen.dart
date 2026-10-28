@@ -1,3 +1,4 @@
+import '../services/cache_version_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_saver/file_saver.dart';
@@ -8,6 +9,8 @@ import '../models/unidade.dart';
 import '../services/gabinete_service.dart';
 import '../services/relatorio_taxas_ocupacao_service.dart';
 import '../widgets/custom_appbar.dart';
+import '../widgets/relatorio_layout.dart';
+import '../utils/matriz_colors.dart';
 import '../utils/app_theme.dart';
 
 enum PeriodoTaxas { semana, mes, trimestre, semestre, ano, personalizado }
@@ -103,7 +106,10 @@ class _RelatorioTaxasOcupacaoScreenState
     }
   }
 
-  Future<void> _calcular() async {
+  Future<void> _calcular() =>
+      CacheVersionService.comVersoesPartilhadas(_calcularInterno);
+
+  Future<void> _calcularInterno() async {
     if (_selecionados.isEmpty || _calculando) return;
     final pedido = ++_pedido;
     final inicio = _inicio;
@@ -172,16 +178,6 @@ class _RelatorioTaxasOcupacaoScreenState
     } finally {
       if (mounted) setState(() => _exportando = false);
     }
-  }
-
-  void _selecionar(Iterable<String> ids, bool valor) {
-    setState(() {
-      if (valor) {
-        _selecionados.addAll(ids);
-      } else {
-        _selecionados.removeAll(ids);
-      }
-    });
   }
 
   Future<void> _escolherData({required bool inicial}) async {
@@ -271,282 +267,144 @@ class _RelatorioTaxasOcupacaoScreenState
   }
 
   Widget _quadro(Widget child) => Card(
+        color: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: MatrizColors.borda)),
         child: Padding(padding: const EdgeInsets.all(16), child: child),
       );
 
   @override
-  Widget build(BuildContext context) {
-    final pisos = <String, List<Gabinete>>{};
-    for (final g in _gabinetes) {
-      pisos.putIfAbsent(g.setor, () => []).add(g);
-    }
-    final geral =
-        _taxas.values.fold(const TaxaOcupacao(), (a, b) => a.somar(b));
-    return Scaffold(
-      appBar: const CustomAppBar(title: 'Taxas de Ocupação'),
-      body: _carregandoGabinetes
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(padding: const EdgeInsets.all(16), children: [
-              _quadro(Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    LayoutBuilder(builder: (context, constraints) {
-                      final titulo = Text('1. Selecionar gabinetes',
-                          style: Theme.of(context).textTheme.titleLarge);
-                      final acoes = Wrap(
-                        alignment: WrapAlignment.end,
-                        spacing: 12,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                              '${_selecionados.length} de ${_gabinetes.length} selecionados'),
-                          TextButton(
-                              onPressed: () => _selecionar(
-                                  _gabinetes.map((g) => g.id), true),
-                              child: const Text('Selecionar todos')),
-                          TextButton(
-                              onPressed: () => _selecionar(
-                                  _gabinetes.map((g) => g.id), false),
-                              child: const Text('Desselecionar todos')),
-                        ],
-                      );
-                      if (constraints.maxWidth >= 760) {
-                        return Row(children: [titulo, const Spacer(), acoes]);
-                      }
-                      return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            titulo,
-                            Align(
-                                alignment: Alignment.centerRight, child: acoes),
-                          ]);
-                    }),
-                    if (_gabinetes.isEmpty)
-                      const Text('Esta unidade não tem gabinetes cadastrados.'),
-                    for (final piso in pisos.entries) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: FilterChip(
-                          label: Text(piso.key.isEmpty ? 'Sem piso' : piso.key,
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
-                          selected: piso.value
-                              .every((g) => _selecionados.contains(g.id)),
-                          onSelected: (valor) =>
-                              _selecionar(piso.value.map((g) => g.id), valor),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 4),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                      Padding(
-                          padding: const EdgeInsets.only(left: 20),
-                          child: Wrap(spacing: 8, runSpacing: 8, children: [
-                            for (final g in piso.value)
-                              FilterChip(
-                                backgroundColor: MyAppTheme.gabineteLivre,
-                                selectedColor: MyAppTheme.gabineteOcupado,
-                                side: const BorderSide(
-                                    color: MyAppTheme.bordaGabineteOcupado),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 2, vertical: 6),
-                                labelPadding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                showCheckmark: false,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                label: SizedBox(
-                                    width: 100,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(children: [
-                                          SizedBox(
-                                              width: 22,
-                                              height: 20,
-                                              child:
-                                                  _selecionados.contains(g.id)
-                                                      ? const Icon(Icons.check,
-                                                          size: 18)
-                                                      : null),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                              child: Text(g.nome,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold))),
-                                        ]),
-                                        const SizedBox(height: 2),
-                                        SizedBox(
-                                            width: double.infinity,
-                                            child: Text(_descricao(g),
-                                                textAlign: TextAlign.center,
-                                                style: const TextStyle(
-                                                    fontSize: 11),
-                                                maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis)),
-                                      ],
-                                    )),
-                                selected: _selecionados.contains(g.id),
-                                onSelected: (valor) =>
-                                    _selecionar([g.id], valor),
-                              ),
-                          ])),
-                    ],
-                  ])),
-              _quadro(Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('2. Escolher período',
-                        style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 12),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: MatrizColors.fundo,
+        appBar: const CustomAppBar(title: 'Taxas de Ocupação'),
+        body: _carregandoGabinetes
+            ? const Center(child: CircularProgressIndicator())
+            : RelatorioLayout(
+                ocupado: _calculando || _exportando,
+                filtros: [
+                  RelatorioPeriodoFiltros<PeriodoTaxas>(
+                    opcoes: [
                       for (final p in PeriodoTaxas.values
                           .where((p) => p != PeriodoTaxas.personalizado))
-                        ChoiceChip(
-                          label: Text(switch (p) {
+                        (
+                          p,
+                          switch (p) {
                             PeriodoTaxas.semana => 'Semana',
                             PeriodoTaxas.mes => 'Mês',
                             PeriodoTaxas.trimestre => 'Trimestre',
                             PeriodoTaxas.semestre => 'Semestre',
                             PeriodoTaxas.ano => 'Ano',
-                            PeriodoTaxas.personalizado => 'Data personalizada',
-                          }),
-                          selected: _periodo == p,
-                          onSelected: (_) {
-                            setState(() {
-                              _periodo = p;
-                              _definirPeriodo(_inicio);
-                            });
-                          },
-                        ),
-                    ]),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _botaoData(inicial: true),
-                        _botaoData(inicial: false),
-                      ],
-                    ),
-                  ])),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Align(
-                    alignment: Alignment.center,
-                    child: Wrap(
-                        alignment: WrapAlignment.center,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(280, 60),
-                              textStyle: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            onPressed: _selecionados.isEmpty || _calculando
-                                ? null
-                                : _calcular,
-                            icon: const Icon(Icons.assessment_outlined),
-                            label: Text(_calculando
-                                ? 'A gerar relatório…'
-                                : 'Gerar relatório'),
-                          ),
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                                minimumSize: const Size(180, 60)),
-                            onPressed: _inicioRelatorio == null ||
-                                    _taxas.isEmpty ||
-                                    _calculando ||
-                                    _exportando
-                                ? null
-                                : _exportarExcel,
-                            icon: const Icon(Icons.download_outlined),
-                            label: Text(
-                                _exportando ? 'A exportar…' : 'Exportar Excel'),
-                          ),
-                        ])),
+                            PeriodoTaxas.personalizado => 'Personalizado',
+                          }
+                        )
+                    ],
+                    selecionado: _periodo,
+                    onChanged: (p) => setState(() {
+                      _periodo = p;
+                      _definirPeriodo(_inicio);
+                    }),
+                    inicio: _botaoData(inicial: true),
+                    fim: _botaoData(inicial: false),
+                  ),
+                  const Divider(),
+                  RelatorioSelecaoGabinetes(
+                      gabinetes: _gabinetes,
+                      selecionados: _selecionados,
+                      onChanged: (ids) => setState(() {
+                            _selecionados.clear();
+                            _selecionados.addAll(ids);
+                          })),
+                ],
+                acoes: RelatorioAcoes(
+                  onGerar:
+                      _selecionados.isEmpty || _calculando ? null : _calcular,
+                  onExportar: _inicioRelatorio == null ||
+                          _taxas.isEmpty ||
+                          _calculando ||
+                          _exportando
+                      ? null
+                      : _exportarExcel,
+                  gerando: _calculando,
+                  exportando: _exportando,
+                ),
+                resultado: _inicioRelatorio == null &&
+                        !_calculando &&
+                        _erro == null &&
+                        _selecionados.isNotEmpty
+                    ? const RelatorioEstadoVazio()
+                    : _resultados(),
               ),
-              if (_alterado && !_calculando)
-                const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Text(
-                        'Seleção alterada. Clique em “Gerar relatório” para atualizar os resultados.')),
-              if (_erro != null)
-                _quadro(Column(children: [
-                  Text(_erro!),
-                  TextButton(
-                      onPressed:
-                          _gabinetes.isEmpty ? _carregarGabinetes : _calcular,
-                      child: const Text('Tentar novamente')),
-                ]))
-              else if (_selecionados.isEmpty)
-                _quadro(const Text(
-                    'Selecione pelo menos um gabinete para consultar as taxas.'))
-              else if (_calculando)
-                const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()))
-              else if (_inicioRelatorio != null) ...[
-                _quadro(Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      );
+
+  Widget _resultados() {
+    final geral =
+        _taxas.values.fold(const TaxaOcupacao(), (a, b) => a.somar(b));
+    return ListView(children: [
+      if (_alterado && !_calculando)
+        const Padding(
+            padding: EdgeInsets.all(12),
+            child: Text(
+                'Seleção alterada. Clique em “Gerar relatório” para atualizar os resultados.')),
+      if (_erro != null)
+        _quadro(Column(children: [
+          Text(_erro!),
+          TextButton(
+              onPressed: _gabinetes.isEmpty ? _carregarGabinetes : _calcular,
+              child: const Text('Tentar novamente')),
+        ]))
+      else if (_selecionados.isEmpty)
+        _quadro(const Text(
+            'Selecione pelo menos um gabinete para consultar as taxas.'))
+      else if (_calculando)
+        const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()))
+      else if (_inicioRelatorio != null) ...[
+        _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Taxa de ocupação geral',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          Center(
+              child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: _cartaoResultado(
+              geral,
+              titulo: 'Geral',
+              descricao:
+                  '${_formato.format(_inicioRelatorio!)} — ${_formato.format(_fimRelatorio!)}',
+            ),
+          )),
+          const SizedBox(height: 8),
+          if (geral.horasDisponiveis == 0)
+            const Text('Sem horas disponíveis neste período.'),
+        ])),
+        _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Ocupação por gabinete',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          LayoutBuilder(builder: (context, constraints) {
+            final largura =
+                constraints.maxWidth < 190 ? constraints.maxWidth : 190.0;
+            return SizedBox(
+                width: constraints.maxWidth,
+                child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
-                      Text('Taxa de ocupação geral',
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 12),
-                      Center(
-                          child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 300),
-                        child: _cartaoResultado(
-                          geral,
-                          titulo: 'Geral',
-                          descricao:
-                              '${_formato.format(_inicioRelatorio!)} — ${_formato.format(_fimRelatorio!)}',
-                        ),
-                      )),
-                      const SizedBox(height: 8),
-                      if (geral.horasDisponiveis == 0)
-                        const Text('Sem horas disponíveis neste período.'),
-                    ])),
-                _quadro(Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Ocupação por gabinete',
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 12),
-                      LayoutBuilder(builder: (context, constraints) {
-                        final largura = constraints.maxWidth < 190
-                            ? constraints.maxWidth
-                            : 190.0;
-                        return SizedBox(
-                            width: constraints.maxWidth,
-                            child: Wrap(
-                                alignment: WrapAlignment.center,
-                                spacing: 12,
-                                runSpacing: 12,
-                                children: [
-                                  for (final g in _gabinetes
-                                      .where((g) => _taxas.containsKey(g.id)))
-                                    SizedBox(
-                                        width: largura,
-                                        child: _cartaoResultado(_taxas[g.id]!,
-                                            titulo: g.nome,
-                                            descricao: _descricao(g))),
-                                ]));
-                      }),
-                    ])),
-              ],
-            ]),
-    );
+                      for (final g
+                          in _gabinetes.where((g) => _taxas.containsKey(g.id)))
+                        SizedBox(
+                            width: largura,
+                            child: _cartaoResultado(_taxas[g.id]!,
+                                titulo: g.nome, descricao: _descricao(g))),
+                    ]));
+          }),
+        ])),
+      ],
+    ]);
   }
 }

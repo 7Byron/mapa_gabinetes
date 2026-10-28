@@ -18,6 +18,8 @@ import '../screens/relatorio_ocupacao_detalhe_screen.dart';
 import '../screens/relatorio_horas_especialidade_screen.dart';
 import '../services/unidade_selecionada_service.dart';
 import '../utils/app_version.dart';
+import '../utils/app_colors.dart';
+import 'painel_lateral_tema.dart';
 
 /// Drawer personalizado com menu de navegação
 /// Inclui opções separadas para configurar horários e dias de encerramento
@@ -49,7 +51,7 @@ class CustomDrawer extends StatelessWidget {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w700,
-            color: Colors.grey[700],
+            color: AppColors.secundarioNavegacao,
             letterSpacing: 0.4,
           ),
         ),
@@ -272,302 +274,331 @@ class CustomDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Drawer(
-      child: Column(
-        children: [
-          DrawerHeader(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Image.asset(
-                    'images/am_icon.png',
-                    fit: BoxFit.contain,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  appDisplayVersion,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey[600],
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Informação sobre o tipo de utilizador
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: isAdmin ? Colors.orange[50] : Colors.blue[50],
-            child: Row(
-              children: [
-                Icon(
-                  isAdmin ? Icons.admin_panel_settings : Icons.person,
-                  color: isAdmin ? Colors.orange[700] : Colors.blue[700],
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  isAdmin ? 'Administrador' : 'Utilizador',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: isAdmin ? Colors.orange[700] : Colors.blue[700],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Opções do menu
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                _buildSectionTitle('Médicos e Gabinetes'),
-                ListTile(
-                  leading: const Icon(Icons.medical_services),
-                  title: Text(
-                    'Gerir ${unidade?.nomeOcupantes ?? 'Ocupantes'}',
-                    style: _itemTextStyle(),
-                  ),
-                  trailing: _buildOnboardingArrow(3),
-                  enabled: isAdmin, // Só administradores podem gerir
-                  onTap: isAdmin
-                      ? () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    ListaMedicos(unidade: unidade)),
-                          ).then((_) {
-                            // Após retornar, chama o callback para recarregar os dados
-                            onRefresh();
-                          });
-                        }
-                      : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.business),
-                  title: Text(
-                    'Gerir ${unidade?.nomeAlocacao ?? 'Alocações'}',
-                    style: _itemTextStyle(),
-                  ),
-                  trailing: _buildOnboardingArrow(2),
-                  enabled: isAdmin, // Só administradores podem gerir
-                  onTap: isAdmin
-                      ? () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    ListaGabinetes(unidade: unidade)),
-                          ).then((_) => onRefresh());
-                        }
-                      : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.grid_view),
-                  title:
-                      Text('Matriz de Distribuição', style: _itemTextStyle()),
-                  onTap: () {
-                    Navigator.pop(context);
-                    if (unidade == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Unidade não definida.')));
-                      return;
-                    }
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              MatrizDistribuicaoScreen(unidade: unidade!),
-                        ));
-                  },
-                ),
-                _buildSectionDivider(),
-                _buildSectionTitle('Relatórios'),
-                ListTile(
-                  leading: const Icon(Icons.pie_chart_outline),
-                  title: const Text('Taxas de Ocupação',
-                      style: TextStyle(fontSize: 14)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    if (unidade == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Unidade não definida.')),
-                      );
-                      return;
-                    }
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              RelatorioTaxasOcupacaoScreen(unidade: unidade!),
-                        ));
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.bar_chart),
-                  title: const Text('Ocupação por Gabinete',
-                      style: TextStyle(fontSize: 14)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    if (unidade == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Unidade não definida.'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => RelatorioOcupacaoDetalheScreen(
-                          unidade: unidade!,
-                          titulo: 'Ocupação por Gabinete',
-                          periodoLabel: 'esta semana',
-                          inicio: DateTime.now(),
-                          fim: DateTime.now(),
-                          gabineteIds: const [],
-                        ),
+    return Theme(
+        data: temaPainelLateral(context),
+        child: Drawer(
+          backgroundColor: AppColors.navegacao,
+          child: Column(
+            children: [
+              DrawerHeader(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Image.asset(
+                        'images/am_icon.png',
+                        fit: BoxFit.contain,
                       ),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.query_stats),
-                  title: const Text(
-                    'Horas de Especialidade',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    if (unidade == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Unidade não definida.'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => RelatorioHorasEspecialidadeScreen(
-                            unidade: unidade!),
-                      ),
-                    );
-                  },
-                ),
-                _buildSectionDivider(),
-                _buildSectionTitle('Configurações'),
-                ListTile(
-                  leading: const Icon(Icons.settings_applications),
-                  title: const Text('Configurar Unidade',
-                      style: TextStyle(fontSize: 14)),
-                  enabled: isAdmin,
-                  onTap: isAdmin ? () => _configurarUnidade(context) : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.schedule),
-                  title: const Text('Configurar Horários',
-                      style: TextStyle(fontSize: 14)),
-                  trailing: _buildOnboardingArrow(1),
-                  enabled: isAdmin, // Só administradores podem configurar
-                  onTap: isAdmin
-                      ? () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    ConfigClinicaScreen(unidade: unidade)),
-                          ).then((_) => onRefresh());
-                        }
-                      : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.event_busy),
-                  title: const Text('Dias de Encerramento',
-                      style: TextStyle(fontSize: 14)),
-                  enabled: isAdmin, // Só administradores podem configurar
-                  onTap: isAdmin
-                      ? () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    DiasEncerramentoScreen(unidade: unidade)),
-                          ).then((_) => onRefresh());
-                        }
-                      : null,
-                ),
-                _buildSectionDivider(),
-                _buildSectionTitle('Contactos'),
-                ListTile(
-                  leading: const Icon(Icons.contact_mail),
-                  title: const Text(
-                    'Contactar desenvolvedor',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  onTap: () => _contactarDesenvolvedor(context),
-                ),
-                if (kDebugMode) ...[
-                  _buildSectionDivider(),
-                  ListTile(
-                    leading: const Icon(Icons.code, color: Colors.orange),
-                    title: const Text(
-                      'Scripts...',
-                      style: TextStyle(color: Colors.orange, fontSize: 14),
                     ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ScriptsScreen(unidade: unidade),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Botão de sair
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text(
-              'Sair',
-              style: TextStyle(color: Colors.red),
-            ),
-            onTap: () {
-              UnidadeSelecionadaService.limparUnidadeSelecionada();
-              Navigator.pop(context);
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SelecaoUnidadeScreen(),
+                    const SizedBox(height: 6),
+                    Text(
+                      appDisplayVersion,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.secundarioNavegacao,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
                 ),
-                (route) => false, // Remove todas as rotas anteriores
-              );
-            },
+              ),
+
+              // Informação sobre o tipo de utilizador
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                color: AppColors.navegacaoElevada,
+                child: Row(
+                  children: [
+                    Icon(
+                      isAdmin ? Icons.admin_panel_settings : Icons.person,
+                      color: AppColors.menta,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isAdmin ? 'Administrador' : 'Utilizador',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.menta,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Opções do menu
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _buildSectionTitle('Médicos e Gabinetes'),
+                    ListTile(
+                      leading: const Icon(Icons.medical_services),
+                      title: Text(
+                        'Gerir ${unidade?.nomeOcupantes ?? 'Ocupantes'}',
+                        style: _itemTextStyle(),
+                      ),
+                      trailing: _buildOnboardingArrow(3),
+                      enabled: isAdmin, // Só administradores podem gerir
+                      onTap: isAdmin
+                          ? () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                        ListaMedicos(unidade: unidade)),
+                              ).then((_) {
+                                // Após retornar, chama o callback para recarregar os dados
+                                onRefresh();
+                              });
+                            }
+                          : null,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.business),
+                      title: Text(
+                        'Gerir ${unidade?.nomeAlocacao ?? 'Alocações'}',
+                        style: _itemTextStyle(),
+                      ),
+                      trailing: _buildOnboardingArrow(2),
+                      enabled: isAdmin, // Só administradores podem gerir
+                      onTap: isAdmin
+                          ? () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                        ListaGabinetes(unidade: unidade)),
+                              ).then((_) => onRefresh());
+                            }
+                          : null,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.grid_view),
+                      title:
+                          Text('Matriz de ocupação', style: _itemTextStyle()),
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (unidade == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Unidade não definida.')));
+                          return;
+                        }
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  MatrizDistribuicaoScreen(unidade: unidade!),
+                            ));
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.event_available),
+                      title: Text('Matriz Livre',
+                          style: _itemTextStyle()),
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (unidade == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Unidade não definida.')));
+                          return;
+                        }
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MatrizDistribuicaoScreen(
+                                  unidade: unidade!, mostrarLivres: true),
+                            ));
+                      },
+                    ),
+                    _buildSectionDivider(),
+                    _buildSectionTitle('Relatórios'),
+                    ListTile(
+                      leading: const Icon(Icons.pie_chart_outline),
+                      title: const Text('Taxas de Ocupação',
+                          style: TextStyle(fontSize: 14)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (unidade == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Unidade não definida.')),
+                          );
+                          return;
+                        }
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RelatorioTaxasOcupacaoScreen(
+                                  unidade: unidade!),
+                            ));
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.bar_chart),
+                      title: const Text('Ocupação por Gabinete',
+                          style: TextStyle(fontSize: 14)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (unidade == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Unidade não definida.'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                RelatorioOcupacaoDetalheScreen(
+                              unidade: unidade!,
+                              titulo: 'Ocupação por Gabinete',
+                              periodoLabel: 'esta semana',
+                              inicio: DateTime.now(),
+                              fim: DateTime.now(),
+                              gabineteIds: const [],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.query_stats),
+                      title: const Text(
+                        'Horas de Especialidade',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (unidade == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Unidade não definida.'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                RelatorioHorasEspecialidadeScreen(
+                                    unidade: unidade!),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildSectionDivider(),
+                    _buildSectionTitle('Configurações'),
+                    ListTile(
+                      leading: const Icon(Icons.settings_applications),
+                      title: const Text('Configurar Unidade',
+                          style: TextStyle(fontSize: 14)),
+                      enabled: isAdmin,
+                      onTap: isAdmin ? () => _configurarUnidade(context) : null,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.schedule),
+                      title: const Text('Configurar Horários',
+                          style: TextStyle(fontSize: 14)),
+                      trailing: _buildOnboardingArrow(1),
+                      enabled: isAdmin, // Só administradores podem configurar
+                      onTap: isAdmin
+                          ? () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                        ConfigClinicaScreen(unidade: unidade)),
+                              ).then((_) => onRefresh());
+                            }
+                          : null,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.event_busy),
+                      title: const Text('Dias de Encerramento',
+                          style: TextStyle(fontSize: 14)),
+                      enabled: isAdmin, // Só administradores podem configurar
+                      onTap: isAdmin
+                          ? () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                        DiasEncerramentoScreen(
+                                            unidade: unidade)),
+                              ).then((_) => onRefresh());
+                            }
+                          : null,
+                    ),
+                    _buildSectionDivider(),
+                    _buildSectionTitle('Contactos'),
+                    ListTile(
+                      leading: const Icon(Icons.contact_mail),
+                      title: const Text(
+                        'Contactar desenvolvedor',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      onTap: () => _contactarDesenvolvedor(context),
+                    ),
+                    if (kDebugMode) ...[
+                      _buildSectionDivider(),
+                      ListTile(
+                        leading: const Icon(Icons.code, color: Colors.orange),
+                        title: const Text(
+                          'Scripts...',
+                          style: TextStyle(color: Colors.orange, fontSize: 14),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  ScriptsScreen(unidade: unidade),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              // Botão de sair
+              ListTile(
+                leading: const Icon(Icons.logout, color: Color(0xFFEFADA7)),
+                title: const Text(
+                  'Sair',
+                  style: TextStyle(color: Color(0xFFEFADA7)),
+                ),
+                onTap: () {
+                  UnidadeSelecionadaService.limparUnidadeSelecionada();
+                  Navigator.pop(context);
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SelecaoUnidadeScreen(),
+                    ),
+                    (route) => false, // Remove todas as rotas anteriores
+                  );
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ));
   }
 }

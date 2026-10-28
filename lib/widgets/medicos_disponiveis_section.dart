@@ -1,3 +1,4 @@
+import '../utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../models/medico.dart';
 import '../models/disponibilidade.dart';
@@ -12,7 +13,6 @@ class MedicosDisponiveisSection extends StatelessWidget {
   final List<Alocacao> alocacoes;
   final Set<String> cartoesEmAlocacao;
   final DateTime selectedDate;
-  final Function(String) onDesalocarMedico;
   final Function(Medico)? onEditarMedico; // Callback para editar médico
 
   const MedicosDisponiveisSection({
@@ -22,30 +22,8 @@ class MedicosDisponiveisSection extends StatelessWidget {
     required this.alocacoes,
     required this.cartoesEmAlocacao,
     required this.selectedDate,
-    required this.onDesalocarMedico,
     this.onEditarMedico,
   });
-
-  bool _validarDisponibilidade(Disponibilidade disp) {
-    if (disp.horarios.length != 2) return false;
-    try {
-      final inicioParts = disp.horarios[0].split(':');
-      final fimParts = disp.horarios[1].split(':');
-      final inicio = TimeOfDay(
-        hour: int.parse(inicioParts[0]),
-        minute: int.parse(inicioParts[1]),
-      );
-      final fim = TimeOfDay(
-        hour: int.parse(fimParts[0]),
-        minute: int.parse(fimParts[1]),
-      );
-      if (inicio.hour < fim.hour) return true;
-      if (inicio.hour == fim.hour && inicio.minute < fim.minute) return true;
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
 
   bool _estaAlocada(Disponibilidade disponibilidade) {
     final data = DateTime(disponibilidade.data.year, disponibilidade.data.month,
@@ -82,18 +60,17 @@ class MedicosDisponiveisSection extends StatelessWidget {
           a.medico.nome.toLowerCase().compareTo(b.medico.nome.toLowerCase()));
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: cartoes.isEmpty
           ? const SizedBox.shrink()
           : Scrollbar(
               child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
+                scrollDirection: Axis.horizontal,
                 physics: const ClampingScrollPhysics(),
                 child: Align(
                   alignment: Alignment.topLeft,
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: cartoes.map((cartao) {
                       final medico = cartao.medico;
                       final disponibilidade = cartao.disponibilidade;
@@ -102,7 +79,6 @@ class MedicosDisponiveisSection extends StatelessWidget {
                           ? "${horariosList[0]} - ${horariosList[1]}"
                           : horariosList.join(', ');
 
-                      final isValido = _validarDisponibilidade(disponibilidade);
                       final estaAAlocar = _estaAAlocar(disponibilidade);
 
                       return MouseRegion(
@@ -114,7 +90,7 @@ class MedicosDisponiveisSection extends StatelessWidget {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(
-                              color: Colors.grey.shade200,
+                              color: AppColors.bordaAtencao,
                               width: 1,
                             ),
                           ),
@@ -129,10 +105,10 @@ class MedicosDisponiveisSection extends StatelessWidget {
                                 ? _buildMedicoCardContent(
                                     medico,
                                     horariosStr,
-                                    isValido,
                                     estaAAlocar: true,
                                   )
                                 : Draggable<String>(
+                                    affinity: Axis.vertical,
                                     data:
                                         '${medico.id}|||${disponibilidade.id}',
                                     feedback: MedicoCard.dragFeedback(
@@ -140,10 +116,10 @@ class MedicosDisponiveisSection extends StatelessWidget {
                                     childWhenDragging: Opacity(
                                       opacity: 0.5,
                                       child: _buildMedicoCardContent(
-                                          medico, horariosStr, isValido),
+                                          medico, horariosStr),
                                     ),
                                     child: _buildMedicoCardContent(
-                                        medico, horariosStr, isValido),
+                                        medico, horariosStr),
                                   ),
                           ),
                         ),
@@ -167,28 +143,21 @@ class MedicosDisponiveisSection extends StatelessWidget {
 
   Widget _buildMedicoCardContent(
     Medico medico,
-    String horarios,
-    bool isValid, {
+    String horarios, {
     bool estaAAlocar = false,
   }) {
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 180),
       opacity: estaAAlocar ? 0.65 : 1,
       child: Container(
-        width: 180,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        width: 220,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: estaAAlocar
-              ? Colors.blue.shade50
-              : isValid
-                  ? MyAppTheme.medicoDisponivelCard
-                  : Colors.red.shade50,
+          color: estaAAlocar ? AppColors.selecao : AppColors.atencao,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isValid
-                ? MyAppTheme.azulClaro.withValues(alpha: 0.4)
-                : Colors.red.shade300,
-            width: isValid ? 1.5 : 1,
+            color: estaAAlocar ? AppColors.bordaLivre : AppColors.bordaAtencao,
+            width: 1,
           ),
           boxShadow: MyAppTheme.shadowMedicoCard,
         ),
@@ -213,56 +182,23 @@ class MedicosDisponiveisSection extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Horários com ícone
-                if (horarios.isNotEmpty) ...[
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 12,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          horarios,
-                          style: MyAppTheme.bodySmall.copyWith(
-                            color: Colors.grey[700],
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 4),
+                Tooltip(
+                  message: [
+                    if (horarios.isNotEmpty) horarios,
+                    if (medico.especialidade.isNotEmpty) medico.especialidade
+                  ].join(' · '),
+                  child: Text(
+                    [
+                      if (horarios.isNotEmpty) horarios,
+                      if (medico.especialidade.isNotEmpty) medico.especialidade
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.secundario),
                   ),
-                  const SizedBox(height: 4),
-                ],
-                // Especialidade com ícone
-                if (medico.especialidade.isNotEmpty)
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.medical_services,
-                        size: 12,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          medico.especialidade,
-                          style: MyAppTheme.bodySmall.copyWith(
-                            color: Colors.grey[700],
-                            fontSize: 11,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
+                ),
               ],
             ),
             if (estaAAlocar)

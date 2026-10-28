@@ -1,3 +1,5 @@
+import '../utils/app_colors.dart';
+import '../utils/matriz_colors.dart';
 // lib/screens/cadastro_unidade_screen.dart
 import '../utils/app_theme.dart';
 
@@ -438,8 +440,8 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(isEditando ? 'Editar Unidade' : 'Nova Unidade'),
-        backgroundColor: MyAppTheme.azulEscuro,
-        foregroundColor: Colors.white,
+        backgroundColor: MatrizColors.barra,
+        foregroundColor: AppColors.texto,
         elevation: 0,
         actions: [
           // Botão de desativar apenas quando estiver a editar

@@ -1741,12 +1741,13 @@ class AlocacaoMedicosLogic {
               dataFimExcecoes = dataFimParaCarregarSeries;
             }
 
-            // CORREÇÃO CRÍTICA: Quando anoEspecifico é fornecido (ex: filtro de médicos não alocados),
-            // SEMPRE forçar servidor para garantir dados completos do ano inteiro, independentemente do cache do dia atual.
-            // O cache em memória pode estar incompleto se foi carregado para um dia específico.
-            final deveForcarServidorExcecoes = anoEspecifico != null
-                ? true // Sempre forçar servidor quando filtro de ano completo é usado
-                : false; // Usar cache do Firestore quando filtro de dia é usado
+            // O mapa fornece ano e dia. Só uma consulta anual sem dia deve
+            // forçar o ano inteiro; navegar no calendário reutiliza as exceções
+            // anuais, salvo alteração remota ou invalidação explícita do dia.
+            final deveForcarServidorExcecoes =
+                (anoEspecifico != null && dataFiltroDia == null) ||
+                    forcarServidorSeries ||
+                    (dataFiltroDia != null && isCacheInvalidado(dataFiltroDia));
 
             // OTIMIZAÇÃO: Usar cache em memória APENAS quando não estamos forçando servidor
             // Chave do cache: medicoId_dataInicio_dataFim

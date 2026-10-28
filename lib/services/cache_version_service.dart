@@ -1,8 +1,25 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_init_service.dart';
 import 'matriz_distribuicao_cache_service.dart';
 
 class CacheVersionService {
+  static final Object _chaveEscopo = Object();
+
+  /// Partilha apenas as leituras da mesma ação; a ação seguinte valida de novo
+  /// no servidor. Não introduz TTL nem reutiliza versões entre consultas.
+  static Future<T> comVersoesPartilhadas<T>(Future<T> Function() acao) async {
+    final atual = Zone.current[_chaveEscopo] as _EscopoVersoes?;
+    if (atual != null && atual.ativo) return acao();
+    final escopo = _EscopoVersoes();
+    try {
+      return await runZoned(acao, zoneValues: {_chaveEscopo: escopo});
+    } finally {
+      escopo.ativo = false;
+      escopo.leituras.clear();
+    }
+  }
+
   static const String _docId = 'global';
   static const String _collection = 'cache_control';
 
@@ -15,8 +32,9 @@ class CacheVersionService {
   static const String _globalKey = '_global';
   static final Map<String, Map<String, int>> _lastVersionsByKey = {};
 
-  static DocumentReference<Map<String, dynamic>> _docRef(String? unidadeId) {
-    final firestore = FirebaseFirestore.instance;
+  static DocumentReference<Map<String, dynamic>> _docRef(String? unidadeId,
+      [FirebaseFirestore? banco]) {
+    final firestore = banco ?? FirebaseFirestore.instance;
     if (unidadeId == null || unidadeId.isEmpty) {
       return firestore.collection(_collection).doc(_docId);
     }
@@ -71,18 +89,34 @@ class CacheVersionService {
     _lastVersionsByKey[key] = Map<String, int>.from(versions);
   }
 
-  static Future<Map<String, int>> fetchVersions({String? unidadeId}) async {
+  static Future<Map<String, int>> fetchVersions({
+    String? unidadeId,
+    FirebaseFirestore? firestore,
+  }) async {
+    final escopo = Zone.current[_chaveEscopo] as _EscopoVersoes?;
+    if (escopo == null || !escopo.ativo) {
+      return _buscarVersoes(unidadeId, firestore);
+    }
+    final leitura = escopo.leituras.putIfAbsent(
+      (firestore, _cacheKey(unidadeId)),
+      () => _buscarVersoes(unidadeId, firestore),
+    );
+    return Map<String, int>.from(await leitura);
+  }
+
+  static Future<Map<String, int>> _buscarVersoes(
+      String? unidadeId, FirebaseFirestore? firestore) async {
     final key = _cacheKey(unidadeId);
     try {
-      await FirebaseInitService.ensureInitialized();
-      final snapshot =
-          await _docRef(unidadeId).get(const GetOptions(source: Source.server));
+      if (firestore == null) await FirebaseInitService.ensureInitialized();
+      final snapshot = await _docRef(unidadeId, firestore)
+          .get(const GetOptions(source: Source.server));
       final versions = _parseSnapshot(snapshot);
       _cacheVersions(key, versions);
       return versions;
     } catch (_) {
       try {
-        final snapshot = await _docRef(unidadeId)
+        final snapshot = await _docRef(unidadeId, firestore)
             .get(const GetOptions(source: Source.cache));
         final versions = _parseSnapshot(snapshot);
         _cacheVersions(key, versions);
@@ -99,8 +133,10 @@ class CacheVersionService {
   static Future<void> bumpVersion({
     String? unidadeId,
     required String field,
+    FirebaseFirestore? firestore,
   }) async {
-    await bumpVersions(unidadeId: unidadeId, fields: [field]);
+    await bumpVersions(
+        unidadeId: unidadeId, fields: [field], firestore: firestore);
   }
 
   static Future<void> bumpVersions({
@@ -108,6 +144,9 @@ class CacheVersionService {
     required List<String> fields,
     FirebaseFirestore? firestore,
   }) async {
+    // Uma escrita dentro da ação invalida também a fotografia de versões.
+    final escopo = Zone.current[_chaveEscopo] as _EscopoVersoes?;
+    escopo?.leituras.removeWhere((key, _) => key.$2 == _cacheKey(unidadeId));
     if (fields.any((field) =>
         field == fieldMedicos ||
         field == fieldGabinetes ||
@@ -136,6 +175,12 @@ class CacheVersionService {
         updates,
         SetOptions(merge: true),
       );
+      escopo?.leituras.removeWhere((key, _) => key.$2 == _cacheKey(unidadeId));
     } catch (_) {}
   }
+}
+
+class _EscopoVersoes {
+  bool ativo = true;
+  final leituras = <(FirebaseFirestore?, String), Future<Map<String, int>>>{};
 }

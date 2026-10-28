@@ -271,9 +271,11 @@ class _CalendarioDisponibilidadesState
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.none,
       decoration: BoxDecoration(
-        color: MyAppTheme.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: MyAppTheme.shadowCard3D,
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: Theme.of(context).brightness == Brightness.dark
+            ? const []
+            : MyAppTheme.shadowCard,
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -299,10 +301,10 @@ class _CalendarioDisponibilidadesState
                         value: anoOpcao,
                         child: Text(
                           anoOpcao.toString(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       );
@@ -470,7 +472,9 @@ class _CalendarioDisponibilidadesState
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
-                        color: isWeekend ? Colors.blue : null,
+                        color: isWeekend
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
                       ),
                     ),
                   );
@@ -481,6 +485,7 @@ class _CalendarioDisponibilidadesState
               height: 260, // Altura ajustada (300 - 40 do header dos dias)
               child: SfCalendar(
                 controller: _calendarController,
+                backgroundColor: Theme.of(context).colorScheme.surface,
                 showNavigationArrow:
                     false, // Desabilitar navegação padrão, usar a customizada
                 view: CalendarView.month,
@@ -597,7 +602,7 @@ class _CalendarioDisponibilidadesState
                       .toSet()
                       .toList();
                   if (isSelected && coresDoDia.isEmpty) {
-                    coresDoDia.add(Colors.purple);
+                    coresDoDia.add(Theme.of(context).colorScheme.primary);
                   }
 
                   return Center(
@@ -609,7 +614,9 @@ class _CalendarioDisponibilidadesState
                         width: 30,
                         height: 30,
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey, width: 0.5),
+                          border: Border.all(
+                              color: Theme.of(context).colorScheme.outline,
+                              width: 0.5),
                           shape: BoxShape.circle,
                         ),
                         alignment: Alignment.center,
@@ -617,10 +624,13 @@ class _CalendarioDisponibilidadesState
                           '${details.date.day}',
                           style: TextStyle(
                             color: isSelected
-                                ? Colors.white
+                                ? Theme.of(context).colorScheme.onPrimary
                                 : isCurrentMonth
-                                    ? Colors.black
-                                    : Colors.grey,
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant
+                                        .withValues(alpha: 0.5),
                             fontWeight: isSelected
                                 ? FontWeight.bold
                                 : FontWeight.normal,

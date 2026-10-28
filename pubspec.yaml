@@ -1,7 +1,7 @@
 name: mapa_gabinetes
 description: "App para gerir dotações de gabinetes médicos"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-version: 2026.10.27+6
+version: 2026.10.28+7
 
 environment:
   sdk: ^3.6.0
@@ -44,11 +44,11 @@ flutter:
   assets:
     - images/am_icon.png
 
-fonts:
-  - family: Montserrat
-    fonts:
-      - asset: fonts/Montserrat-Regular.ttf
-      - asset: fonts/Montserrat-SemiBold.ttf
-        weight: 600
-      - asset: fonts/Montserrat-Bold.ttf
-        weight: 700
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: fonts/Montserrat-Regular.ttf
+        - asset: fonts/Montserrat-SemiBold.ttf
+          weight: 600
+        - asset: fonts/Montserrat-Bold.ttf
+          weight: 700

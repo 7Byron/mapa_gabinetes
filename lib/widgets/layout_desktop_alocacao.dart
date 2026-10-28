@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/zoomable_container.dart';
+import '../utils/app_colors.dart';
+import 'painel_lateral_tema.dart';
 
 class LayoutDesktopAlocacao extends StatelessWidget {
   final Widget colunaEsquerda;
@@ -18,12 +20,13 @@ class LayoutDesktopAlocacao extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 300,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: SingleChildScrollView(
-            child: colunaEsquerda,
-          ),
+        SizedBox(
+          width: 264,
+          child: Theme(
+              data: temaPainelLateral(context),
+              child: Material(
+                  color: AppColors.navegacao,
+                  child: SingleChildScrollView(child: colunaEsquerda))),
         ),
         Expanded(
           child: ZoomableContainer(

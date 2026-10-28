@@ -18,6 +18,8 @@ import '../services/serie_service.dart';
 import '../utils/time_utils.dart';
 import '../utils/app_theme.dart';
 import '../widgets/custom_appbar.dart';
+import '../widgets/relatorio_layout.dart';
+import '../utils/matriz_colors.dart';
 
 enum PeriodoRelatorio {
   hoje,
@@ -326,7 +328,10 @@ class _RelatorioOcupacaoDetalheScreenState
     await _carregarRelatorio();
   }
 
-  Future<void> _carregarRelatorio() async {
+  Future<void> _carregarRelatorio() =>
+      CacheVersionService.comVersoesPartilhadas(_carregarRelatorioInterno);
+
+  Future<void> _carregarRelatorioInterno() async {
     setState(() {
       _carregando = true;
       _erro = null;
@@ -404,7 +409,11 @@ class _RelatorioOcupacaoDetalheScreenState
     }
   }
 
-  Future<void> _carregarDisponibilidade() async {
+  Future<void> _carregarDisponibilidade() =>
+      CacheVersionService.comVersoesPartilhadas(
+          _carregarDisponibilidadeInterno);
+
+  Future<void> _carregarDisponibilidadeInterno() async {
     setState(() {
       _carregando = true;
       _erro = null;
@@ -935,67 +944,22 @@ class _RelatorioOcupacaoDetalheScreenState
         title: widget.titulo,
         onRefresh: _forcarAtualizacao,
       ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1400),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _carregando
-                ? _buildCarregamento()
-                : _erro != null
-                    ? _buildErro()
-                    : _buildConteudo(),
-          ),
-        ),
-      ),
+      backgroundColor: MatrizColors.fundo,
+      body: _carregando && _gabinetes.isEmpty
+          ? _buildCarregamento()
+          : _buildConteudo(),
     );
   }
 
   Widget _quadro(Widget child) => Card(
+        color: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: MatrizColors.borda)),
         child: Padding(padding: const EdgeInsets.all(16), child: child),
       );
-
-  Widget _buildSelecaoGabinete() {
-    return _quadro(Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('1. Selecionar gabinete',
-            style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        if (_gabinetes.isEmpty)
-          const Text('Esta unidade não tem gabinetes cadastrados.')
-        else
-          DropdownButtonFormField<String>(
-            initialValue: _gabineteSelecionadoId,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Gabinete',
-              hintText: 'Escolher gabinete',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              for (final gabinete in _gabinetes)
-                DropdownMenuItem(
-                  value: gabinete.id,
-                  child: Text(
-                    '${gabinete.nome} — ${_descricaoGabinete(gabinete)} · ${gabinete.setor.isEmpty ? 'Sem piso' : gabinete.setor}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (id) {
-              if (id == null || id == _gabineteSelecionadoId) return;
-              setState(() {
-                _gabineteSelecionadoId = id;
-                _limparRelatorioAtual();
-              });
-            },
-          ),
-      ],
-    ));
-  }
 
   Widget _buildErro() {
     return Column(
@@ -1172,91 +1136,77 @@ class _RelatorioOcupacaoDetalheScreenState
     );
   }
 
-  Widget _buildConteudo() {
-    return ListView(children: [
-      _buildSelecaoGabinete(),
-      _buildResumo(),
-      const SizedBox(height: 12),
-      LayoutBuilder(builder: (context, constraints) {
-        final largura = constraints.maxWidth >= 800
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              SizedBox(
-                  width: largura,
-                  child: _buildAcaoRelatorio(ModoGrafico.ocupacao)),
-              SizedBox(
-                  width: largura,
-                  child: _buildAcaoRelatorio(ModoGrafico.disponibilidade)),
-            ]);
-      }),
-      const SizedBox(height: 16),
-      if (_relatorioGerado)
-        _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-              _modoGrafico == ModoGrafico.disponibilidade
-                  ? 'Ocupação por dia e hora'
-                  : 'Ocupação por dia',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text(
-              '${_textoPeriodo()} · ${_percentualGeral.toStringAsFixed(1).replaceAll('.', ',')}% de ocupação'),
-          const SizedBox(height: 16),
-          _buildGraficoDiasExpansivo(),
-        ]))
-      else
-        _buildRelatorioPorGerar(),
-    ]);
-  }
-
-  Widget _buildAcaoRelatorio(ModoGrafico modo) {
-    final titulo = modo == ModoGrafico.ocupacao
-        ? 'Relatório Ocupação por dia'
-        : 'Relatório Ocupação dia e hora';
-    return _quadro(
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(titulo, style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 16),
-      Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            FilledButton.icon(
-              style: FilledButton.styleFrom(minimumSize: const Size(220, 56)),
-              onPressed:
-                  _gabineteSelecionadoId == null || _carregando || _exportando
-                      ? null
-                      : () {
-                          setState(() {
-                            _modoGrafico = modo;
-                            _limparRelatorioAtual();
-                          });
-                          _carregarDadosPorModo();
-                        },
-              icon: Icon(modo == ModoGrafico.ocupacao
-                  ? Icons.bar_chart
-                  : Icons.stacked_bar_chart),
-              label: const Text('Gerar relatório'),
-            ),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(160, 56)),
-              onPressed:
-                  !_relatorioGerado || _modoGrafico != modo || _exportando
-                      ? null
-                      : _exportarExcel,
-              icon: const Icon(Icons.download_outlined),
-              label: Text(_exportando && _modoGrafico == modo
-                  ? 'A exportar…'
-                  : 'Exportar Excel'),
-            ),
-          ]),
-    ]));
-  }
+  Widget _buildConteudo() => RelatorioLayout(
+        ocupado: _carregando || _exportando,
+        filtros: [
+          RelatorioFiltroSecao(
+              titulo: 'Relatório',
+              child: Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final modo in ModoGrafico.values)
+                  ChoiceChip(
+                    label: Text(modo == ModoGrafico.ocupacao
+                        ? 'Por dia'
+                        : 'Dia e hora'),
+                    selected: _modoGrafico == modo,
+                    onSelected: (_) => setState(() {
+                      _modoGrafico = modo;
+                      _limparRelatorioAtual();
+                    }),
+                  ),
+              ])),
+          _buildResumo(),
+          const Divider(),
+          RelatorioSelecaoGabinetes(
+              gabinetes: _gabinetes,
+              multipla: false,
+              selecionados: {
+                if (_gabineteSelecionadoId != null) _gabineteSelecionadoId!
+              },
+              onChanged: (ids) => setState(() {
+                    _gabineteSelecionadoId = ids.isEmpty ? null : ids.single;
+                    _limparRelatorioAtual();
+                  })),
+        ],
+        acoes: RelatorioAcoes(
+          onGerar: _gabineteSelecionadoId == null || _carregando || _exportando
+              ? null
+              : () {
+                  setState(_limparRelatorioAtual);
+                  _carregarDadosPorModo();
+                },
+          onExportar: !_relatorioGerado || _exportando || _carregando
+              ? null
+              : _exportarExcel,
+          gerando: _carregando,
+          exportando: _exportando,
+        ),
+        resultado: _carregando
+            ? _buildCarregamento()
+            : _erro != null
+                ? Center(child: _buildErro())
+                : !_relatorioGerado
+                    ? RelatorioEstadoVazio(
+                        texto: _gabineteSelecionadoId == null
+                            ? 'Selecione um gabinete para gerar o relatório.'
+                            : 'Escolha o relatório e clique em “Gerar relatório”.')
+                    : ListView(children: [
+                        _quadro(Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  _modoGrafico == ModoGrafico.disponibilidade
+                                      ? 'Ocupação por dia e hora'
+                                      : 'Ocupação por dia',
+                                  style:
+                                      Theme.of(context).textTheme.titleLarge),
+                              const SizedBox(height: 8),
+                              Text(
+                                  '${_textoPeriodo()} · ${_percentualGeral.toStringAsFixed(1).replaceAll('.', ',')}% de ocupação'),
+                              const SizedBox(height: 16),
+                              _buildGraficoDiasExpansivo(),
+                            ])),
+                      ]),
+      );
 
   Widget _buildGraficoDiasExpansivo() {
     return LayoutBuilder(
@@ -1275,73 +1225,39 @@ class _RelatorioOcupacaoDetalheScreenState
     );
   }
 
-  Widget _buildRelatorioPorGerar() {
-    final texto = _gabineteSelecionadoId == null
-        ? 'Selecione um gabinete para gerar o relatório.'
-        : 'Escolha um dos relatórios e clique em “Gerar relatório”.';
-    return SizedBox(
-      height: 260,
-      child: Center(
-        child: Text(
-          texto,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[700],
-          ),
+  Widget _buildResumo() => RelatorioPeriodoFiltros<PeriodoRelatorio>(
+        opcoes: [
+          for (final p in PeriodoRelatorio.values.where((p) =>
+              p != PeriodoRelatorio.intervalo && p != PeriodoRelatorio.hoje))
+            (p, _rotuloPeriodo(p))
+        ],
+        selecionado: _periodoSelecionado,
+        onChanged: (p) async {
+          setState(() => _periodoSelecionado = p);
+          await _recarregarComPeriodo();
+        },
+        inicio: _buildBotaoData(inicial: true),
+        fim: _buildBotaoData(inicial: false),
+        extra: DropdownButtonFormField<DiaSemanaFiltro>(
+          initialValue: _filtroDiaSelecionado,
+          dropdownColor: MatrizColors.lateral,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          iconEnabledColor: Colors.white70,
+          decoration: const InputDecoration(labelText: 'Dias da semana'),
+          items: [
+            for (final filtro in DiaSemanaFiltro.values)
+              DropdownMenuItem(
+                  value: filtro, child: Text(_rotuloFiltroDia(filtro)))
+          ],
+          onChanged: (valor) {
+            if (valor == null) return;
+            setState(() {
+              _filtroDiaSelecionado = valor;
+              _limparRelatorioAtual();
+            });
+          },
         ),
-      ),
-    );
-  }
-
-  Widget _buildResumo() {
-    return _quadro(
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('2. Escolher período',
-          style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 12),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        for (final periodo in PeriodoRelatorio.values.where((p) =>
-            p != PeriodoRelatorio.intervalo && p != PeriodoRelatorio.hoje))
-          ChoiceChip(
-              label: Text(_rotuloPeriodo(periodo)),
-              selected: _periodoSelecionado == periodo,
-              onSelected: (_) async {
-                setState(() => _periodoSelecionado = periodo);
-                await _recarregarComPeriodo();
-              }),
-      ]),
-      const SizedBox(height: 12),
-      Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            _buildBotaoData(inicial: true),
-            _buildBotaoData(inicial: false),
-            SizedBox(
-                width: 200,
-                child: DropdownButtonFormField<DiaSemanaFiltro>(
-                  initialValue: _filtroDiaSelecionado,
-                  decoration: const InputDecoration(
-                      labelText: 'Dias da semana',
-                      border: OutlineInputBorder()),
-                  items: [
-                    for (final filtro in DiaSemanaFiltro.values)
-                      DropdownMenuItem(
-                          value: filtro, child: Text(_rotuloFiltroDia(filtro)))
-                  ],
-                  onChanged: (valor) {
-                    if (valor == null) return;
-                    setState(() {
-                      _filtroDiaSelecionado = valor;
-                      _limparRelatorioAtual();
-                    });
-                  },
-                )),
-          ]),
-    ]));
-  }
+      );
 
   Future<void> _exportarExcel() async {
     if (!_relatorioGerado || _gabineteSelecionadoId == null || _exportando) {

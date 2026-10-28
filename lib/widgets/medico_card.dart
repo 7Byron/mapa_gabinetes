@@ -1,11 +1,12 @@
+import '../utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import '../models/medico.dart';
 
 class MedicoCard {
-  /// Cartão compacto principal, permitindo personalizar cor e "validez".
+  /// Cartão compacto principal com destaque e indicação de ausência.
   static Widget buildSmallMedicoCard(
-      Medico medico, String horarios, Color backgroundColor, bool isValid,
+      Medico medico, String horarios, Color backgroundColor,
       {Color? corDestaque, bool ausente = false}) {
     return Container(
       constraints: const BoxConstraints(minHeight: 48),
@@ -16,7 +17,7 @@ class MedicoCard {
         borderRadius: BorderRadius.circular(10),
         border: corDestaque != null
             ? Border.all(color: Colors.orange.shade400, width: 2)
-            : Border.all(color: Colors.grey.shade300, width: 0.5),
+            : Border.all(color: AppColors.borda, width: 1),
         boxShadow: MyAppTheme.shadowMedicoCard,
       ),
       child: Column(
@@ -36,6 +37,7 @@ class MedicoCard {
             medico.nome,
             style: const TextStyle(
               fontSize: 12,
+              color: AppColors.texto,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.2,
             ),
@@ -105,8 +107,7 @@ class MedicoCard {
     return buildSmallMedicoCard(
       medico,
       horariosStr,
-      Colors.blue[100]!,
-      true,
+      AppColors.ocupado,
     );
   }
 

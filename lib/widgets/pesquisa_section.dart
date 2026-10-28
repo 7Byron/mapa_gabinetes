@@ -34,13 +34,15 @@ class _PesquisaSectionState extends State<PesquisaSection> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: MyAppTheme.cardBackground,
-        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: Colors.grey.shade300,
-          width: 2,
+          color: Theme.of(context).colorScheme.outline,
+          width: 1,
         ),
-        boxShadow: MyAppTheme.shadowCard3D,
+        boxShadow: Theme.of(context).brightness == Brightness.dark
+            ? const []
+            : MyAppTheme.shadowCard,
       ),
       clipBehavior: Clip.none,
       padding: const EdgeInsets.all(16),
@@ -54,7 +56,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
             children: [
               Icon(
                 Icons.highlight_alt,
-                color: Colors.blue.shade900,
+                color: Theme.of(context).colorScheme.onSurface,
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -63,7 +65,7 @@ class _PesquisaSectionState extends State<PesquisaSection> {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade900,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ],
@@ -75,7 +77,8 @@ class _PesquisaSectionState extends State<PesquisaSection> {
             key: const ValueKey('destacar-medico'),
             value: widget.pesquisaNome,
             label: 'Destacar Médico',
-            hint: 'Selecionar médico...',
+            hint: 'Destacar médico',
+            showLabel: false,
             dialogTitle: 'Médico',
             searchHint: 'Pesquisar médico',
             suffixIcon: Icons.person_pin_circle_outlined,
@@ -94,7 +97,8 @@ class _PesquisaSectionState extends State<PesquisaSection> {
             key: const ValueKey('destacar-especialidade'),
             value: widget.pesquisaEspecialidade,
             label: 'Destacar Especialidade',
-            hint: 'Selecionar especialidade...',
+            hint: 'Destacar especialidade',
+            showLabel: false,
             dialogTitle: 'Especialidade',
             searchHint: 'Pesquisar especialidade',
             suffixIcon: Icons.local_hospital_outlined,

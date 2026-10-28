@@ -40,10 +40,13 @@ class ProximaConsultaSection extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: MyAppTheme.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade300, width: 2),
-        boxShadow: MyAppTheme.shadowCard3D,
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border:
+            Border.all(color: Theme.of(context).colorScheme.outline, width: 1),
+        boxShadow: Theme.of(context).brightness == Brightness.dark
+            ? const []
+            : MyAppTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,7 +61,7 @@ class ProximaConsultaSection extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: MyAppTheme.azulEscuro,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ],
@@ -124,7 +127,8 @@ class ProximaConsultaSection extends StatelessWidget {
                         child: Row(
                           children: [
                             Icon(Icons.schedule,
-                                size: 17, color: Colors.blue.shade700),
+                                size: 17,
+                                color: Theme.of(context).colorScheme.primary),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -139,7 +143,9 @@ class ProximaConsultaSection extends StatelessWidget {
                             Icon(
                               Icons.chevron_right,
                               size: 17,
-                              color: Colors.grey.shade500,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             ),
                           ],
                         ),

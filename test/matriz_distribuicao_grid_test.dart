@@ -7,6 +7,7 @@ import 'package:mapa_gabinetes/widgets/matriz_distribuicao_grid.dart';
 void main() {
   testWidgets('Oculta o período anual e mantém datas dos cartões parciais',
       (tester) async {
+    MatrizDistribuicaoItem? selecionado;
     MatrizDistribuicaoItem item(String id, DateTime inicio, DateTime fim) =>
         MatrizDistribuicaoItem(
           serieId: id,
@@ -25,6 +26,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: MatrizDistribuicaoGrid(
+      onEditarMedico: (item) => selecionado = item,
       ano: 2027,
       gabinetes: [
         Gabinete(
@@ -39,6 +41,8 @@ void main() {
     expect(find.text('Ano completo'), findsOneWidget);
     expect(find.text('De 01/01/2027 a 31/12/2027'), findsNothing);
     expect(find.text('Até 30/06/2027'), findsOneWidget);
+    await tester.tap(find.text('Primeiro semestre'));
+    expect(selecionado?.medicoId, 'Primeiro semestre');
     expect(tester.takeException(), isNull);
   });
 

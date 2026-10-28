@@ -1,3 +1,4 @@
+import 'cadastro_medicos.dart';
 import '../widgets/matriz_distribuicao_ajuda.dart';
 import 'package:flutter/material.dart';
 import '../models/gabinete.dart';
@@ -20,8 +21,12 @@ import '../widgets/matriz_distribuicao_painel.dart';
 class MatrizDistribuicaoScreen extends StatefulWidget {
   final Unidade unidade;
   final bool mostrarLivres;
+  final bool isAdmin;
   const MatrizDistribuicaoScreen(
-      {super.key, required this.unidade, this.mostrarLivres = false});
+      {super.key,
+      required this.unidade,
+      this.mostrarLivres = false,
+      this.isAdmin = false});
 
   @override
   State<MatrizDistribuicaoScreen> createState() =>
@@ -293,9 +298,40 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
         MatrizDistribuicaoAjuda(mostrarLivres: widget.mostrarLivres),
       ]);
 
+  bool _aAbrirMedico = false;
+
+  Future<void> _editarMedico(MatrizDistribuicaoItem item) async {
+    if (!widget.isAdmin || _aAbrirMedico) return;
+    _aAbrirMedico = true;
+    try {
+      final medicos =
+          await buscarMedicos(unidade: widget.unidade, forcarAtualizacao: true);
+      if (!mounted) return;
+      final encontrados = medicos.where((m) => m.id == item.medicoId);
+      if (encontrados.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Médico não encontrado.')));
+        return;
+      }
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => CadastroMedico(
+              medico: encontrados.first, unidade: widget.unidade)));
+      if (mounted) await _carregar(atualizar: true);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Não foi possível abrir a edição do médico.')));
+      }
+    } finally {
+      _aAbrirMedico = false;
+    }
+  }
+
   Widget _grelha() => MatrizDistribuicaoPainel(
         gabinetes: _gabinetes,
         itens: _matriz.itens,
+        onEditarMedico:
+            widget.isAdmin && !widget.mostrarLivres ? _editarMedico : null,
         gabinetesOcultos: _gabinetesOcultos,
         onOcultosChanged: (ocultos) =>
             setState(() => _gabinetesOcultos = ocultos),

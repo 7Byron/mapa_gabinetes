@@ -14,6 +14,7 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
   final double zoom;
   final int? ano;
   final bool mostrarLivres;
+  final ValueChanged<MatrizDistribuicaoItem>? onEditarMedico;
   final ValueChanged<Gabinete>? onOcultarGabinete;
 
   const MatrizDistribuicaoGrid({
@@ -23,6 +24,7 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
     this.zoom = 1.0,
     this.ano,
     this.mostrarLivres = false,
+    this.onEditarMedico,
     this.onOcultarGabinete,
   }) : assert(zoom > 0);
 
@@ -241,7 +243,18 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
         ],
       ),
     );
-    return cartao;
+    if (widget.mostrarLivres || widget.onEditarMedico == null) return cartao;
+    return Tooltip(
+      message: 'Editar ${item.medicoNome.trim()}',
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => widget.onEditarMedico!(item),
+          child: cartao,
+        ),
+      ),
+    );
   }
 
   void _mostrarDatas(

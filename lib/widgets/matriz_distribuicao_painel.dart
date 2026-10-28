@@ -16,6 +16,7 @@ class MatrizDistribuicaoPainel extends StatefulWidget {
   final int ano;
   final double zoom;
   final bool mostrarLivres;
+  final ValueChanged<MatrizDistribuicaoItem>? onEditarMedico;
   final List<String> regrasSemGabinete;
 
   const MatrizDistribuicaoPainel({
@@ -29,6 +30,7 @@ class MatrizDistribuicaoPainel extends StatefulWidget {
     this.regrasSemGabinete = const [],
     this.zoom = 1,
     this.mostrarLivres = false,
+    this.onEditarMedico,
   });
 
   @override
@@ -258,6 +260,7 @@ class _MatrizDistribuicaoPainelState extends State<MatrizDistribuicaoPainel> {
                 child: MatrizDistribuicaoGrid(
                   gabinetes: visiveis,
                   itens: widget.itens,
+                  onEditarMedico: widget.onEditarMedico,
                   zoom: widget.zoom,
                   ano: widget.ano,
                   mostrarLivres: widget.mostrarLivres,

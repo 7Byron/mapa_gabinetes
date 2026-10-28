@@ -393,15 +393,14 @@ class CustomDrawer extends StatelessWidget {
                         Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  MatrizDistribuicaoScreen(unidade: unidade!),
+                              builder: (_) => MatrizDistribuicaoScreen(
+                                  unidade: unidade!, isAdmin: isAdmin),
                             ));
                       },
                     ),
                     ListTile(
                       leading: const Icon(Icons.event_available),
-                      title: Text('Matriz Livre',
-                          style: _itemTextStyle()),
+                      title: Text('Matriz Livre', style: _itemTextStyle()),
                       onTap: () {
                         Navigator.pop(context);
                         if (unidade == null) {

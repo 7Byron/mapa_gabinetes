@@ -14,6 +14,7 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
   final double zoom;
   final int? ano;
   final bool mostrarLivres;
+  final DateTime? dataReferencia;
   final ValueChanged<MatrizDistribuicaoItem>? onEditarMedico;
   final ValueChanged<Gabinete>? onOcultarGabinete;
 
@@ -24,6 +25,7 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
     this.zoom = 1.0,
     this.ano,
     this.mostrarLivres = false,
+    this.dataReferencia,
     this.onEditarMedico,
     this.onOcultarGabinete,
   }) : assert(zoom > 0);
@@ -139,108 +141,161 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
   static const _estiloExcecoes = TextStyle(
       fontSize: 10, color: AppColors.textoAtencao, fontWeight: FontWeight.w600);
 
-  Widget _cartao(MatrizDistribuicaoItem item) {
-    final cartao = Container(
-      padding: EdgeInsets.all(widget.mostrarLivres ? 6 : 8),
-      decoration: BoxDecoration(
-        color: widget.mostrarLivres
-            ? MatrizColors.livre
-            : item.conflito
-                ? MyAppTheme.gabineteConflito
-                : MatrizColors.ocupado,
-        border: Border.all(
-          color: widget.mostrarLivres
-              ? MatrizColors.bordaLivre
-              : item.conflito
-                  ? MyAppTheme.bordaGabineteConflito
-                  : MatrizColors.borda,
-        ),
-        borderRadius: BorderRadius.circular(8),
+  DateTime get _hoje {
+    final agora = widget.dataReferencia ?? DateTime.now();
+    return DateTime(agora.year, agora.month, agora.day);
+  }
+
+  bool _datasPassadas(Iterable<DateTime> datas, {DateTime? fim}) {
+    bool passada(DateTime data) =>
+        DateTime(data.year, data.month, data.day).isBefore(_hoje);
+    if (datas.isNotEmpty) return datas.every(passada);
+    return fim != null && passada(fim);
+  }
+
+  Widget _aspetoPassado(bool passado, Widget child) {
+    if (!passado) return child;
+    return Opacity(
+      opacity: 0.65,
+      child: ColorFiltered(
+        colorFilter: const ColorFilter.matrix([
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+        ]),
+        child: child,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (widget.mostrarLivres) ...[
-            Row(children: [
-              const Text('Livre',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textoLivre)),
-              const SizedBox(width: 6),
-              Expanded(
-                  child: Text(_horarioLivre(item),
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold))),
-            ]),
-            for (final periodo in _periodosLivres(item))
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Tooltip(
-                  message: 'Consultar datas: ${periodo.descricao}',
-                  child: Material(
-                    color: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                      side: const BorderSide(color: MatrizColors.bordaLivre),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => _mostrarDatas(item, periodo),
-                      hoverColor: MatrizColors.identificacao,
-                      splashColor: MatrizColors.cabecalho,
-                      child: Container(
-                        key: const ValueKey('disponibilidade_periodo'),
-                        width: double.infinity,
-                        constraints: const BoxConstraints(minHeight: 42),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 5),
-                        alignment: Alignment.center,
-                        child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text.rich(
-                                      _textoPeriodo(periodo.descricao),
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      softWrap: false,
-                                      style: _estiloPeriodo)),
-                              if (periodo.observacao != null)
-                                Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(periodo.observacao!,
-                                        textAlign: TextAlign.center,
-                                        style: _estiloExcecoes)),
-                            ]),
+    );
+  }
+
+  Widget _cartao(MatrizDistribuicaoItem item) {
+    final cartao = _aspetoPassado(
+      _datasPassadas(item.ocorrencias, fim: item.validadeFim),
+      Container(
+        padding: EdgeInsets.all(widget.mostrarLivres ? 6 : 8),
+        decoration: BoxDecoration(
+          color: widget.mostrarLivres
+              ? MatrizColors.livre
+              : item.conflito
+                  ? MyAppTheme.gabineteConflito
+                  : MatrizColors.ocupado,
+          border: Border.all(
+            color: widget.mostrarLivres
+                ? MatrizColors.bordaLivre
+                : item.conflito
+                    ? MyAppTheme.bordaGabineteConflito
+                    : MatrizColors.borda,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.mostrarLivres) ...[
+              Row(children: [
+                const Text('Livre',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textoLivre)),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(_horarioLivre(item),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold))),
+              ]),
+              for (final periodo in _periodosLivres(item))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: _aspetoPassado(
+                    _datasPassadas(periodo.datas) &&
+                        !_datasPassadas(item.ocorrencias,
+                            fim: item.validadeFim),
+                    Tooltip(
+                      message: 'Consultar datas: ${periodo.descricao}',
+                      child: Material(
+                        color: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          side:
+                              const BorderSide(color: MatrizColors.bordaLivre),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => _mostrarDatas(item, periodo),
+                          hoverColor: MatrizColors.identificacao,
+                          splashColor: MatrizColors.cabecalho,
+                          child: Container(
+                            key: const ValueKey('disponibilidade_periodo'),
+                            width: double.infinity,
+                            constraints: const BoxConstraints(minHeight: 42),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 5),
+                            alignment: Alignment.center,
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text.rich(
+                                          _textoPeriodo(periodo.descricao),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 2,
+                                          softWrap: false,
+                                          style: _estiloPeriodo)),
+                                  if (periodo.observacao != null)
+                                    Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(periodo.observacao!,
+                                            textAlign: TextAlign.center,
+                                            style: _estiloExcecoes)),
+                                ]),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ] else ...[
-            Text(item.medicoNome,
-                style:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            Text(item.especialidade, style: const TextStyle(fontSize: 11)),
-            Text(item.horario, style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 2),
-            Text(_rotacao(item),
-                style: TextStyle(
-                    fontSize: 11,
-                    color: SerieTipoColors.para(item.tipo),
-                    fontWeight: FontWeight.w600)),
+            ] else ...[
+              Text(item.medicoNome,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold)),
+              Text(item.especialidade, style: const TextStyle(fontSize: 11)),
+              Text(item.horario, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 2),
+              Text(_rotacao(item),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: SerieTipoColors.para(item.tipo),
+                      fontWeight: FontWeight.w600)),
+            ],
+            if (item.periodo != null)
+              Text(item.periodo!, style: const TextStyle(fontSize: 10)),
+            if (item.conflito)
+              const Text('Possível coincidência',
+                  style: TextStyle(fontSize: 10, color: MyAppTheme.vermelho)),
           ],
-          if (item.periodo != null)
-            Text(item.periodo!, style: const TextStyle(fontSize: 10)),
-          if (item.conflito)
-            const Text('Possível coincidência',
-                style: TextStyle(fontSize: 10, color: MyAppTheme.vermelho)),
-        ],
+        ),
       ),
     );
     if (widget.mostrarLivres || widget.onEditarMedico == null) return cartao;

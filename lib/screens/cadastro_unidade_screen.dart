@@ -11,11 +11,13 @@ import '../services/password_service.dart';
 class CadastroUnidadeScreen extends StatefulWidget {
   final Unidade? unidade;
   final bool confirmarAoAtualizar;
+  final bool incorporado;
 
   const CadastroUnidadeScreen({
     super.key,
     this.unidade,
     this.confirmarAoAtualizar = false,
+    this.incorporado = false,
   });
 
   @override
@@ -439,6 +441,7 @@ class _CadastroUnidadeScreenState extends State<CadastroUnidadeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.incorporado,
         title: Text(isEditando ? 'Editar Unidade' : 'Nova Unidade'),
         backgroundColor: MatrizColors.barra,
         foregroundColor: AppColors.texto,

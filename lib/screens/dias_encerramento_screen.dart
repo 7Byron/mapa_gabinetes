@@ -11,8 +11,10 @@ import '../utils/ui_atualizar_dia.dart';
 
 class DiasEncerramentoScreen extends StatefulWidget {
   final Unidade? unidade;
+  final bool incorporado;
 
-  const DiasEncerramentoScreen({super.key, this.unidade});
+  const DiasEncerramentoScreen(
+      {super.key, this.unidade, this.incorporado = false});
 
   @override
   State<DiasEncerramentoScreen> createState() => _DiasEncerramentoScreenState();
@@ -268,7 +270,8 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
       // Invalidar cache de dias de encerramento após salvar
       if (widget.unidade != null) {
         await invalidateCacheEncerramento(widget.unidade!.id, int.parse(ano));
-        debugPrint('🗑️ Cache de dias de encerramento invalidado após adicionar dia');
+        debugPrint(
+            '🗑️ Cache de dias de encerramento invalidado após adicionar dia');
       }
 
       setState(() {
@@ -419,7 +422,8 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
           await invalidateCacheEncerramento(
               widget.unidade!.id, int.parse(anoNovo));
         }
-        debugPrint('🗑️ Cache de dias de encerramento invalidado após editar dia');
+        debugPrint(
+            '🗑️ Cache de dias de encerramento invalidado após editar dia');
       }
 
       // Atualiza a lista local
@@ -493,7 +497,8 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
       // Invalidar cache de dias de encerramento após remover
       if (widget.unidade != null && dataDia != null) {
         await invalidateCacheEncerramento(widget.unidade!.id, dataDia.year);
-        debugPrint('🗑️ Cache de dias de encerramento invalidado após remover dia');
+        debugPrint(
+            '🗑️ Cache de dias de encerramento invalidado após remover dia');
       }
 
       setState(() {
@@ -535,7 +540,9 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: CustomAppBar(title: 'Dias de Encerramento'),
+      appBar: widget.incorporado
+          ? null
+          : CustomAppBar(title: 'Dias de Encerramento'),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),

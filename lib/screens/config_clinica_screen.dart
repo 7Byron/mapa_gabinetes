@@ -20,8 +20,10 @@ import '../utils/ui_atualizar_dia.dart';
 
 class ConfigClinicaScreen extends StatefulWidget {
   final Unidade? unidade;
+  final bool incorporado;
 
-  const ConfigClinicaScreen({super.key, this.unidade});
+  const ConfigClinicaScreen(
+      {super.key, this.unidade, this.incorporado = false});
 
   @override
   State<ConfigClinicaScreen> createState() => _ConfigClinicaScreenState();
@@ -293,7 +295,9 @@ class _ConfigClinicaScreenState extends State<ConfigClinicaScreen> {
         await _gravarAlteracoes();
       },
       child: Scaffold(
-        appBar: CustomAppBar(title: 'Horário de Abertura'),
+        appBar: widget.incorporado
+            ? null
+            : CustomAppBar(title: 'Horário de Abertura'),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),

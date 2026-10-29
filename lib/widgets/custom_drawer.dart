@@ -9,9 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/unidade.dart';
 import '../screens/lista_medicos.dart';
 import '../screens/lista_gabinetes.dart';
-import '../screens/cadastro_unidade_screen.dart';
-import '../screens/config_clinica_screen.dart';
-import '../screens/dias_encerramento_screen.dart';
+import '../screens/configuracoes_screen.dart';
 import '../screens/selecao_unidade_screen.dart';
 import '../screens/scripts_screen.dart';
 import '../screens/relatorio_ocupacao_detalhe_screen.dart';
@@ -235,7 +233,7 @@ class CustomDrawer extends StatelessWidget {
     );
   }
 
-  Future<void> _configurarUnidade(BuildContext context) async {
+  Future<void> _abrirConfiguracoes(BuildContext context) async {
     final unidadeAtual = unidade;
     if (unidadeAtual == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -252,13 +250,14 @@ class CustomDrawer extends StatelessWidget {
 
     final resultado = await navigator.push<bool>(
       MaterialPageRoute(
-        builder: (context) => CadastroUnidadeScreen(
+        builder: (context) => ConfiguracoesScreen(
           unidade: unidadeAtual,
-          confirmarAoAtualizar: true,
+          destacarHorarios: onboardingStep == 1,
         ),
       ),
     );
 
+    onRefresh();
     if (resultado != true) return;
 
     await UnidadeSelecionadaService.limparUnidadeSelecionada();
@@ -499,49 +498,15 @@ class CustomDrawer extends StatelessWidget {
                       },
                     ),
                     _buildSectionDivider(),
-                    _buildSectionTitle('Configurações'),
                     ListTile(
-                      leading: const Icon(Icons.settings_applications),
-                      title: const Text('Configurar Unidade',
+                      leading: const Icon(Icons.settings),
+                      title: const Text('Configurações',
                           style: TextStyle(fontSize: 14)),
+                      trailing: _buildOnboardingArrow(1) ??
+                          const Icon(Icons.chevron_right),
                       enabled: isAdmin,
-                      onTap: isAdmin ? () => _configurarUnidade(context) : null,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.schedule),
-                      title: const Text('Configurar Horários',
-                          style: TextStyle(fontSize: 14)),
-                      trailing: _buildOnboardingArrow(1),
-                      enabled: isAdmin, // Só administradores podem configurar
-                      onTap: isAdmin
-                          ? () {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (context) =>
-                                        ConfigClinicaScreen(unidade: unidade)),
-                              ).then((_) => onRefresh());
-                            }
-                          : null,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.event_busy),
-                      title: const Text('Dias de Encerramento',
-                          style: TextStyle(fontSize: 14)),
-                      enabled: isAdmin, // Só administradores podem configurar
-                      onTap: isAdmin
-                          ? () {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (context) =>
-                                        DiasEncerramentoScreen(
-                                            unidade: unidade)),
-                              ).then((_) => onRefresh());
-                            }
-                          : null,
+                      onTap:
+                          isAdmin ? () => _abrirConfiguracoes(context) : null,
                     ),
                     _buildSectionDivider(),
                     _buildSectionTitle('Contactos'),

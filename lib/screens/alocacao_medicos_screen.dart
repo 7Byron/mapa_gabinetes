@@ -1639,7 +1639,7 @@ class AlocacaoMedicosState extends State<AlocacaoMedicos>
           passo: 1,
           totalPassos: 3,
           iconeAlvo: Icons.schedule,
-          alvoMenu: 'Configurar Horários',
+          alvoMenu: 'Configurações',
           descricao:
               'Comece por definir as horas de abertura do estabelecimento.',
         );

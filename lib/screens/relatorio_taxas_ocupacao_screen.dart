@@ -1,7 +1,9 @@
 import '../services/cache_version_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:file_saver/file_saver.dart';
+import '../services/relatorio_exportacao_service.dart';
+import '../services/relatorio_ocupacao_exportacao_service.dart';
+import '../widgets/relatorio_exportacao_menu.dart';
 import '../services/relatorio_taxas_excel_service.dart';
 import '../models/gabinete.dart';
 import '../models/taxa_ocupacao.dart';
@@ -143,38 +145,51 @@ class _RelatorioTaxasOcupacaoScreenState
     }
   }
 
-  Future<void> _exportarExcel() async {
+  Future<void> _exportar() async {
     if (_inicioRelatorio == null ||
         _taxas.isEmpty ||
         _exportando ||
-        _calculando) {
+        _calculando ||
+        _alterado) {
       return;
     }
+    final escolha = await escolherExportacaoRelatorio(context);
+    if (escolha == null || !mounted) return;
+    final formato = escolha.formato;
+    final imagem = formato == FormatoExportacaoRelatorio.imagem;
     setState(() => _exportando = true);
     try {
-      final bytes = RelatorioTaxasExcelService.gerar(
-        unidade: widget.unidade.nome,
-        inicio: _inicioRelatorio!,
-        fim: _fimRelatorio!,
-        gabinetes: _gabinetes,
-        taxas: _taxas,
-      );
-      final formato = DateFormat('yyyy-MM-dd');
-      await FileSaver.instance.saveFile(
-        name:
-            'taxas_ocupacao_${formato.format(_inicioRelatorio!)}_${formato.format(_fimRelatorio!)}',
-        bytes: bytes,
-        fileExtension: 'xlsx',
-        mimeType: MimeType.microsoftExcel,
+      final data = DateFormat('yyyy-MM-dd');
+      await RelatorioExportacaoService.guardar(
+        formato: formato,
+        conteudoImagem: escolha.conteudoImagem,
+        imagemHorizontal: imagem,
+        dados: RelatorioOcupacaoExportacaoService.taxas(
+          unidade: widget.unidade.nome,
+          inicio: _inicioRelatorio!,
+          fim: _fimRelatorio!,
+          gabinetes: _gabinetes,
+          taxas: _taxas,
+        ),
+        nome:
+            'taxas_ocupacao_${data.format(_inicioRelatorio!)}_${data.format(_fimRelatorio!)}'
+            '${imagem ? '_${escolha.conteudoImagem.name}' : ''}',
+        gerarExcel: () => RelatorioTaxasExcelService.gerar(
+          unidade: widget.unidade.nome,
+          inicio: _inicioRelatorio!,
+          fim: _fimRelatorio!,
+          gabinetes: _gabinetes,
+          taxas: _taxas,
+        ),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Excel exportado.')));
+          .showSnackBar(const SnackBar(content: Text('Relatório exportado.')));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
-              Text('Não foi possível exportar o Excel. Tente novamente.')));
+              Text('Não foi possível exportar o relatório. Tente novamente.')));
     } finally {
       if (mounted) setState(() => _exportando = false);
     }
@@ -321,12 +336,13 @@ class _RelatorioTaxasOcupacaoScreenState
                 acoes: RelatorioAcoes(
                   onGerar:
                       _selecionados.isEmpty || _calculando ? null : _calcular,
-                  onExportar: _inicioRelatorio == null ||
+                  onExportar: _alterado ||
+                          _inicioRelatorio == null ||
                           _taxas.isEmpty ||
                           _calculando ||
                           _exportando
                       ? null
-                      : _exportarExcel,
+                      : _exportar,
                   gerando: _calculando,
                   exportando: _exportando,
                 ),
@@ -340,6 +356,8 @@ class _RelatorioTaxasOcupacaoScreenState
       );
 
   Widget _resultados() {
+    final gabinetesRelatorio =
+        _gabinetes.where((g) => _taxas.containsKey(g.id)).toList();
     final geral =
         _taxas.values.fold(const TaxaOcupacao(), (a, b) => a.somar(b));
     return ListView(children: [
@@ -363,24 +381,26 @@ class _RelatorioTaxasOcupacaoScreenState
             padding: EdgeInsets.all(24),
             child: Center(child: CircularProgressIndicator()))
       else if (_inicioRelatorio != null) ...[
-        _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Taxa de ocupação geral',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          Center(
-              child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 300),
-            child: _cartaoResultado(
-              geral,
-              titulo: 'Geral',
-              descricao:
-                  '${_formato.format(_inicioRelatorio!)} — ${_formato.format(_fimRelatorio!)}',
-            ),
-          )),
-          const SizedBox(height: 8),
-          if (geral.horasDisponiveis == 0)
-            const Text('Sem horas disponíveis neste período.'),
-        ])),
+        if (gabinetesRelatorio.length > 1)
+          _quadro(
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Taxa de ocupação geral',
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            Center(
+                child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: _cartaoResultado(
+                geral,
+                titulo: 'Geral',
+                descricao:
+                    '${_formato.format(_inicioRelatorio!)} — ${_formato.format(_fimRelatorio!)}',
+              ),
+            )),
+            const SizedBox(height: 8),
+            if (geral.horasDisponiveis == 0)
+              const Text('Sem horas disponíveis neste período.'),
+          ])),
         _quadro(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Ocupação por gabinete',
               style: Theme.of(context).textTheme.titleLarge),
@@ -395,8 +415,7 @@ class _RelatorioTaxasOcupacaoScreenState
                     spacing: 12,
                     runSpacing: 12,
                     children: [
-                      for (final g
-                          in _gabinetes.where((g) => _taxas.containsKey(g.id)))
+                      for (final g in gabinetesRelatorio)
                         SizedBox(
                             width: largura,
                             child: _cartaoResultado(_taxas[g.id]!,

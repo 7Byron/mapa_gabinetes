@@ -53,8 +53,10 @@ class RelatorioTaxasExcelService {
       }
     }
 
-    adicionar('Geral', '', '',
-        taxas.values.fold(const TaxaOcupacao(), (a, b) => a.somar(b)));
+    if (gabinetes.where((g) => taxas.containsKey(g.id)).length > 1) {
+      adicionar('Geral', '', '',
+          taxas.values.fold(const TaxaOcupacao(), (a, b) => a.somar(b)));
+    }
     for (final gabinete in gabinetes.where((g) => taxas.containsKey(g.id))) {
       adicionar(gabinete.nome, gabinete.setor,
           gabinete.especialidadesPermitidas.join(', '), taxas[gabinete.id]!);

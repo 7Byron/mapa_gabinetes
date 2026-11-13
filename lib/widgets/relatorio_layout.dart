@@ -295,12 +295,16 @@ class RelatorioAcoes extends StatelessWidget {
   final VoidCallback? onExportar;
   final bool gerando;
   final bool exportando;
+  final String textoExportar;
+  final IconData iconeExportar;
   const RelatorioAcoes(
       {super.key,
       this.onGerar,
       this.onExportar,
       this.gerando = false,
-      this.exportando = false});
+      this.exportando = false,
+      this.textoExportar = 'Exportar',
+      this.iconeExportar = Icons.ios_share_outlined});
   @override
   Widget build(BuildContext context) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -316,8 +320,8 @@ class RelatorioAcoes extends StatelessWidget {
             OutlinedButton.icon(
                 key: const ValueKey('relatorio_exportar'),
                 onPressed: onExportar,
-                icon: const Icon(Icons.download_outlined, size: 18),
-                label: Text(exportando ? 'A exportar…' : 'Exportar Excel',
+                icon: Icon(iconeExportar, size: 18),
+                label: Text(exportando ? 'A exportar…' : textoExportar,
                     style: const TextStyle(fontSize: 13))),
           ]);
 }

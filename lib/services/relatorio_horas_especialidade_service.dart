@@ -1,26 +1,210 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/disponibilidade.dart';
-import '../models/excecao_serie.dart';
 import '../models/medico.dart';
 import '../models/relatorio_horas_especialidade.dart';
-import '../models/serie_recorrencia.dart';
 import '../models/unidade.dart';
+import '../models/resumo_horas_mes.dart';
 import '../utils/time_utils.dart';
 import 'alocacao_clinica_config_service.dart';
 import 'alocacao_clinica_status_service.dart';
-import 'disponibilidade_unica_service.dart';
+import 'cache_version_service.dart';
 import 'medico_salvar_service.dart';
-import 'serie_generator.dart';
-import 'serie_service.dart';
+import 'relatorio_horas_disponibilidades_service.dart';
+import 'relatorio_horas_cache_service.dart';
 
 class RelatorioHorasEspecialidadeService {
-  static Future<RelatorioHorasEspecialidade> calcular({
+  final RelatorioHorasCacheService? _cachePersistente;
+  const RelatorioHorasEspecialidadeService(
+      {RelatorioHorasCacheService? cachePersistente})
+      : _cachePersistente = cachePersistente;
+
+  RelatorioHorasCacheService? get cachePersistente =>
+      _cachePersistente ?? RelatorioHorasCacheService.padrao;
+  static final _caches = Expando<_CacheHorasClinica>();
+  _CacheHorasClinica get _cache => _caches[this] ??= _CacheHorasClinica();
+
+  Future<ClinicaConfiguracoes> carregarConfiguracoes(
+          {required Unidade unidade, required bool forcarServidor}) =>
+      AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
+          unidadeId: unidade.id, forcarServidor: forcarServidor);
+
+  Future<List<Map<String, String>>> carregarFeriados(
+          {required Unidade unidade,
+          required int ano,
+          required bool forcarServidor}) =>
+      AlocacaoClinicaConfigService.carregarFeriados(
+          unidadeId: unidade.id,
+          anoSelecionado: ano,
+          forcarServidor: forcarServidor);
+
+  Future<List<Map<String, dynamic>>> carregarEncerramentos(
+          {required Unidade unidade,
+          required int ano,
+          required bool forcarServidor}) =>
+      AlocacaoClinicaConfigService.carregarDiasEncerramento(
+          unidadeId: unidade.id,
+          anoSelecionado: ano,
+          forcarServidor: forcarServidor);
+
+  Future<List<Medico>> carregarMedicos({
+    required Unidade unidade,
+    bool forcarServidor = false,
+  }) =>
+      buscarMedicos(unidade: unidade, forcarAtualizacao: forcarServidor);
+
+  Future<String> obterVersaoCache({required Unidade unidade}) async {
+    final versoes =
+        await CacheVersionService.fetchVersions(unidadeId: unidade.id);
+    return [
+      versoes[CacheVersionService.fieldSeries] ?? 0,
+      versoes[CacheVersionService.fieldDisponibilidades] ?? 0,
+      versoes[CacheVersionService.fieldMedicos] ?? 0,
+      versoes[CacheVersionService.fieldClinicaConfig] ?? 0,
+    ].join('_');
+  }
+
+  Future<RelatorioHorasEspecialidade> calcular({
     required Unidade unidade,
     required DateTime inicio,
     required DateTime fim,
     bool forcarServidor = false,
     Set<String>? especialidades,
+    Set<String>? medicoIds,
+    void Function(double progresso, String mensagem)? onProgress,
+  }) =>
+      CacheVersionService.comVersoesPartilhadas(() async {
+        final primeira = _normalizarData(inicio), ultima = _normalizarData(fim);
+        final de = primeira.isBefore(ultima) ? primeira : ultima;
+        final ate = primeira.isBefore(ultima) ? ultima : primeira;
+        final versao = await obterVersaoCache(unidade: unidade);
+        final estado = _cache;
+        final futuros = <Future<ResumoHorasMes>>[];
+        final donos = <DateTime, _PedidoHorasMes>{};
+        for (var mes = DateTime(de.year, de.month);
+            !mes.isAfter(ate);
+            mes = DateTime(mes.year, mes.month + 1)) {
+          final chave = (unidade.id, mes);
+          final pendente = estado.pendentes[chave];
+          final existente = estado.entradas[chave];
+          if (!forcarServidor && pendente?.versao == versao) {
+            futuros.add(pendente!.resultado.future);
+          } else if (!forcarServidor && existente?.$1 == versao) {
+            futuros.add(Future.value(existente!.$2));
+          } else {
+            final pedido = _PedidoHorasMes(versao);
+            estado.pendentes[chave] = pedido;
+            estado.entradas.remove(chave);
+            donos[mes] = pedido;
+            futuros.add(pedido.resultado.future);
+          }
+        }
+        // Instalar os handlers antes de começar o trabalho: uma falha é propagada
+        // a todos os pedidos em espera, sem resultados parciais nem Futures soltos.
+        final tarefas = Future.wait<dynamic>([
+          Future.wait(futuros),
+          _resolverMeses(unidade, versao, donos, forcarServidor, onProgress),
+        ]);
+        final resultados = (await tarefas).first as List<ResumoHorasMes>;
+        onProgress?.call(1, 'Concluído');
+        return ResumoHorasMes.relatorio(
+            meses: resultados,
+            inicio: de,
+            fim: ate,
+            medicoIds: medicoIds,
+            especialidades: especialidades);
+      });
+
+  Future<void> _resolverMeses(
+      Unidade unidade,
+      String versao,
+      Map<DateTime, _PedidoHorasMes> donos,
+      bool forcarServidor,
+      void Function(double, String)? onProgress) async {
+    final estado = _cache;
+    void concluir(DateTime mes, ResumoHorasMes resumo) {
+      final pedido = donos[mes]!;
+      final chave = (unidade.id, mes);
+      if (identical(estado.pendentes[chave], pedido)) {
+        estado.entradas.remove(chave);
+        if (estado.entradas.length >= 48) {
+          estado.entradas.remove(estado.entradas.keys.first);
+        }
+        estado.entradas[chave] = (versao, resumo);
+      }
+      pedido.resultado.complete(resumo);
+    }
+
+    try {
+      final faltam = <DateTime>[];
+      final meses = donos.keys.toList();
+      for (var i = 0; i < meses.length; i += 6) {
+        await Future.wait(
+            meses.sublist(i, math.min(i + 6, meses.length)).map((mes) async {
+          final resumo = forcarServidor
+              ? null
+              : await cachePersistente?.ler(unidade.id, mes, versao);
+          if (resumo != null) {
+            concluir(mes, resumo);
+          } else {
+            faltam.add(mes);
+          }
+        }));
+      }
+      faltam.sort();
+      final grupos = <List<DateTime>>[];
+      for (final mes in faltam) {
+        if (grupos.isEmpty ||
+            DateTime(grupos.last.last.year, grupos.last.last.month + 1) !=
+                mes) {
+          grupos.add([]);
+        }
+        grupos.last.add(mes);
+      }
+      // Meses contíguos em falta são calculados de uma vez. Um primeiro
+      // relatório anual não multiplica as leituras por doze consultas mensais.
+      for (var i = 0; i < grupos.length; i++) {
+        final grupo = grupos[i];
+        final resumos = await _calcularResumos(
+            unidade: unidade,
+            inicio: grupo.first,
+            fim: DateTime(grupo.last.year, grupo.last.month + 1, 0),
+            forcarServidor: forcarServidor,
+            onProgress: (valor, mensagem) => onProgress?.call(
+                0.1 + 0.85 * (i + valor) / grupos.length, mensagem));
+        final atuais = resumos
+            .where((r) =>
+                identical(estado.pendentes[(unidade.id, r.mes)], donos[r.mes]))
+            .toList();
+        if (atuais.isNotEmpty) {
+          await cachePersistente?.guardar(unidade.id, versao, atuais);
+        }
+        for (final resumo in resumos) {
+          concluir(resumo.mes, resumo);
+        }
+      }
+    } catch (erro, stack) {
+      for (final pedido
+          in donos.values.where((p) => !p.resultado.isCompleted)) {
+        pedido.resultado.completeError(erro, stack);
+      }
+    } finally {
+      for (final entrada in donos.entries) {
+        final chave = (unidade.id, entrada.key);
+        if (identical(estado.pendentes[chave], entrada.value)) {
+          estado.pendentes.remove(chave);
+        }
+      }
+    }
+  }
+
+  Future<List<ResumoHorasMes>> _calcularResumos({
+    required Unidade unidade,
+    required DateTime inicio,
+    required DateTime fim,
+    bool forcarServidor = false,
     void Function(double progresso, String mensagem)? onProgress,
   }) async {
     var inicioNormalizado = _normalizarData(inicio);
@@ -32,9 +216,8 @@ class RelatorioHorasEspecialidadeService {
     }
 
     onProgress?.call(0.05, 'A carregar configurações da clínica...');
-    final config =
-        await AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
-      unidadeId: unidade.id,
+    final config = await carregarConfiguracoes(
+      unidade: unidade,
       forcarServidor: forcarServidor,
     );
 
@@ -48,15 +231,14 @@ class RelatorioHorasEspecialidadeService {
         0.08 + (0.12 * ((i + 1) / math.max(anos.length, 1))),
         'A carregar feriados e dias de encerramento...',
       );
-      feriadosPorAno[ano] = await AlocacaoClinicaConfigService.carregarFeriados(
-        unidadeId: unidade.id,
-        anoSelecionado: ano,
+      feriadosPorAno[ano] = await carregarFeriados(
+        unidade: unidade,
+        ano: ano,
         forcarServidor: forcarServidor,
       );
-      encerramentosPorAno[ano] =
-          await AlocacaoClinicaConfigService.carregarDiasEncerramento(
-        unidadeId: unidade.id,
-        anoSelecionado: ano,
+      encerramentosPorAno[ano] = await carregarEncerramentos(
+        unidade: unidade,
+        ano: ano,
         forcarServidor: forcarServidor,
       );
     }
@@ -111,32 +293,22 @@ class RelatorioHorasEspecialidadeService {
     }
 
     onProgress?.call(0.25, 'A carregar médicos...');
-    final medicos = await buscarMedicos(unidade: unidade);
-    final totalMedicosAtivosClinica = medicos.where((m) => m.ativo).length;
-    final medicosAtivos = medicos
-        .where((m) =>
-            m.ativo &&
-            (especialidades == null ||
-                especialidades
-                    .contains(_normalizarEspecialidade(m.especialidade))))
-        .toList();
-    if (medicosAtivos.isEmpty) {
-      onProgress?.call(1.0, 'Concluído');
-      return RelatorioHorasEspecialidade(
-        inicio: inicioNormalizado,
-        fim: fimNormalizado,
-        linhas: const [],
-        totalMedicosAtivosClinica: totalMedicosAtivosClinica,
-      );
-    }
+    final medicos =
+        await carregarMedicos(unidade: unidade, forcarServidor: true);
+    final medicosAtivos = medicos.where((m) => m.ativo).toList()
+      ..sort((a, b) => a.nome.compareTo(b.nome));
+    final porMes = <DateTime, List<MedicoHorasMes>>{
+      for (var mes = DateTime(inicio.year, inicio.month);
+          !mes.isAfter(fim);
+          mes = DateTime(mes.year, mes.month + 1))
+        mes: [],
+    };
 
-    final acumuladoPorEspecialidade = <String, _AcumuladoEspecialidade>{};
-
-    for (int i = 0; i < medicosAtivos.length; i++) {
-      final medico = medicosAtivos[i];
+    var concluidos = 0;
+    Future<void> processar(Medico medico) async {
       final especialidade = _normalizarEspecialidade(medico.especialidade);
 
-      final disponibilidades = await _carregarDisponibilidadesMedicoPeriodo(
+      final disponibilidades = await carregarDisponibilidadesMedicoPeriodo(
         medico: medico,
         unidade: unidade,
         anos: anos,
@@ -172,136 +344,64 @@ class RelatorioHorasEspecialidadeService {
         }
       }
 
-      int minutosMedico = 0;
-      for (final intervalosDia in intervalosPorDia.values) {
-        minutosMedico += _somarMinutosUnicos(intervalosDia);
+      final minutosPorDia = {
+        for (final entrada in intervalosPorDia.entries)
+          entrada.key: _somarMinutosUnicos(entrada.value),
+      };
+      for (final entrada in porMes.entries) {
+        final mes = entrada.key;
+        entrada.value.add(MedicoHorasMes(
+            id: medico.id,
+            nome: medico.nome,
+            especialidade: especialidade,
+            minutos: [
+              for (var dia = 1;
+                  dia <= DateTime(mes.year, mes.month + 1, 0).day;
+                  dia++)
+                minutosPorDia[_dataKey(DateTime(mes.year, mes.month, dia))] ??
+                    0,
+            ]));
       }
 
-      if (minutosMedico > 0) {
-        final acumulado = acumuladoPorEspecialidade.putIfAbsent(
-          especialidade,
-          () => _AcumuladoEspecialidade(),
-        );
-        // Neste relatório, contam apenas médicos com disponibilidade efetiva
-        // (já após aplicar exceções no período).
-        acumulado.medicosAtivos += 1;
-        acumulado.medicosComDisponibilidade += 1;
-        acumulado.horasConsulta += (minutosMedico / 60.0);
-      }
-
-      if (i % 3 == 0 || i == medicosAtivos.length - 1) {
+      concluidos++;
+      if (concluidos % 3 == 0 || concluidos == medicosAtivos.length) {
         onProgress?.call(
-          0.3 + (0.65 * ((i + 1) / medicosAtivos.length)),
-          'A consolidar horas por especialidade...',
+          0.3 + (0.65 * (concluidos / medicosAtivos.length)),
+          'A calcular as horas da clínica...',
         );
       }
     }
 
-    final linhas = acumuladoPorEspecialidade.entries
-        .map(
-          (entry) => RelatorioHorasEspecialidadeLinha(
-            especialidade: entry.key,
-            medicosAtivos: entry.value.medicosAtivos,
-            medicosComDisponibilidade: entry.value.medicosComDisponibilidade,
-            horasConsulta: entry.value.horasConsulta,
-          ),
-        )
-        .toList()
-      ..sort((a, b) {
-        final cmpHoras = b.horasConsulta.compareTo(a.horasConsulta);
-        if (cmpHoras != 0) return cmpHoras;
-        return a.especialidade.compareTo(b.especialidade);
-      });
-
-    onProgress?.call(1.0, 'Concluído');
-    return RelatorioHorasEspecialidade(
-      inicio: inicioNormalizado,
-      fim: fimNormalizado,
-      linhas: linhas,
-      totalMedicosAtivosClinica: totalMedicosAtivosClinica,
-    );
+    // Limita o número de leituras simultâneas e cede tempo ao ecrã entre lotes.
+    for (var i = 0; i < medicosAtivos.length; i += 6) {
+      await Future.wait(medicosAtivos
+          .sublist(i, math.min(i + 6, medicosAtivos.length))
+          .map(processar));
+      await Future<void>.delayed(Duration.zero);
+    }
+    return [
+      for (final entrada in porMes.entries)
+        ResumoHorasMes(
+            mes: entrada.key,
+            medicos: entrada.value..sort((a, b) => a.nome.compareTo(b.nome))),
+    ];
   }
 
-  static Future<List<Disponibilidade>> _carregarDisponibilidadesMedicoPeriodo({
+  Future<List<Disponibilidade>> carregarDisponibilidadesMedicoPeriodo({
     required Medico medico,
     required Unidade unidade,
     required List<int> anos,
     required DateTime inicio,
     required DateTime fim,
     required bool forcarServidor,
-  }) async {
-    final resultados = await Future.wait([
-      SerieService.carregarSeries(
-        medico.id,
-        unidade: unidade,
-        dataInicio: inicio,
-        dataFim: fim,
-        forcarServidor: forcarServidor,
-      ),
-      SerieService.carregarExcecoes(
-        medico.id,
-        unidade: unidade,
-        dataInicio: inicio,
-        dataFim: fim,
-        forcarServidor: forcarServidor,
-      ),
-      _carregarDisponibilidadesUnicasPeriodo(
-        medicoId: medico.id,
-        unidade: unidade,
-        anos: anos,
-        inicio: inicio,
-        fim: fim,
-      ),
-    ]);
-
-    final series = (resultados[0] as List<SerieRecorrencia>)
-        .where((s) => s.ativo)
-        .toList();
-    final excecoes = (resultados[1] as List<ExcecaoSerie>).toList();
-    final unicas = (resultados[2] as List<Disponibilidade>).toList();
-
-    if (series.isEmpty) {
-      return unicas;
-    }
-
-    final geradas = SerieGenerator.gerarDisponibilidades(
-      series: series,
-      excecoes: excecoes,
-      dataInicio: inicio,
-      dataFim: fim,
-    );
-
-    return [...geradas, ...unicas];
-  }
-
-  static Future<List<Disponibilidade>> _carregarDisponibilidadesUnicasPeriodo({
-    required String medicoId,
-    required Unidade unidade,
-    required List<int> anos,
-    required DateTime inicio,
-    required DateTime fim,
-  }) async {
-    final anosValidos = anos.toSet().toList()..sort();
-    final carregamentos = await Future.wait(
-      anosValidos.map(
-        (ano) => DisponibilidadeUnicaService.carregarDisponibilidadesUnicas(
-          medicoId,
-          ano,
-          unidade,
-        ),
-      ),
-    );
-
-    final unicas = <Disponibilidade>[];
-    for (final listaAno in carregamentos) {
-      for (final disponibilidade in listaAno) {
-        final data = _normalizarData(disponibilidade.data);
-        if (data.isBefore(inicio) || data.isAfter(fim)) continue;
-        unicas.add(disponibilidade);
-      }
-    }
-    return unicas;
-  }
+  }) =>
+      RelatorioHorasDisponibilidadesService.carregar(
+          firestore: FirebaseFirestore.instance,
+          unidadeId: unidade.id,
+          medicoId: medico.id,
+          inicio: inicio,
+          fim: fim,
+          forcarServidor: forcarServidor);
 
   static int _somarMinutosUnicos(List<_IntervaloMinutos> intervalos) {
     if (intervalos.isEmpty) return 0;
@@ -402,7 +502,7 @@ class RelatorioHorasEspecialidadeService {
     final fimNormalizado = _normalizarData(fim);
     while (!atual.isAfter(fimNormalizado)) {
       yield atual;
-      atual = atual.add(const Duration(days: 1));
+      atual = DateTime(atual.year, atual.month, atual.day + 1);
     }
   }
 }
@@ -438,8 +538,13 @@ class _IntervaloMinutos {
   const _IntervaloMinutos(this.inicio, this.fim);
 }
 
-class _AcumuladoEspecialidade {
-  int medicosAtivos = 0;
-  int medicosComDisponibilidade = 0;
-  double horasConsulta = 0.0;
+class _CacheHorasClinica {
+  final entradas = <(String, DateTime), (String, ResumoHorasMes)>{};
+  final pendentes = <(String, DateTime), _PedidoHorasMes>{};
+}
+
+class _PedidoHorasMes {
+  final String versao;
+  final resultado = Completer<ResumoHorasMes>();
+  _PedidoHorasMes(this.versao);
 }

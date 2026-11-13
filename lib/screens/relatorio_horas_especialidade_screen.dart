@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:file_saver/file_saver.dart';
-import '../services/medico_salvar_service.dart';
+import '../services/relatorio_exportacao_service.dart';
+import '../widgets/relatorio_exportacao_menu.dart';
+import '../models/medico.dart';
+import '../services/relatorio_horas_exportacao_service.dart';
+import '../widgets/searchable_selection_field.dart';
 import '../services/relatorio_horas_excel_service.dart';
 import '../utils/matriz_colors.dart';
 import '../widgets/relatorio_layout.dart';
@@ -14,6 +17,9 @@ import '../services/cache_version_service.dart';
 import '../services/relatorio_horas_especialidade_service.dart';
 import '../widgets/custom_appbar.dart';
 import '../widgets/horas_especialidade_card.dart';
+import '../widgets/horas_medico_card.dart';
+
+enum _ConsultaHoras { especialidade, medico }
 
 enum PeriodoHorasEspecialidade {
   dia,
@@ -49,10 +55,12 @@ class _CacheRelatorioHorasEspecialidade {
 
 class RelatorioHorasEspecialidadeScreen extends StatefulWidget {
   final Unidade unidade;
+  final RelatorioHorasEspecialidadeService service;
 
   const RelatorioHorasEspecialidadeScreen({
     super.key,
     required this.unidade,
+    this.service = const RelatorioHorasEspecialidadeService(),
   });
 
   @override
@@ -62,6 +70,8 @@ class RelatorioHorasEspecialidadeScreen extends StatefulWidget {
 
 class _RelatorioHorasEspecialidadeScreenState
     extends State<RelatorioHorasEspecialidadeScreen> {
+  static const _informacaoMedias =
+      'Médias por médico ativo, incluindo quem tem zero horas no período.';
   static final Map<String, _CacheRelatorioHorasEspecialidade> _cache = {};
 
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
@@ -69,7 +79,15 @@ class _RelatorioHorasEspecialidadeScreenState
 
   bool _carregando = true;
   bool _exportando = false;
+  bool _opcoesCarregadas = false;
   List<String> _especialidades = [];
+  List<Medico> _medicos = [];
+  final Set<String> _medicosSelecionados = {};
+  _ConsultaHoras _consulta = _ConsultaHoras.medico;
+
+  bool get _porMedico => _consulta == _ConsultaHoras.medico;
+  bool get _selecaoValida =>
+      _porMedico ? _medicosSelecionados.isNotEmpty : _selecionadas.isNotEmpty;
   final Set<String> _selecionadas = {};
   String? _erro;
   double _progresso = 0.0;
@@ -90,14 +108,15 @@ class _RelatorioHorasEspecialidadeScreenState
     unawaited(_carregarEspecialidades());
   }
 
-  Future<void> _carregarEspecialidades() async {
+  Future<void> _carregarEspecialidades({bool forcarServidor = false}) async {
     setState(() {
       _carregando = true;
       _erro = null;
-      _mensagemProgresso = 'A carregar especialidades...';
+      _mensagemProgresso = 'A carregar médicos e especialidades...';
     });
     try {
-      final medicos = await buscarMedicos(unidade: widget.unidade);
+      final medicos = await widget.service.carregarMedicos(
+          unidade: widget.unidade, forcarServidor: forcarServidor);
       final especialidades = medicos
           .where((m) => m.ativo)
           .map((m) {
@@ -109,16 +128,23 @@ class _RelatorioHorasEspecialidadeScreenState
         ..sort();
       if (!mounted) return;
       setState(() {
+        _medicos = medicos.where((m) => m.ativo).toList()
+          ..sort((a, b) => a.nome.compareTo(b.nome));
         _especialidades = especialidades;
-        _selecionadas.clear();
-        _selecionadas.addAll(especialidades);
+        if (_opcoesCarregadas) {
+          _selecionadas.retainAll(especialidades);
+        } else {
+          _selecionadas.addAll(especialidades);
+        }
+        _medicosSelecionados.retainAll(_medicos.map((medico) => medico.id));
+        _opcoesCarregadas = true;
         _carregando = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _carregando = false;
-        _erro = 'Não foi possível carregar as especialidades.';
+        _erro = 'Não foi possível carregar os médicos e as especialidades.';
       });
     }
   }
@@ -141,7 +167,7 @@ class _RelatorioHorasEspecialidadeScreenState
           () => _carregarRelatorioInterno(forcarServidor: forcarServidor));
 
   Future<void> _carregarRelatorioInterno({bool forcarServidor = false}) async {
-    if (_selecionadas.isEmpty || _carregando) return;
+    if (!_selecaoValida || _carregando) return;
     setState(() {
       _carregando = true;
       _erro = null;
@@ -151,7 +177,8 @@ class _RelatorioHorasEspecialidadeScreenState
 
     try {
       _atualizarProgresso(0.04, 'A validar cache...');
-      final versao = await _obterVersaoCache();
+      final versao =
+          await widget.service.obterVersaoCache(unidade: widget.unidade);
       final cacheKey = _montarCacheKey();
       final cache = _cache[cacheKey];
       if (!forcarServidor && cache != null && cache.versao == versao) {
@@ -165,12 +192,13 @@ class _RelatorioHorasEspecialidadeScreenState
         return;
       }
 
-      final relatorio = await RelatorioHorasEspecialidadeService.calcular(
+      final relatorio = await widget.service.calcular(
         unidade: widget.unidade,
         inicio: _inicioRelatorio,
         fim: _fimRelatorio,
         forcarServidor: forcarServidor,
-        especialidades: Set.of(_selecionadas),
+        especialidades: _porMedico ? null : Set.of(_selecionadas),
+        medicoIds: _porMedico ? Set.of(_medicosSelecionados) : null,
         onProgress: _atualizarProgresso,
       );
 
@@ -197,10 +225,12 @@ class _RelatorioHorasEspecialidadeScreenState
   }
 
   Future<void> _forcarAtualizacao() async {
+    if (_carregando || _exportando) return;
+    final tinhaRelatorio = _relatorio != null;
     _cache.removeWhere((key, _) => key.startsWith('${widget.unidade.id}|'));
-    if (_especialidades.isEmpty) {
-      await _carregarEspecialidades();
-    } else {
+    setState(() => _relatorio = null);
+    await _carregarEspecialidades(forcarServidor: true);
+    if (mounted && _erro == null && tinhaRelatorio && _selecaoValida) {
       await _carregarRelatorio(forcarServidor: true);
     }
   }
@@ -219,19 +249,14 @@ class _RelatorioHorasEspecialidadeScreenState
       _inicioRelatorio.millisecondsSinceEpoch,
       _fimRelatorio.millisecondsSinceEpoch,
       _periodoSelecionado.name,
-      (_selecionadas.toList()..sort()).map(Uri.encodeComponent).join(','),
+      _consulta.name,
+      if (_porMedico)
+        (_medicosSelecionados.toList()..sort())
+            .map(Uri.encodeComponent)
+            .join(','),
+      if (!_porMedico)
+        (_selecionadas.toList()..sort()).map(Uri.encodeComponent).join(','),
     ].join('|');
-  }
-
-  Future<String> _obterVersaoCache() async {
-    final versoes =
-        await CacheVersionService.fetchVersions(unidadeId: widget.unidade.id);
-    return [
-      versoes[CacheVersionService.fieldSeries] ?? 0,
-      versoes[CacheVersionService.fieldDisponibilidades] ?? 0,
-      versoes[CacheVersionService.fieldMedicos] ?? 0,
-      versoes[CacheVersionService.fieldClinicaConfig] ?? 0,
-    ].join('_');
   }
 
   void _atualizarIntervalo() {
@@ -321,29 +346,46 @@ class _RelatorioHorasEspecialidadeScreenState
     });
   }
 
-  Future<void> _exportarExcel() async {
+  Future<void> _escolherExportacao() async {
+    final escolha = await escolherExportacaoRelatorio(context,
+        descricaoGrafico: _porMedico
+            ? 'Contribuição e médias na clínica e especialidade'
+            : 'Médicos e horas de consulta por especialidade',
+        descricaoTabela: _porMedico
+            ? 'Horas de consulta dos médicos selecionados'
+            : 'Horas e médias por especialidade');
+    if (escolha != null && mounted) await _exportar(escolha);
+  }
+
+  Future<void> _exportar(OpcaoExportacaoRelatorio escolha) async {
     final relatorio = _relatorio;
     if (relatorio == null || _exportando) return;
+    final formato = escolha.formato;
+    final conteudoImagem = escolha.conteudoImagem;
+    final imagem = formato == FormatoExportacaoRelatorio.imagem;
     setState(() => _exportando = true);
     try {
-      final bytes = RelatorioHorasExcelService.gerar(
-          unidade: widget.unidade.nome, relatorio: relatorio);
-      final formato = DateFormat('yyyy-MM-dd');
-      await FileSaver.instance.saveFile(
-        name:
-            'horas_especialidade_${formato.format(relatorio.inicio)}_${formato.format(relatorio.fim)}',
-        bytes: bytes,
-        fileExtension: 'xlsx',
-        mimeType: MimeType.microsoftExcel,
+      final data = DateFormat('yyyy-MM-dd');
+      await RelatorioExportacaoService.guardar(
+        formato: formato,
+        conteudoImagem: conteudoImagem,
+        imagemHorizontal: imagem,
+        dados: RelatorioHorasExportacaoDados(relatorio)
+            .documento(widget.unidade.nome, incluirGraficos: imagem),
+        nome:
+            'horas_${relatorio.porMedico ? 'medico' : 'especialidade'}_${data.format(relatorio.inicio)}_${data.format(relatorio.fim)}'
+            '${imagem ? '_${conteudoImagem.name}' : ''}',
+        gerarExcel: () => RelatorioHorasExcelService.gerar(
+            unidade: widget.unidade.nome, relatorio: relatorio),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Excel exportado.')));
+          .showSnackBar(const SnackBar(content: Text('Relatório exportado.')));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
-              Text('Não foi possível exportar o Excel. Tente novamente.')));
+              Text('Não foi possível exportar o relatório. Tente novamente.')));
     } finally {
       if (mounted) setState(() => _exportando = false);
     }
@@ -355,11 +397,34 @@ class _RelatorioHorasEspecialidadeScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Horas de Especialidade',
+        title: 'Horas Médico/Especialidade',
+        titleWidget: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Flexible(
+            child: Text('Horas Médico/Especialidade',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline, size: 20),
+            tooltip: _informacaoMedias,
+            onPressed: () => showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                      title: const Text('Médias por médico'),
+                      content: const Text(_informacaoMedias),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Fechar')),
+                      ],
+                    )),
+          ),
+        ]),
         onRefresh: _forcarAtualizacao,
       ),
       backgroundColor: MatrizColors.fundo,
-      body: _carregando && _especialidades.isEmpty
+      body: _carregando && !_opcoesCarregadas
           ? _buildCarregamento()
           : _buildConteudo(),
     );
@@ -406,6 +471,24 @@ class _RelatorioHorasEspecialidadeScreenState
     return RelatorioLayout(
       ocupado: _carregando || _exportando,
       filtros: [
+        RelatorioFiltroSecao(
+          titulo: 'Consultar',
+          child: Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final (consulta, rotulo) in [
+              (_ConsultaHoras.especialidade, 'Por especialidade'),
+              (_ConsultaHoras.medico, 'Por médico'),
+            ])
+              ChoiceChip(
+                label: Text(rotulo),
+                selected: _consulta == consulta,
+                onSelected: (_) => setState(() {
+                  _consulta = consulta;
+                  _relatorio = null;
+                  _erro = null;
+                }),
+              ),
+          ]),
+        ),
         RelatorioPeriodoFiltros<PeriodoHorasEspecialidade>(
           opcoes: [
             for (final p in PeriodoHorasEspecialidade.values
@@ -424,46 +507,81 @@ class _RelatorioHorasEspecialidadeScreenState
           fim: _buildBotaoData(inicial: false),
         ),
         const Divider(),
-        RelatorioFiltroSecao(
+        if (_porMedico)
+          RelatorioFiltroSecao(
             titulo:
-                'Especialidades · ${_selecionadas.length}/${_especialidades.length}',
-            child: Column(children: [
-              if (_especialidades.isEmpty)
-                const Text(
-                    'Esta unidade não tem especialidades com médicos ativos.'),
-              CheckboxListTile(
-                  key: const ValueKey('relatorio_todas_especialidades'),
-                  title: const Text('Todas', style: TextStyle(fontSize: 13)),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _selecionadas.length == _especialidades.length
-                      ? true
-                      : _selecionadas.isEmpty
-                          ? false
-                          : null,
-                  tristate: true,
-                  onChanged: (_) => _selecionarEspecialidades(_especialidades,
-                      _selecionadas.length != _especialidades.length)),
-              for (final especialidade in _especialidades)
+                'Médicos · ${_medicosSelecionados.length}/${_medicos.length}',
+            child: _medicos.isEmpty
+                ? const Text('Esta unidade não tem médicos ativos.')
+                : SearchableSelectionField<String>.multiple(
+                    key: const ValueKey('relatorio_horas_medico'),
+                    values: _medicosSelecionados,
+                    label: 'Médicos',
+                    hint: 'Selecionar médicos...',
+                    showLabel: false,
+                    dialogTitle: 'Selecionar médicos',
+                    searchHint: 'Pesquisar por nome ou especialidade',
+                    suffixIcon: Icons.arrow_drop_down,
+                    options: [
+                      for (final medico in _medicos)
+                        SearchableSelectionOption(
+                          value: medico.id,
+                          label:
+                              '${medico.nome} · ${medico.especialidade.trim().isEmpty ? 'Sem especialidade' : medico.especialidade.trim()}',
+                        ),
+                    ],
+                    onSelectionChanged: (ids) => setState(() {
+                      _medicosSelecionados
+                        ..clear()
+                        ..addAll(ids);
+                      _relatorio = null;
+                      _erro = null;
+                    }),
+                  ),
+          )
+        else
+          RelatorioFiltroSecao(
+              titulo:
+                  'Especialidades · ${_selecionadas.length}/${_especialidades.length}',
+              child: Column(children: [
+                if (_especialidades.isEmpty)
+                  const Text(
+                      'Esta unidade não tem especialidades com médicos ativos.'),
                 CheckboxListTile(
-                    title: Text(especialidade,
-                        style: const TextStyle(fontSize: 12)),
+                    key: const ValueKey('relatorio_todas_especialidades'),
+                    title: const Text('Todas', style: TextStyle(fontSize: 13)),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     controlAffinity: ListTileControlAffinity.leading,
-                    value: _selecionadas.contains(especialidade),
-                    onChanged: (valor) => _selecionarEspecialidades(
-                        [especialidade], valor ?? false)),
-            ])),
+                    value: _selecionadas.length == _especialidades.length
+                        ? true
+                        : _selecionadas.isEmpty
+                            ? false
+                            : null,
+                    tristate: true,
+                    onChanged: (_) => _selecionarEspecialidades(_especialidades,
+                        _selecionadas.length != _especialidades.length)),
+                for (final especialidade in _especialidades)
+                  CheckboxListTile(
+                      title: Text(especialidade,
+                          style: const TextStyle(fontSize: 12)),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: _selecionadas.contains(especialidade),
+                      onChanged: (valor) => _selecionarEspecialidades(
+                          [especialidade], valor ?? false)),
+              ])),
       ],
       acoes: RelatorioAcoes(
-        onGerar: _selecionadas.isEmpty || _carregando || _exportando
+        onGerar: !_selecaoValida || _carregando || _exportando
             ? null
             : _carregarRelatorio,
         onExportar: relatorio == null || _exportando || _carregando
             ? null
-            : _exportarExcel,
+            : _escolherExportacao,
+        textoExportar: 'Exportar',
+        iconeExportar: Icons.ios_share_outlined,
         gerando: _carregando,
         exportando: _exportando,
       ),
@@ -475,21 +593,27 @@ class _RelatorioHorasEspecialidadeScreenState
                       _quadro(Column(mainAxisSize: MainAxisSize.min, children: [
                   Text(_erro!),
                   TextButton(
-                      onPressed: _especialidades.isEmpty
+                      onPressed: !_opcoesCarregadas
                           ? _carregarEspecialidades
                           : _carregarRelatorio,
                       child: const Text('Tentar novamente')),
                 ])))
-              : _selecionadas.isEmpty
-                  ? const RelatorioEstadoVazio(
-                      texto:
-                          'Selecione pelo menos uma especialidade para gerar o relatório.')
+              : !_selecaoValida
+                  ? RelatorioEstadoVazio(
+                      texto: _porMedico
+                          ? 'Selecione um ou mais médicos para gerar o relatório.'
+                          : 'Selecione pelo menos uma especialidade para gerar o relatório.')
                   : relatorio == null
                       ? const RelatorioEstadoVazio()
                       : ListView(children: [
                           _buildResumoCard(relatorio),
                           const SizedBox(height: 12),
-                          _buildListaEspecialidades(relatorio),
+                          if (relatorio.porMedico)
+                            ...relatorio.medicos.map((medico) =>
+                                HorasMedicoCard(
+                                    medico: medico, relatorio: relatorio))
+                          else
+                            _buildListaEspecialidades(relatorio),
                         ]),
     );
   }

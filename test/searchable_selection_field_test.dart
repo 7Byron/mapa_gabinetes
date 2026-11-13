@@ -32,7 +32,95 @@ Widget _app({
   );
 }
 
+Widget _appMultipla({
+  Set<String> values = const {},
+  required ValueChanged<Set<String>> onChanged,
+}) =>
+    MaterialApp(
+      home: Scaffold(
+        body: SearchableSelectionField<String>.multiple(
+          values: values,
+          label: 'Médicos',
+          hint: 'Selecionar médicos...',
+          dialogTitle: 'Selecionar médicos',
+          searchHint: 'Pesquisar por nome ou especialidade',
+          suffixIcon: Icons.person_outline,
+          options: const [
+            SearchableSelectionOption(value: 'ana', label: 'Ana · Cardiologia'),
+            SearchableSelectionOption(value: 'rui', label: 'Rui · ORL'),
+          ],
+          onSelectionChanged: onChanged,
+        ),
+      ),
+    );
+
 void main() {
+  testWidgets('mantém várias escolhas entre pesquisas e só aplica ao confirmar',
+      (tester) async {
+    Set<String>? resultado;
+    await tester.pumpWidget(_appMultipla(onChanged: (v) => resultado = v));
+    await tester.tap(find.text('Selecionar médicos...'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'cardiologia');
+    await tester.pump();
+    await tester.tap(find.text('Ana · Cardiologia'));
+    await tester.pump();
+    expect(resultado, isNull);
+    await tester.enterText(find.byType(TextField), 'rui');
+    await tester.pump();
+    await tester.tap(find.text('Rui · ORL'));
+    await tester.pump();
+    expect(find.text('2 selecionados'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'ana');
+    await tester.pump();
+    expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+        isTrue);
+    await tester.tap(find.text('Aplicar'));
+    await tester.pumpAndSettle();
+    expect(resultado, {'ana', 'rui'});
+  });
+
+  testWidgets('cancelar descarta alterações sem modificar a seleção original',
+      (tester) async {
+    final original = {'ana'};
+    var chamadas = 0;
+    await tester.pumpWidget(
+        _appMultipla(values: original, onChanged: (_) => chamadas++));
+    await tester.tap(find.text('Ana · Cardiologia'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Limpar seleção'));
+    await tester.pump();
+    await tester.tap(find.text('Rui · ORL'));
+    await tester.pump();
+    await tester.tap(find.text('Cancelar'));
+    await tester.pumpAndSettle();
+    expect(original, {'ana'});
+    expect(chamadas, 0);
+  });
+
+  testWidgets('permite desmarcar um médico e limpar todas as escolhas',
+      (tester) async {
+    Set<String>? resultado;
+    await tester.pumpWidget(
+        _appMultipla(values: {'ana', 'rui'}, onChanged: (v) => resultado = v));
+    await tester.tap(find.text('Ana · Cardiologia, Rui · ORL'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ana · Cardiologia'));
+    await tester.pump();
+    expect(find.text('1 selecionado'), findsOneWidget);
+    expect(
+        tester
+            .widget<CheckboxListTile>(
+                find.widgetWithText(CheckboxListTile, 'Ana · Cardiologia'))
+            .value,
+        isFalse);
+    await tester.tap(find.text('Limpar seleção'));
+    await tester.pump();
+    await tester.tap(find.text('Aplicar'));
+    await tester.pumpAndSettle();
+    expect(resultado, isEmpty);
+  });
+
   testWidgets('mantém legenda flutuante sem sobrepor o placeholder',
       (tester) async {
     await tester.pumpWidget(_app(onChanged: (_) {}));

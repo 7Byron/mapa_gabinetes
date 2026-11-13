@@ -3,6 +3,7 @@ import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import '../models/medico.dart';
 import '../models/unidade.dart';
 import '../services/medico_salvar_service.dart';
+import '../services/cache_version_service.dart';
 import '../utils/text_search_utils.dart';
 import 'cadastro_medicos.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -248,6 +249,12 @@ class ListaMedicosState extends State<ListaMedicos> {
   /// Função para deletar um médico
   /// Remove disponibilidades e alocações conforme a escolha do usuário
   Future<void> _deletarMedico(String id, {required bool apagarTodos}) async {
+    var houveAlteracoes = false;
+    Future<void> remover(DocumentReference ref) async {
+      await ref.delete();
+      houveAlteracoes = true;
+    }
+
     try {
       final firestore = FirebaseFirestore.instance;
       final dataAtual = DateTime.now();
@@ -304,7 +311,7 @@ class ListaMedicosState extends State<ListaMedicos> {
                         .isAtSameMomentAs(dataAtualNormalizada) ||
                     dataRegistoNormalizada.isAfter(dataAtualNormalizada));
             if (deveRemover) {
-              await doc.reference.delete();
+              await remover(doc.reference);
             }
           }
         }
@@ -313,7 +320,7 @@ class ListaMedicosState extends State<ListaMedicos> {
         final registosRestantes = await registosRef.get();
         if (registosRestantes.docs.isEmpty) {
           // Remove o documento do ano se estiver vazio
-          await anoDoc.reference.delete();
+          await remover(anoDoc.reference);
         }
       }
 
@@ -323,7 +330,7 @@ class ListaMedicosState extends State<ListaMedicos> {
           final seriesSnapshot = await seriesRef.get();
           for (final doc in seriesSnapshot.docs) {
             try {
-              await doc.reference.delete();
+              await remover(doc.reference);
             } catch (e) {
               debugPrint('Erro ao apagar série ${doc.id}: $e');
               // Continuar mesmo se houver erro
@@ -344,7 +351,7 @@ class ListaMedicosState extends State<ListaMedicos> {
           // Apagar todas as exceções sem verificar data
           for (final doc in todosRegistos.docs) {
             try {
-              await doc.reference.delete();
+              await remover(doc.reference);
             } catch (e) {
               debugPrint('Erro ao apagar exceção ${doc.id}: $e');
               // Continuar mesmo se houver erro
@@ -352,7 +359,7 @@ class ListaMedicosState extends State<ListaMedicos> {
           }
           // Apagar o documento do ano após remover todos os registos
           try {
-            await anoDoc.reference.delete();
+            await remover(anoDoc.reference);
           } catch (e) {
             debugPrint('Erro ao apagar documento de ano ${anoDoc.id}: $e');
           }
@@ -366,13 +373,13 @@ class ListaMedicosState extends State<ListaMedicos> {
             final registosFinais = await registosRef.get();
             for (final doc in registosFinais.docs) {
               try {
-                await doc.reference.delete();
+                await remover(doc.reference);
               } catch (e) {
                 debugPrint('Erro ao apagar exceção final ${doc.id}: $e');
               }
             }
             try {
-              await anoDoc.reference.delete();
+              await remover(anoDoc.reference);
             } catch (e) {
               debugPrint('Erro ao apagar documento de ano final ${anoDoc.id}: $e');
             }
@@ -402,7 +409,7 @@ class ListaMedicosState extends State<ListaMedicos> {
                 // Remove apenas a partir de hoje (>= hoje)
                 if (dataExcecaoNormalizada.isAtSameMomentAs(dataAtualNormalizada) ||
                     dataExcecaoNormalizada.isAfter(dataAtualNormalizada)) {
-                  await doc.reference.delete();
+                  await remover(doc.reference);
                 }
               }
               // Se não tem data, não remover (preservar histórico)
@@ -417,7 +424,7 @@ class ListaMedicosState extends State<ListaMedicos> {
           if (registosRestantes.docs.isEmpty) {
             // Remove o documento do ano se estiver vazio
             try {
-              await anoDoc.reference.delete();
+              await remover(anoDoc.reference);
             } catch (e) {
               debugPrint('Erro ao apagar documento de ano ${anoDoc.id}: $e');
             }
@@ -463,7 +470,7 @@ class ListaMedicosState extends State<ListaMedicos> {
                           .isAtSameMomentAs(dataAtualNormalizada) ||
                       dataAlocacaoNormalizada.isAfter(dataAtualNormalizada));
               if (deveRemover) {
-                await doc.reference.delete();
+                await remover(doc.reference);
               }
             }
           }
@@ -480,18 +487,18 @@ class ListaMedicosState extends State<ListaMedicos> {
           
           if (disponibilidadesRestantes.docs.isEmpty && excecoesRestantes.docs.isEmpty) {
             // Deleta o documento do médico completamente em "ocupantes"
-            await ocupantesRef.doc(id).delete();
+            await remover(ocupantesRef.doc(id));
             debugPrint('✅ Documento do médico apagado em ocupantes: $id');
           } else {
             debugPrint('⚠️ Ainda existem subcoleções, mas apagando documento mesmo assim');
             // Ainda assim apagar o documento, pois as subcoleções ficarão órfãs mas não aparecerão no app
-            await ocupantesRef.doc(id).delete();
+            await remover(ocupantesRef.doc(id));
           }
         } catch (e) {
           debugPrint('Erro ao apagar documento do médico: $e');
           // Tentar apagar mesmo assim
           try {
-            await ocupantesRef.doc(id).delete();
+            await remover(ocupantesRef.doc(id));
           } catch (e2) {
             debugPrint('Erro ao forçar apagar documento do médico: $e2');
             rethrow;
@@ -501,6 +508,7 @@ class ListaMedicosState extends State<ListaMedicos> {
         // Marca o médico como inativo em vez de apagá-lo
         // Isso preserva o histórico e evita cartões "Desconhecido"
         await ocupantesRef.doc(id).update({'ativo': false});
+        houveAlteracoes = true;
       }
 
       // Remove imediatamente da lista local para feedback visual instantâneo
@@ -540,6 +548,20 @@ class ListaMedicosState extends State<ListaMedicos> {
         );
         // Se houver erro, recarrega a lista para garantir estado correto
         await _carregarMedicos(refresh: true);
+      }
+    } finally {
+      // Mesmo uma eliminação parcial altera os dados usados pelos relatórios.
+      if (houveAlteracoes) {
+        await CacheVersionService.bumpVersions(
+          unidadeId: widget.unidade?.id,
+          fields: [
+            CacheVersionService.fieldMedicos,
+            CacheVersionService.fieldDisponibilidades,
+            CacheVersionService.fieldSeries,
+            CacheVersionService.fieldAlocacoes,
+          ],
+        );
+        limparCacheMedicos(unidade: widget.unidade);
       }
     }
   }

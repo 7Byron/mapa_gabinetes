@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import '../models/relatorio_horas_especialidade.dart';
+import 'relatorio_horas_exportacao_service.dart';
 
 class RelatorioHorasExcelService {
   static Uint8List gerar({
@@ -9,10 +10,11 @@ class RelatorioHorasExcelService {
     required RelatorioHorasEspecialidade relatorio,
   }) {
     final excel = Excel.createExcel();
-    excel.rename('Sheet1', 'Horas de Especialidade');
-    final folha = excel['Horas de Especialidade'];
+    excel.rename('Sheet1', 'Horas Médico-Especialidade');
+    final folha = excel['Horas Médico-Especialidade'];
+    final dados = RelatorioHorasExportacaoDados(relatorio);
     final data = DateFormat('dd/MM/yyyy');
-    folha.appendRow([TextCellValue('Horas de Especialidade')]);
+    folha.appendRow([TextCellValue(RelatorioHorasExportacaoDados.titulo)]);
     folha.appendRow([TextCellValue('Unidade'), TextCellValue(unidade)]);
     folha.appendRow([
       TextCellValue('Data inicial'),
@@ -23,33 +25,21 @@ class RelatorioHorasExcelService {
       TextCellValue(data.format(relatorio.fim))
     ]);
     folha.appendRow([
-      TextCellValue('Especialidades com disponibilidade'),
+      TextCellValue('Especialidades'),
       IntCellValue(relatorio.totalEspecialidades)
     ]);
-    folha.appendRow([
-      TextCellValue('Especialidade'),
-      TextCellValue('Médicos ativos'),
-      TextCellValue('Médicos com disponibilidade'),
-      TextCellValue('Horas de consulta'),
-      TextCellValue('Média de horas por médico com disponibilidade'),
-    ]);
-    for (final linha in relatorio.linhas) {
-      folha.appendRow([
-        TextCellValue(linha.especialidade),
-        IntCellValue(linha.medicosAtivos),
-        IntCellValue(linha.medicosComDisponibilidade),
-        DoubleCellValue(linha.horasConsulta),
-        DoubleCellValue(linha.mediaHorasPorMedico),
-      ]);
+    folha.appendRow(dados.cabecalhos.map(TextCellValue.new).toList());
+    for (final linha in dados.linhas) {
+      folha.appendRow(linha
+          .map((valor) => switch (valor) {
+                int n => IntCellValue(n),
+                double n => DoubleCellValue(n),
+                _ => TextCellValue('$valor'),
+              })
+          .toList());
     }
-    folha.appendRow([
-      TextCellValue('Total'),
-      IntCellValue(relatorio.totalMedicosAtivos),
-      IntCellValue(relatorio.totalMedicosComDisponibilidade),
-      DoubleCellValue(relatorio.totalHorasConsulta),
-    ]);
     for (var linha = 6; linha < folha.maxRows; linha++) {
-      for (final coluna in [3, 4]) {
+      for (final coluna in relatorio.porMedico ? [2] : [3, 4]) {
         folha
                 .cell(CellIndex.indexByColumnRow(
                     columnIndex: coluna, rowIndex: linha))
@@ -57,7 +47,7 @@ class RelatorioHorasExcelService {
             CellStyle(numberFormat: NumFormat.custom(formatCode: '0.00'));
       }
     }
-    for (var coluna = 0; coluna < 5; coluna++) {
+    for (var coluna = 0; coluna < dados.cabecalhos.length; coluna++) {
       folha.setColumnWidth(coluna, coluna == 0 ? 36 : 30);
       folha
               .cell(CellIndex.indexByColumnRow(columnIndex: coluna, rowIndex: 5))
@@ -65,6 +55,22 @@ class RelatorioHorasExcelService {
           CellStyle(
               bold: true,
               backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
+    }
+    folha.appendRow([TextCellValue('Consulta'), TextCellValue(dados.consulta)]);
+    folha.appendRow([TextCellValue('Seleção'), TextCellValue(dados.filtros)]);
+    if (relatorio.porMedico) {
+      folha.appendRow([
+        TextCellValue('Total de horas da clínica'),
+        DoubleCellValue(relatorio.totalHorasConsultaClinica)
+      ]);
+      folha.appendRow([
+        TextCellValue('Médicos ativos da clínica'),
+        IntCellValue(relatorio.totalMedicosAtivosClinica)
+      ]);
+      folha.appendRow([
+        TextCellValue('Média por médico ativo (incluindo zero horas)'),
+        DoubleCellValue(relatorio.mediaHorasPorMedicoClinica)
+      ]);
     }
     final bytes = excel.encode();
     if (bytes == null) throw StateError('Não foi possível criar o Excel.');

@@ -13,6 +13,7 @@ class SearchableSelectionOption<T> {
 /// Campo de seleção que abre uma lista pesquisável num diálogo.
 class SearchableSelectionField<T> extends StatelessWidget {
   final T? value;
+  final Set<T>? values;
   final List<SearchableSelectionOption<T>> options;
   final String label;
   final String hint;
@@ -20,7 +21,8 @@ class SearchableSelectionField<T> extends StatelessWidget {
   final String dialogTitle;
   final String searchHint;
   final IconData suffixIcon;
-  final ValueChanged<T?> onChanged;
+  final ValueChanged<T?>? onChanged;
+  final ValueChanged<Set<T>>? onSelectionChanged;
 
   const SearchableSelectionField({
     super.key,
@@ -33,20 +35,42 @@ class SearchableSelectionField<T> extends StatelessWidget {
     required this.searchHint,
     required this.suffixIcon,
     required this.onChanged,
-  });
+  })  : values = null,
+        onSelectionChanged = null;
+
+  const SearchableSelectionField.multiple({
+    super.key,
+    required this.values,
+    required this.options,
+    required this.label,
+    required this.hint,
+    this.showLabel = true,
+    required this.dialogTitle,
+    required this.searchHint,
+    required this.suffixIcon,
+    required this.onSelectionChanged,
+  })  : value = null,
+        onChanged = null;
 
   @override
   Widget build(BuildContext context) {
-    final optionSelecionada = options.where((item) => item.value == value);
-    final texto = optionSelecionada.isNotEmpty
-        ? optionSelecionada.first.label
-        : value?.toString() ?? hint;
+    final selecionadas = values ?? {if (value != null) value as T};
+    final optionSelecionada =
+        options.where((item) => selecionadas.contains(item.value));
+    final vazio = selecionadas.isEmpty;
+    final texto = values != null
+        ? (vazio
+            ? hint
+            : optionSelecionada.map((item) => item.label).join(', '))
+        : optionSelecionada.isNotEmpty
+            ? optionSelecionada.first.label
+            : value?.toString() ?? hint;
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () => _abrirDialogo(context),
       child: InputDecorator(
-        isEmpty: value == null,
+        isEmpty: vazio,
         decoration: InputDecoration(
           labelText: showLabel ? label : null,
           // O campo apresenta sempre um texto próprio (placeholder ou valor).
@@ -67,9 +91,8 @@ class SearchableSelectionField<T> extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: value == null
-                ? Theme.of(context).colorScheme.onSurfaceVariant
-                : null,
+            color:
+                vazio ? Theme.of(context).colorScheme.onSurfaceVariant : null,
           ),
         ),
       ),
@@ -83,31 +106,39 @@ class SearchableSelectionField<T> extends StatelessWidget {
         title: dialogTitle,
         searchHint: searchHint,
         options: options,
-        selectedValue: value,
+        selectedValues: values ?? {if (value != null) value as T},
+        multiple: values != null,
       ),
     );
 
-    if (resultado != null) onChanged(resultado.value);
+    if (resultado == null) return;
+    if (values != null) {
+      onSelectionChanged!(resultado.values);
+    } else {
+      onChanged!(resultado.values.firstOrNull);
+    }
   }
 }
 
 class _SearchableSelectionResult<T> {
-  final T? value;
+  final Set<T> values;
 
-  const _SearchableSelectionResult(this.value);
+  const _SearchableSelectionResult(this.values);
 }
 
 class _SearchableSelectionDialog<T> extends StatefulWidget {
   final String title;
   final String searchHint;
   final List<SearchableSelectionOption<T>> options;
-  final T? selectedValue;
+  final Set<T> selectedValues;
+  final bool multiple;
 
   const _SearchableSelectionDialog({
     required this.title,
     required this.searchHint,
     required this.options,
-    required this.selectedValue,
+    required this.selectedValues,
+    required this.multiple,
   });
 
   @override
@@ -118,6 +149,7 @@ class _SearchableSelectionDialog<T> extends StatefulWidget {
 class _SearchableSelectionDialogState<T>
     extends State<_SearchableSelectionDialog<T>> {
   String _query = '';
+  late final Set<T> _selectedValues = Set.of(widget.selectedValues);
 
   String _normalizar(String texto) {
     return texto
@@ -178,14 +210,27 @@ class _SearchableSelectionDialogState<T>
               onChanged: (value) => setState(() => _query = value),
             ),
             const SizedBox(height: 8),
-            if (widget.selectedValue != null && _query.isEmpty)
+            if (_selectedValues.isNotEmpty)
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.clear, size: 20),
                 title: const Text('Limpar seleção'),
-                onTap: () => Navigator.of(context).pop(
-                  _SearchableSelectionResult<T>(null),
-                ),
+                onTap: () {
+                  if (widget.multiple) {
+                    setState(_selectedValues.clear);
+                  } else {
+                    Navigator.of(context).pop(
+                      _SearchableSelectionResult<T>({}),
+                    );
+                  }
+                },
+              ),
+            if (widget.multiple)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(_selectedValues.length == 1
+                    ? '1 selecionado'
+                    : '${_selectedValues.length} selecionados'),
               ),
             Expanded(
               child: opcoes.isEmpty
@@ -195,7 +240,21 @@ class _SearchableSelectionDialogState<T>
                       itemBuilder: (context, index) {
                         final option = opcoes[index];
                         final selecionada =
-                            option.value == widget.selectedValue;
+                            _selectedValues.contains(option.value);
+                        if (widget.multiple) {
+                          return CheckboxListTile(
+                            dense: true,
+                            title: Text(option.label),
+                            value: selecionada,
+                            onChanged: (selecionar) => setState(() {
+                              if (selecionar == true) {
+                                _selectedValues.add(option.value);
+                              } else {
+                                _selectedValues.remove(option.value);
+                              }
+                            }),
+                          );
+                        }
                         return ListTile(
                           dense: true,
                           title: Text(option.label),
@@ -204,7 +263,7 @@ class _SearchableSelectionDialogState<T>
                                   color: Theme.of(context).colorScheme.primary)
                               : null,
                           onTap: () => Navigator.of(context).pop(
-                            _SearchableSelectionResult<T>(option.value),
+                            _SearchableSelectionResult<T>({option.value}),
                           ),
                         );
                       },
@@ -218,6 +277,13 @@ class _SearchableSelectionDialogState<T>
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
+        if (widget.multiple)
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(
+              _SearchableSelectionResult<T>(Set.of(_selectedValues)),
+            ),
+            child: const Text('Aplicar'),
+          ),
       ],
     );
   }

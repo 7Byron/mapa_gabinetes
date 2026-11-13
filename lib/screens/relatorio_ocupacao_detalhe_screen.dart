@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:file_saver/file_saver.dart';
+import '../services/relatorio_exportacao_service.dart';
+import '../services/relatorio_ocupacao_exportacao_service.dart';
+import '../widgets/relatorio_exportacao_menu.dart';
 import '../services/relatorio_ocupacao_excel_service.dart';
 import '../models/excecao_serie.dart';
 import '../models/gabinete.dart';
@@ -172,7 +174,7 @@ class _RelatorioOcupacaoDetalheScreenState
   Timer? _timerProgresso;
   late PeriodoRelatorio _periodoSelecionado;
   DiaSemanaFiltro _filtroDiaSelecionado = DiaSemanaFiltro.todos;
-  ModoGrafico _modoGrafico = ModoGrafico.ocupacao;
+  ModoGrafico _modoGrafico = ModoGrafico.disponibilidade;
   List<Gabinete> _gabinetes = [];
   String? _gabineteSelecionadoId;
   late DateTime _dataInicio;
@@ -1176,7 +1178,7 @@ class _RelatorioOcupacaoDetalheScreenState
                 },
           onExportar: !_relatorioGerado || _exportando || _carregando
               ? null
-              : _exportarExcel,
+              : _exportar,
           gerando: _carregando,
           exportando: _exportando,
         ),
@@ -1259,10 +1261,14 @@ class _RelatorioOcupacaoDetalheScreenState
         ),
       );
 
-  Future<void> _exportarExcel() async {
+  Future<void> _exportar() async {
     if (!_relatorioGerado || _gabineteSelecionadoId == null || _exportando) {
       return;
     }
+    final escolha = await escolherExportacaoRelatorio(context);
+    if (escolha == null || !mounted) return;
+    final formato = escolha.formato;
+    final conteudoImagem = escolha.conteudoImagem;
     setState(() => _exportando = true);
     try {
       final gabinete =
@@ -1305,33 +1311,50 @@ class _RelatorioOcupacaoDetalheScreenState
               motivo: dia.motivoFecho));
         }
       }
-      final bytes = RelatorioOcupacaoExcelService.gerar(
-        unidade: widget.unidade.nome,
-        gabinete: gabinete.nome,
-        descricao: _descricaoGabinete(gabinete),
-        inicio: _inicioRelatorio,
-        fim: _fimRelatorio,
-        filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
-        porHora: porHora,
-        linhas: linhas,
-      );
       final nomeGabinete = gabinete.nome.replaceAll(RegExp(r'[^\w-]'), '_');
-      final formato = DateFormat('yyyy-MM-dd');
-      await FileSaver.instance.saveFile(
-        name:
-            'ocupacao_${nomeGabinete}_${porHora ? 'dia_hora' : 'dia'}_${formato.format(_inicioRelatorio)}_${formato.format(_fimRelatorio)}',
-        bytes: bytes,
-        fileExtension: 'xlsx',
-        mimeType: MimeType.microsoftExcel,
+      final data = DateFormat('yyyy-MM-dd');
+      await RelatorioExportacaoService.guardar(
+        formato: formato,
+        conteudoImagem: conteudoImagem,
+        imagemHorizontal: formato == FormatoExportacaoRelatorio.imagem,
+        dados: RelatorioOcupacaoExportacaoService.gabinete(
+          unidade: widget.unidade.nome,
+          gabinete: gabinete.nome,
+          descricao: _descricaoGabinete(gabinete),
+          inicio: _inicioRelatorio,
+          fim: _fimRelatorio,
+          filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
+          porHora: porHora,
+          linhas: linhas,
+          horarios: {
+            if (porHora)
+              for (final dia
+                  in _filtrarDiasDisponibilidade(_diasDisponibilidade))
+                dia.data: (inicio: dia.inicioMinutos, fim: dia.fimMinutos),
+          },
+        ),
+        nome:
+            'ocupacao_${nomeGabinete}_${porHora ? 'dia_hora' : 'dia'}_${data.format(_inicioRelatorio)}_${data.format(_fimRelatorio)}'
+            '${formato == FormatoExportacaoRelatorio.imagem ? '_${conteudoImagem.name}' : ''}',
+        gerarExcel: () => RelatorioOcupacaoExcelService.gerar(
+          unidade: widget.unidade.nome,
+          gabinete: gabinete.nome,
+          descricao: _descricaoGabinete(gabinete),
+          inicio: _inicioRelatorio,
+          fim: _fimRelatorio,
+          filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
+          porHora: porHora,
+          linhas: linhas,
+        ),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Excel exportado.')));
+          .showSnackBar(const SnackBar(content: Text('Relatório exportado.')));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
-              Text('Não foi possível exportar o Excel. Tente novamente.')));
+              Text('Não foi possível exportar o relatório. Tente novamente.')));
     } finally {
       if (mounted) setState(() => _exportando = false);
     }

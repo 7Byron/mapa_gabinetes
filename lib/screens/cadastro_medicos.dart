@@ -13,6 +13,7 @@ import '../models/excecao_serie.dart';
 import '../models/alocacao.dart';
 import '../models/gabinete.dart';
 import '../services/medico_salvar_service.dart';
+import '../services/cache_version_service.dart';
 import '../services/disponibilidade_criacao.dart';
 import '../services/disponibilidade_remocao.dart';
 import '../services/disponibilidade_serie_service.dart';
@@ -537,6 +538,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
 
   /// Apaga um médico e todos os seus dados
   Future<void> _apagarMedico(String medicoId) async {
+    var houveAlteracoes = false;
+    Future<void> remover(DocumentReference ref) async {
+      await ref.delete();
+      houveAlteracoes = true;
+    }
+
     try {
       setState(() => _saving = true);
 
@@ -570,17 +577,17 @@ class CadastroMedicoState extends State<CadastroMedico> {
         final registosRef = anoDoc.reference.collection('registos');
         final todosRegistos = await registosRef.get();
         for (final doc in todosRegistos.docs) {
-          await doc.reference.delete();
+          await remover(doc.reference);
           disponibilidadesRemovidas++;
         }
-        await anoDoc.reference.delete();
+        await remover(anoDoc.reference);
       }
 
       // 2. Apagar todas as séries
       int seriesRemovidas = 0;
       final seriesSnapshot = await seriesRef.get();
       for (final doc in seriesSnapshot.docs) {
-        await doc.reference.delete();
+        await remover(doc.reference);
         seriesRemovidas++;
       }
 
@@ -594,7 +601,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
           // Apagar todos os registos primeiro
           for (final doc in todosRegistos.docs) {
             try {
-              await doc.reference.delete();
+              await remover(doc.reference);
               excecoesRemovidas++;
             } catch (e) {
               debugPrint('Erro ao apagar exceção ${doc.id}: $e');
@@ -605,13 +612,13 @@ class CadastroMedicoState extends State<CadastroMedico> {
           try {
             final registosRestantes = await registosRef.get();
             if (registosRestantes.docs.isEmpty) {
-              await anoDoc.reference.delete();
+              await remover(anoDoc.reference);
             } else {
               // Se ainda houver registos, forçar apagar todos novamente
               for (final doc in registosRestantes.docs) {
-                await doc.reference.delete();
+                await remover(doc.reference);
               }
-              await anoDoc.reference.delete();
+              await remover(anoDoc.reference);
             }
           } catch (e) {
             debugPrint('Erro ao apagar documento de ano ${anoDoc.id}: $e');
@@ -623,10 +630,10 @@ class CadastroMedicoState extends State<CadastroMedico> {
           final registosRef = anoDoc.reference.collection('registos');
           final registosFinais = await registosRef.get();
           for (final doc in registosFinais.docs) {
-            await doc.reference.delete();
+            await remover(doc.reference);
             excecoesRemovidas++;
           }
-          await anoDoc.reference.delete();
+          await remover(anoDoc.reference);
         }
       } catch (e) {
         debugPrint('Erro ao apagar exceções: $e');
@@ -655,7 +662,7 @@ class CadastroMedicoState extends State<CadastroMedico> {
                 await alocacoesRef.where('medicoId', isEqualTo: medicoId).get();
 
             for (final doc in todasAlocacoes.docs) {
-              await doc.reference.delete();
+              await remover(doc.reference);
               alocacoesRemovidas++;
             }
           } catch (e) {
@@ -674,12 +681,12 @@ class CadastroMedicoState extends State<CadastroMedico> {
         if (disponibilidadesRestantes.docs.isEmpty &&
             seriesRestantes.docs.isEmpty &&
             excecoesRestantes.docs.isEmpty) {
-          await ocupantesRef.doc(medicoId).delete();
+          await remover(ocupantesRef.doc(medicoId));
           debugPrint('✅ Documento do médico apagado em ocupantes: $medicoId');
         } else {
           debugPrint(
               '⚠️ Ainda existem subcoleções, mas apagando documento mesmo assim');
-          await ocupantesRef.doc(medicoId).delete();
+          await remover(ocupantesRef.doc(medicoId));
         }
       } catch (e) {
         debugPrint('Erro ao apagar documento do médico: $e');
@@ -727,6 +734,20 @@ class CadastroMedicoState extends State<CadastroMedico> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      // Mesmo uma eliminação parcial altera os dados usados pelos relatórios.
+      if (houveAlteracoes) {
+        await CacheVersionService.bumpVersions(
+          unidadeId: widget.unidade?.id,
+          fields: [
+            CacheVersionService.fieldMedicos,
+            CacheVersionService.fieldDisponibilidades,
+            CacheVersionService.fieldSeries,
+            CacheVersionService.fieldAlocacoes,
+          ],
+        );
+        limparCacheMedicos(unidade: widget.unidade);
       }
     }
   }

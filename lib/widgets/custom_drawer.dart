@@ -473,7 +473,7 @@ class CustomDrawer extends StatelessWidget {
                     ListTile(
                       leading: const Icon(Icons.query_stats),
                       title: const Text(
-                        'Horas de Especialidade',
+                        'Horas Médico/Especialidade',
                         style: TextStyle(fontSize: 14),
                       ),
                       onTap: () {

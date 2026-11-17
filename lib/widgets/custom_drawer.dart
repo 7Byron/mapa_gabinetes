@@ -1,5 +1,6 @@
 import '../screens/relatorio_taxas_ocupacao_screen.dart';
 import '../screens/matriz_distribuicao_screen.dart';
+import '../screens/matriz_medicos_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
@@ -377,10 +378,12 @@ class CustomDrawer extends StatelessWidget {
                             }
                           : null,
                     ),
+                    _buildSectionDivider(),
+                    _buildSectionTitle('Relatórios'),
                     ListTile(
                       leading: const Icon(Icons.grid_view),
                       title:
-                          Text('Matriz de ocupação', style: _itemTextStyle()),
+                          Text('Matriz de Gabinetes', style: _itemTextStyle()),
                       onTap: () {
                         Navigator.pop(context);
                         if (unidade == null) {
@@ -398,8 +401,8 @@ class CustomDrawer extends StatelessWidget {
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.event_available),
-                      title: Text('Matriz Livre', style: _itemTextStyle()),
+                      leading: const Icon(Icons.people_outline),
+                      title: Text('Matriz de Médicos', style: _itemTextStyle()),
                       onTap: () {
                         Navigator.pop(context);
                         if (unidade == null) {
@@ -411,13 +414,11 @@ class CustomDrawer extends StatelessWidget {
                         Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => MatrizDistribuicaoScreen(
-                                  unidade: unidade!, mostrarLivres: true),
+                              builder: (_) =>
+                                  MatrizMedicosScreen(unidade: unidade!),
                             ));
                       },
                     ),
-                    _buildSectionDivider(),
-                    _buildSectionTitle('Relatórios'),
                     ListTile(
                       leading: const Icon(Icons.pie_chart_outline),
                       title: const Text('Taxas de Ocupação',

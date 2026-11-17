@@ -9,6 +9,7 @@ export '../models/dados_relatorio_exportacao.dart'
 
 Future<OpcaoExportacaoRelatorio?> escolherExportacaoRelatorio(
   BuildContext context, {
+  bool mostrarGrafico = true,
   String? descricaoGrafico,
   String? descricaoTabela,
 }) =>
@@ -42,9 +43,10 @@ Future<OpcaoExportacaoRelatorio?> escolherExportacaoRelatorio(
                     title: Text('Imagem'),
                   )),
             ),
-            opcao(OpcaoExportacaoRelatorio.imagemGrafico, 'Gráfico',
-                Icons.bar_chart_outlined,
-                recuar: true, descricao: descricaoGrafico),
+            if (mostrarGrafico)
+              opcao(OpcaoExportacaoRelatorio.imagemGrafico, 'Gráfico',
+                  Icons.bar_chart_outlined,
+                  recuar: true, descricao: descricaoGrafico),
             opcao(OpcaoExportacaoRelatorio.imagemTabela, 'Tabela',
                 Icons.table_chart_outlined,
                 recuar: true, descricao: descricaoTabela),

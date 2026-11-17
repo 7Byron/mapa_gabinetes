@@ -18,12 +18,20 @@ class RelatorioExportacaoService {
     required Uint8List Function() gerarExcel,
     ConteudoImagemRelatorio conteudoImagem = ConteudoImagemRelatorio.completo,
     bool imagemHorizontal = false,
+    bool pdfPortrait = false,
+    bool centrarCelulas = false,
+    bool dividirImagemEmPaineis = true,
   }) async {
     final bytes = switch (formato) {
       FormatoExportacaoRelatorio.excel => gerarExcel(),
       FormatoExportacaoRelatorio.imagem => await gerarImagem(
-          dados: dados, conteudo: conteudoImagem, horizontal: imagemHorizontal),
-      FormatoExportacaoRelatorio.pdf => await gerarPdf(dados: dados),
+          dados: dados,
+          conteudo: conteudoImagem,
+          horizontal: imagemHorizontal,
+          dividirEmPaineis: dividirImagemEmPaineis,
+          centrarCelulas: centrarCelulas),
+      FormatoExportacaoRelatorio.pdf => await gerarPdf(
+          dados: dados, portrait: pdfPortrait, centrarCelulas: centrarCelulas),
     };
     final (extensao, mime) = switch (formato) {
       FormatoExportacaoRelatorio.excel => ('xlsx', MimeType.microsoftExcel),
@@ -40,6 +48,8 @@ class RelatorioExportacaoService {
 
   static Future<Uint8List> gerarPdf({
     required DadosRelatorioExportacao dados,
+    bool portrait = false,
+    bool centrarCelulas = false,
   }) async {
     final fonteRegular = await rootBundle.load('fonts/Montserrat-Regular.ttf');
     final fonteNegrito = await rootBundle.load('fonts/Montserrat-Bold.ttf');
@@ -53,9 +63,11 @@ class RelatorioExportacaoService {
     final data = DateFormat('dd/MM/yyyy');
     final graficos =
         await RelatorioGraficosExportacaoService.gerar(dados.graficos);
+    final formato = portrait ? PdfPageFormat.a4 : PdfPageFormat.a4.landscape;
+    final margem = portrait ? 24.0 : 30.0;
     documento.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4.landscape,
-      margin: const pw.EdgeInsets.all(30),
+      pageFormat: formato,
+      margin: pw.EdgeInsets.all(margem),
       maxPages: 200,
       header: (_) => pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 12),
@@ -75,15 +87,18 @@ class RelatorioExportacaoService {
             style: const pw.TextStyle(fontSize: 9)),
       ),
       build: (_) => [
-        for (final detalhe in dados.detalhes) pw.Text(detalhe),
+        for (final detalhe in dados.detalhes)
+          pw.Text(detalhe, style: pw.TextStyle(fontSize: portrait ? 9 : 12)),
         pw.SizedBox(height: 12),
         for (final grafico in graficos)
           pw.Padding(
             padding: const pw.EdgeInsets.only(bottom: 12),
             child: pw.Image(pw.MemoryImage(grafico.bytes),
-                width: PdfPageFormat.a4.landscape.width - 60),
+                width: formato.width - margem * 2),
           ),
         pw.TableHelper.fromTextArray(
+          cellAlignment:
+              centrarCelulas ? pw.Alignment.centerLeft : pw.Alignment.topLeft,
           headers: dados.cabecalhos,
           data: dados.linhasFormatadas,
           columnWidths: dados.proporcoes == null
@@ -93,11 +108,13 @@ class RelatorioExportacaoService {
                     i: pw.FlexColumnWidth(dados.proporcoes![i]),
                 },
           headerStyle: pw.TextStyle(
-              fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.white,
+              fontSize: portrait ? 8 : 12),
           headerDecoration:
               const pw.BoxDecoration(color: PdfColor.fromInt(0xff17343c)),
-          cellStyle: const pw.TextStyle(fontSize: 10),
-          cellPadding: const pw.EdgeInsets.all(8),
+          cellStyle: pw.TextStyle(fontSize: portrait ? 7.5 : 10),
+          cellPadding: pw.EdgeInsets.all(portrait ? 4 : 8),
           oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
         ),
       ],
@@ -110,6 +127,8 @@ class RelatorioExportacaoService {
     required DadosRelatorioExportacao dados,
     ConteudoImagemRelatorio conteudo = ConteudoImagemRelatorio.completo,
     bool horizontal = false,
+    bool dividirEmPaineis = true,
+    bool centrarCelulas = false,
   }) async {
     final data = DateFormat('dd/MM/yyyy');
     final largura = horizontal ? 2400 : 1600;
@@ -189,7 +208,8 @@ class RelatorioExportacaoService {
       final paineis = <List<_BlocoImagemRelatorio>>[[]];
       final alturasPaineis = <double>[alturaBase];
       for (final bloco in blocos) {
-        if (alturasPaineis.last + bloco.altura > limitePainel &&
+        if (dividirEmPaineis &&
+            alturasPaineis.last + bloco.altura > limitePainel &&
             paineis.last.isNotEmpty) {
           paineis.add([]);
           alturasPaineis.add(alturaBase);
@@ -248,7 +268,12 @@ class RelatorioExportacaoService {
           var x = origemX + margem;
           for (var coluna = 0; coluna < proporcoes.length; coluna++) {
             canvas.drawParagraph(
-                paragrafos[i][coluna], ui.Offset(x + 12, y + 16));
+                paragrafos[i][coluna],
+                ui.Offset(
+                    x + 12,
+                    centrarCelulas
+                        ? y + (alturas[i] - paragrafos[i][coluna].height) / 2
+                        : y + 16));
             x += util * proporcoes[coluna];
           }
           y += alturas[i];

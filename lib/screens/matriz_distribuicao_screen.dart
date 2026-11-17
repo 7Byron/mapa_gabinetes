@@ -34,8 +34,7 @@ class MatrizDistribuicaoScreen extends StatefulWidget {
 }
 
 class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
-  String get _titulo =>
-      widget.mostrarLivres ? 'Matriz Livre' : 'Matriz de ocupação';
+  late bool _mostrarLivres = widget.mostrarLivres;
   ClinicaConfiguracoes? _config;
   Set<DateTime> _encerramentos = {};
   List<Gabinete> _gabinetes = [];
@@ -115,7 +114,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
       }
       final revisaoAntesVerificacao =
           MatrizDistribuicaoCacheService.revisao(widget.unidade.id);
-      if (widget.mostrarLivres) await _carregarFuncionamento(atualizar);
+      if (_mostrarLivres) await _carregarFuncionamento(atualizar);
       final versoes =
           await CacheVersionService.fetchVersions(unidadeId: widget.unidade.id);
       if (!mounted) return;
@@ -219,7 +218,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
   void _recalcular() {
     if (_dados == null) return;
     final ocupacao = _dados!.matrizPara(_referencia);
-    _matriz = widget.mostrarLivres && _config != null
+    _matriz = _mostrarLivres && _config != null
         ? MatrizGabinetesLivresService.gerar(
             gabinetes: _gabinetes,
             ocupacao: ocupacao,
@@ -276,7 +275,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
       ),
     );
     if (ano == null || !mounted) return;
-    if (widget.mostrarLivres) {
+    if (_mostrarLivres) {
       _referencia = DateTime(ano);
       await _carregar();
       return;
@@ -286,17 +285,6 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
       _recalcular();
     });
   }
-
-  Widget _tituloAppBar() => Row(mainAxisSize: MainAxisSize.min, children: [
-        Flexible(
-          child: Text(_titulo,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        ),
-        MatrizDistribuicaoAjuda(mostrarLivres: widget.mostrarLivres),
-      ]);
 
   bool _aAbrirMedico = false;
 
@@ -331,7 +319,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
         gabinetes: _gabinetes,
         itens: _matriz.itens,
         onEditarMedico:
-            widget.isAdmin && !widget.mostrarLivres ? _editarMedico : null,
+            widget.isAdmin && !_mostrarLivres ? _editarMedico : null,
         gabinetesOcultos: _gabinetesOcultos,
         onOcultosChanged: (ocultos) =>
             setState(() => _gabinetesOcultos = ocultos),
@@ -339,7 +327,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
         ano: _referencia.year,
         zoom: _zoom,
         regrasSemGabinete: _matriz.regrasSemGabinete,
-        mostrarLivres: widget.mostrarLivres,
+        mostrarLivres: _mostrarLivres,
       );
 
   @override
@@ -348,8 +336,29 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
         appBar: CustomAppBar(
             backgroundColor: MatrizColors.barra,
             refreshColor: MatrizColors.iconeClaro,
-            title: _titulo,
-            titleWidget: _tituloAppBar(),
+            title: 'Matriz de Gabinetes',
+            titleWidget: Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(
+                  child: DropdownButtonHideUnderline(
+                      child: DropdownButton<bool>(
+                value: _mostrarLivres,
+                items: const [
+                  DropdownMenuItem(
+                      value: false,
+                      child: Text('Matriz de Gabinetes · Ocupação')),
+                  DropdownMenuItem(
+                      value: true, child: Text('Matriz de Gabinetes · Livre')),
+                ],
+                onChanged: _carregando
+                    ? null
+                    : (valor) {
+                        if (valor == null || valor == _mostrarLivres) return;
+                        setState(() => _mostrarLivres = valor);
+                        _carregar();
+                      },
+              ))),
+              MatrizDistribuicaoAjuda(mostrarLivres: _mostrarLivres)
+            ]),
             currentZoom: _zoom,
             onZoomIn: () => setState(
                 () => _zoom = ((_zoom * 10).round() + 1).clamp(5, 20) / 10),

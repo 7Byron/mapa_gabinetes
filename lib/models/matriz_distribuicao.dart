@@ -51,9 +51,9 @@ class MatrizDistribuicaoItem {
     this.disponibilidades = const [],
   });
 
-  String? get periodo {
-    final inicio = validadeInicio;
-    final fim = validadeFim;
+  String? get periodo => descreverPeriodo(validadeInicio, validadeFim);
+
+  static String? descreverPeriodo(DateTime? inicio, DateTime? fim) {
     if (inicio == null || fim == null) return null;
     // A projeção anual já limita a validade ao ano selecionado. Mostrar
     // datas apenas nos segmentos que não abrangem o ano completo.

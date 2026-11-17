@@ -10,8 +10,10 @@ import '../utils/app_theme.dart';
 
 class ImagemGraficoRelatorio {
   final Uint8List bytes;
+  final int largura, altura;
 
-  const ImagemGraficoRelatorio(this.bytes);
+  const ImagemGraficoRelatorio(this.bytes,
+      {required this.largura, required this.altura});
 }
 
 /// Renderiza os gráficos completos, sem depender da área visível do ecrã.
@@ -22,20 +24,29 @@ class RelatorioGraficosExportacaoService {
 
   static Future<List<ImagemGraficoRelatorio>> gerar(
       List<GraficoRelatorioExportacao> graficos,
-      {int largura = 1504,
+      {Future<void> Function(int)? onImagemGerada,
+      int largura = 1504,
       int diasPorPainel = 12}) async {
     final imagens = <ImagemGraficoRelatorio>[];
+    var geradas = 0;
+    Future<ImagemGraficoRelatorio> renderizar(
+        int largura, int altura, void Function(ui.Canvas) desenhar) async {
+      final imagem = await _imagem(largura, altura, desenhar);
+      await onImagemGerada?.call(++geradas);
+      return imagem;
+    }
+
     for (final grafico in graficos) {
       switch (grafico) {
         case GraficoHorasMedicoExportacao(:final relatorio):
-          for (var inicio = 0; inicio < relatorio.medicos.length; inicio += 3) {
+          for (var inicio = 0; inicio < relatorio.medicos.length; inicio += 5) {
             final parte = relatorio.medicos.sublist(
-                inicio, math.min(inicio + 3, relatorio.medicos.length));
+                inicio, math.min(inicio + 5, relatorio.medicos.length));
             const larguraBase = 1504.0;
             final alturaBase = 60 + parte.length * 280;
             final escala = largura / larguraBase;
-            imagens.add(
-                await _imagem(largura, (alturaBase * escala).ceil(), (canvas) {
+            imagens.add(await renderizar(largura, (alturaBase * escala).ceil(),
+                (canvas) {
               canvas.scale(escala);
               _texto(canvas, 'Contribuição e comparação de horas por médico', 0,
                   0, larguraBase,
@@ -47,18 +58,22 @@ class RelatorioGraficosExportacaoService {
             }));
           }
         case GraficoHorasEspecialidadeExportacao():
+          const larguraBase = 1504.0;
+          final escala = largura / larguraBase;
           for (var inicio = 0;
               inicio < math.max(grafico.linhas.length, 1);
-              inicio += 3) {
+              inicio += 9) {
             final parte = grafico.linhas
-                .sublist(inicio, math.min(inicio + 3, grafico.linhas.length));
-            imagens.add(await _imagem(largura, 640, (canvas) {
-              _texto(
-                  canvas, 'Horas por especialidade', 0, 0, largura.toDouble(),
+                .sublist(inicio, math.min(inicio + 9, grafico.linhas.length));
+            final filas = math.max(1, (parte.length / 3).ceil());
+            imagens.add(await renderizar(
+                largura, ((60 + filas * 480) * escala).ceil(), (canvas) {
+              canvas.scale(escala);
+              _texto(canvas, 'Horas por especialidade', 0, 0, larguraBase,
                   tamanho: 32, negrito: true);
               if (parte.isEmpty) {
                 _texto(canvas, 'Sem disponibilidade no período selecionado.', 0,
-                    280, largura.toDouble(),
+                    280, larguraBase,
                     centrado: true);
               }
               for (var i = 0; i < parte.length; i++) {
@@ -68,27 +83,40 @@ class RelatorioGraficosExportacaoService {
                             grafico.totalMedicosAtivosClinica)
                         .clamp(0.0, 1.0)
                     : 0.0;
+                canvas.save();
+                canvas.translate(0, (i ~/ 3) * 480.0);
                 _horasEspecialidade(canvas,
-                    x: i * (largura / 3),
-                    largura: largura / 3,
+                    x: (i % 3) * (larguraBase / 3),
+                    largura: larguraBase / 3,
                     nome: linha.especialidade,
                     medicos: linha.medicosComDisponibilidade,
                     totalMedicos: grafico.totalMedicosAtivosClinica,
                     proporcao: proporcao,
                     horas: linha.horasConsulta,
                     media: linha.mediaHorasPorMedico);
+                canvas.restore();
               }
             }));
           }
         case GraficoTaxasExportacao(:final taxas):
-          for (var inicio = 0; inicio < taxas.length; inicio += 3) {
+          // Três colunas e até três filas por página vertical.
+          for (var inicio = 0; inicio < taxas.length; inicio += 9) {
             final parte =
-                taxas.sublist(inicio, math.min(inicio + 3, taxas.length));
-            imagens.add(await _imagem(largura, 540, (canvas) {
-              _texto(canvas, 'Taxas de ocupação', 0, 0, largura.toDouble(),
+                taxas.sublist(inicio, math.min(inicio + 9, taxas.length));
+            final filas = (parte.length / 3).ceil();
+            const larguraBase = 1504.0;
+            final escala = largura / larguraBase;
+            imagens.add(await renderizar(
+                largura, ((60 + filas * 480) * escala).ceil(), (canvas) {
+              canvas.scale(escala);
+              _texto(canvas, 'Taxas de ocupação', 0, 0, larguraBase,
                   tamanho: 32, negrito: true);
               for (var i = 0; i < parte.length; i++) {
-                _taxa(canvas, parte[i], i * (largura / 3), largura);
+                canvas.save();
+                canvas.translate(0, (i ~/ 3) * 480.0);
+                _taxa(canvas, parte[i], (i % 3) * (larguraBase / 3),
+                    larguraBase.toInt());
+                canvas.restore();
               }
             }));
           }
@@ -99,7 +127,7 @@ class RelatorioGraficosExportacaoService {
               inicio += diasPorPainel) {
             final dias = grafico.dias.sublist(
                 inicio, math.min(inicio + diasPorPainel, grafico.dias.length));
-            imagens.add(await _imagem(largura, 640,
+            imagens.add(await renderizar(largura, 640,
                 (canvas) => _ocupacao(canvas, grafico, dias, largura)));
           }
       }
@@ -119,7 +147,9 @@ class RelatorioGraficosExportacaoService {
       final dados = await imagem.toByteData(format: ui.ImageByteFormat.png);
       if (dados == null) throw StateError('Não foi possível criar o gráfico.');
       return ImagemGraficoRelatorio(
-          dados.buffer.asUint8List(dados.offsetInBytes, dados.lengthInBytes));
+          dados.buffer.asUint8List(dados.offsetInBytes, dados.lengthInBytes),
+          largura: largura,
+          altura: altura);
     } finally {
       imagem.dispose();
       desenho.dispose();
@@ -382,7 +412,7 @@ class RelatorioGraficosExportacaoService {
     final util = largura - margem * 2;
     final cor = MyAppTheme.corOcupacao(proporcao * 100);
     final caixa = ui.RRect.fromRectAndRadius(
-        ui.Rect.fromLTWH(x + margem, 60, util, 540),
+        ui.Rect.fromLTWH(x + margem, 60, util, 460),
         const ui.Radius.circular(18));
     canvas.drawRRect(caixa, ui.Paint()..color = cor.withValues(alpha: 0.04));
     canvas.drawRRect(
@@ -403,8 +433,8 @@ class RelatorioGraficosExportacaoService {
         centrado: true,
         maxLinhas: 2,
         cor: cor);
-    final centro = ui.Offset(x + largura / 2, 300);
-    const raio = 80.0;
+    final centro = ui.Offset(x + largura / 2, 270);
+    const raio = 70.0;
     canvas.drawCircle(
         centro,
         raio,
@@ -422,22 +452,22 @@ class RelatorioGraficosExportacaoService {
           ..style = ui.PaintingStyle.stroke
           ..strokeWidth = 20
           ..strokeCap = ui.StrokeCap.round);
-    _texto(canvas, '$medicos', x + margem, 267, util,
+    _texto(canvas, '$medicos', x + margem, 237, util,
         tamanho: 38, negrito: true, centrado: true, cor: cor);
-    _texto(canvas, 'médicos', x + margem, 318, util,
+    _texto(canvas, 'médicos', x + margem, 288, util,
         tamanho: 20, centrado: true, cor: _cinzento);
     final metade = util / 2;
     for (final (indice, titulo, valor) in [
       (0, 'Total de horas', horas),
       (1, 'Média por médico', media),
     ]) {
-      _texto(canvas, titulo, x + margem + indice * metade, 432, metade,
+      _texto(canvas, titulo, x + margem + indice * metade, 368, metade,
           tamanho: 19, centrado: true, cor: _cinzento);
-      _texto(canvas, '${_numero(valor)} h', x + margem + indice * metade, 472,
+      _texto(canvas, '${_numero(valor)} h', x + margem + indice * metade, 405,
           metade,
           tamanho: 30, negrito: true, centrado: true);
     }
-    _texto(canvas, 'Disponibilidade efetiva no período', x + margem + 8, 552,
+    _texto(canvas, 'Disponibilidade efetiva no período', x + margem + 8, 470,
         util - 16,
         tamanho: 18, centrado: true, cor: _cinzento);
   }

@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'excel_progresso_service.dart';
+import '../models/dados_relatorio_exportacao.dart';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import '../models/relatorio_horas_especialidade.dart';
@@ -8,7 +10,28 @@ class RelatorioHorasExcelService {
   static Uint8List gerar({
     required String unidade,
     required RelatorioHorasEspecialidade relatorio,
-  }) {
+  }) =>
+      Uint8List.fromList(_prepararExcel(unidade: unidade, relatorio: relatorio)
+          .last
+          .encode()!);
+
+  static Future<Uint8List> gerarProgressivo({
+    required String unidade,
+    required RelatorioHorasEspecialidade relatorio,
+    ProgressoExportacao? onProgresso,
+  }) =>
+      ExcelProgressoService.gerar(
+          _prepararExcel(unidade: unidade, relatorio: relatorio),
+          totalLinhas: 2 *
+              (relatorio.porMedico
+                  ? relatorio.medicos.length
+                  : relatorio.linhas.length),
+          onProgresso: onProgresso);
+
+  static Iterable<Excel> _prepararExcel({
+    required String unidade,
+    required RelatorioHorasEspecialidade relatorio,
+  }) sync* {
     final excel = Excel.createExcel();
     excel.rename('Sheet1', 'Horas Médico-Especialidade');
     final folha = excel['Horas Médico-Especialidade'];
@@ -37,6 +60,7 @@ class RelatorioHorasExcelService {
                 _ => TextCellValue('$valor'),
               })
           .toList());
+      yield excel;
     }
     for (var linha = 6; linha < folha.maxRows; linha++) {
       for (final coluna in relatorio.porMedico ? [2] : [3, 4]) {
@@ -46,6 +70,7 @@ class RelatorioHorasExcelService {
                 .cellStyle =
             CellStyle(numberFormat: NumFormat.custom(formatCode: '0.00'));
       }
+      yield excel;
     }
     for (var coluna = 0; coluna < dados.cabecalhos.length; coluna++) {
       folha.setColumnWidth(coluna, coluna == 0 ? 36 : 30);
@@ -72,8 +97,6 @@ class RelatorioHorasExcelService {
         DoubleCellValue(relatorio.mediaHorasPorMedicoClinica)
       ]);
     }
-    final bytes = excel.encode();
-    if (bytes == null) throw StateError('Não foi possível criar o Excel.');
-    return Uint8List.fromList(bytes);
+    yield excel;
   }
 }

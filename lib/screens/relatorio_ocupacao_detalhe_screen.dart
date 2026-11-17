@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../widgets/exportacao_progresso.dart';
 import 'package:intl/intl.dart';
 import '../services/relatorio_exportacao_service.dart';
 import '../services/relatorio_ocupacao_exportacao_service.dart';
@@ -1271,82 +1272,87 @@ class _RelatorioOcupacaoDetalheScreenState
     final conteudoImagem = escolha.conteudoImagem;
     setState(() => _exportando = true);
     try {
-      final gabinete =
-          _gabinetes.firstWhere((g) => g.id == _gabineteSelecionadoId);
-      final porHora = _modoGrafico == ModoGrafico.disponibilidade;
-      final linhas = <LinhaOcupacaoExcel>[];
-      String hora(int minutos) =>
-          '${(minutos ~/ 60).toString().padLeft(2, '0')}:${(minutos % 60).toString().padLeft(2, '0')}';
-      if (porHora) {
-        for (final dia
-            in _diasDisponibilidade.where((d) => _matchFiltroDia(d.data))) {
-          void adicionar(IntervaloMinutos? intervalo) =>
-              linhas.add(LinhaOcupacaoExcel(
-                data: dia.data,
-                horasOcupadas: dia.minutosDisponiveis / 60,
-                horasDisponiveis: dia.fechado ? 0 : dia.minutosTotais / 60,
-                fechado: dia.fechado,
-                motivo: dia.motivoFecho,
-                inicio: intervalo == null ? null : hora(intervalo.inicio),
-                fim: intervalo == null ? null : hora(intervalo.fim),
-                horasIntervalo: intervalo == null
-                    ? 0
-                    : (intervalo.fim - intervalo.inicio) / 60,
-              ));
-          if (dia.intervalos.isEmpty) {
-            adicionar(null);
-          } else {
-            for (final intervalo in dia.intervalos) {
-              adicionar(intervalo);
+      await executarComProgressoExportacao(context, (informar) async {
+        final gabinete =
+            _gabinetes.firstWhere((g) => g.id == _gabineteSelecionadoId);
+        final porHora = _modoGrafico == ModoGrafico.disponibilidade;
+        final linhas = <LinhaOcupacaoExcel>[];
+        String hora(int minutos) =>
+            '${(minutos ~/ 60).toString().padLeft(2, '0')}:${(minutos % 60).toString().padLeft(2, '0')}';
+        if (porHora) {
+          for (final dia
+              in _diasDisponibilidade.where((d) => _matchFiltroDia(d.data))) {
+            void adicionar(IntervaloMinutos? intervalo) =>
+                linhas.add(LinhaOcupacaoExcel(
+                  data: dia.data,
+                  horasOcupadas: dia.minutosDisponiveis / 60,
+                  horasDisponiveis: dia.fechado ? 0 : dia.minutosTotais / 60,
+                  fechado: dia.fechado,
+                  motivo: dia.motivoFecho,
+                  inicio: intervalo == null ? null : hora(intervalo.inicio),
+                  fim: intervalo == null ? null : hora(intervalo.fim),
+                  horasIntervalo: intervalo == null
+                      ? 0
+                      : (intervalo.fim - intervalo.inicio) / 60,
+                ));
+            if (dia.intervalos.isEmpty) {
+              adicionar(null);
+            } else {
+              for (final intervalo in dia.intervalos) {
+                adicionar(intervalo);
+              }
             }
           }
+        } else {
+          for (final dia in _dias.where((d) => _matchFiltroDia(d.data))) {
+            linhas.add(LinhaOcupacaoExcel(
+                data: dia.data,
+                horasOcupadas: dia.horasOcupadas,
+                horasDisponiveis: dia.horasTotais,
+                fechado: dia.fechado,
+                motivo: dia.motivoFecho));
+          }
         }
-      } else {
-        for (final dia in _dias.where((d) => _matchFiltroDia(d.data))) {
-          linhas.add(LinhaOcupacaoExcel(
-              data: dia.data,
-              horasOcupadas: dia.horasOcupadas,
-              horasDisponiveis: dia.horasTotais,
-              fechado: dia.fechado,
-              motivo: dia.motivoFecho));
-        }
-      }
-      final nomeGabinete = gabinete.nome.replaceAll(RegExp(r'[^\w-]'), '_');
-      final data = DateFormat('yyyy-MM-dd');
-      await RelatorioExportacaoService.guardar(
-        formato: formato,
-        conteudoImagem: conteudoImagem,
-        imagemHorizontal: formato == FormatoExportacaoRelatorio.imagem,
-        dados: RelatorioOcupacaoExportacaoService.gabinete(
-          unidade: widget.unidade.nome,
-          gabinete: gabinete.nome,
-          descricao: _descricaoGabinete(gabinete),
-          inicio: _inicioRelatorio,
-          fim: _fimRelatorio,
-          filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
-          porHora: porHora,
-          linhas: linhas,
-          horarios: {
-            if (porHora)
-              for (final dia
-                  in _filtrarDiasDisponibilidade(_diasDisponibilidade))
-                dia.data: (inicio: dia.inicioMinutos, fim: dia.fimMinutos),
-          },
-        ),
-        nome:
-            'ocupacao_${nomeGabinete}_${porHora ? 'dia_hora' : 'dia'}_${data.format(_inicioRelatorio)}_${data.format(_fimRelatorio)}'
-            '${formato == FormatoExportacaoRelatorio.imagem ? '_${conteudoImagem.name}' : ''}',
-        gerarExcel: () => RelatorioOcupacaoExcelService.gerar(
-          unidade: widget.unidade.nome,
-          gabinete: gabinete.nome,
-          descricao: _descricaoGabinete(gabinete),
-          inicio: _inicioRelatorio,
-          fim: _fimRelatorio,
-          filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
-          porHora: porHora,
-          linhas: linhas,
-        ),
-      );
+        final nomeGabinete = gabinete.nome.replaceAll(RegExp(r'[^\w-]'), '_');
+        final data = DateFormat('yyyy-MM-dd');
+        await RelatorioExportacaoService.guardar(
+          onProgresso: informar,
+          formato: formato,
+          conteudoImagem: conteudoImagem,
+          imagemHorizontal: false,
+          pdfPortrait: true,
+          dados: RelatorioOcupacaoExportacaoService.gabinete(
+            unidade: widget.unidade.nome,
+            gabinete: gabinete.nome,
+            descricao: _descricaoGabinete(gabinete),
+            inicio: _inicioRelatorio,
+            fim: _fimRelatorio,
+            filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
+            porHora: porHora,
+            linhas: linhas,
+            horarios: {
+              if (porHora)
+                for (final dia
+                    in _filtrarDiasDisponibilidade(_diasDisponibilidade))
+                  dia.data: (inicio: dia.inicioMinutos, fim: dia.fimMinutos),
+            },
+          ),
+          nome:
+              'ocupacao_${nomeGabinete}_${porHora ? 'dia_hora' : 'dia'}_${data.format(_inicioRelatorio)}_${data.format(_fimRelatorio)}'
+              '${formato == FormatoExportacaoRelatorio.imagem ? '_${conteudoImagem.name}' : ''}',
+          gerarExcel: () => RelatorioOcupacaoExcelService.gerarProgressivo(
+            onProgresso: informar,
+            unidade: widget.unidade.nome,
+            gabinete: gabinete.nome,
+            descricao: _descricaoGabinete(gabinete),
+            inicio: _inicioRelatorio,
+            fim: _fimRelatorio,
+            filtroDias: _rotuloFiltroDia(_filtroDiaSelecionado),
+            porHora: porHora,
+            linhas: linhas,
+          ),
+        );
+      });
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Relatório exportado.')));

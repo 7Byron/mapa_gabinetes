@@ -1,5 +1,6 @@
 import '../models/matriz_distribuicao.dart';
 import '../models/medico.dart';
+import '../models/disponibilidade.dart';
 import '../models/excecao_serie.dart';
 import '../models/serie_recorrencia.dart';
 import 'serie_generator.dart';
@@ -76,10 +77,14 @@ class MatrizMedicosService {
     }).toList();
     final ocorrencias = SerieGenerator.gerarDisponibilidades(
         series: efetivas, excecoes: excecoes, dataInicio: inicio, dataFim: fim);
+    final porMedico = <String, List<Disponibilidade>>{};
+    for (final d in ocorrencias) {
+      porMedico.putIfAbsent(d.medicoId, () => []).add(d);
+    }
     return medicos.where((m) => m.ativo).map((medico) {
       // União de minutos por dia: horários sobrepostos contam apenas uma vez.
-      final minutosPorDia = <DateTime, Set<int>>{};
-      for (final d in ocorrencias.where((d) => d.medicoId == medico.id)) {
+      final minutosPorDia = <DateTime, List<(int, int)>>{};
+      for (final d in porMedico[medico.id] ?? <Disponibilidade>[]) {
         if (encerramentos
             .contains(DateTime(d.data.year, d.data.month, d.data.day))) {
           continue;
@@ -89,7 +94,8 @@ class MatrizMedicosService {
             .map((h) => h.trim())
             .toList();
         final minutos = minutosPorDia.putIfAbsent(
-            DateTime(d.data.year, d.data.month, d.data.day), () => <int>{});
+            DateTime(d.data.year, d.data.month, d.data.day),
+            () => <(int, int)>[]);
         for (var i = 0; i + 1 < partes.length; i += 2) {
           int? parse(String h) {
             final p = h.split(':');
@@ -100,20 +106,28 @@ class MatrizMedicosService {
 
           final de = parse(partes[i]), ate = parse(partes[i + 1]);
           if (de != null && ate != null && de >= 0 && ate <= 1440) {
-            for (var n = de; n < ate; n++) {
-              minutos.add(n);
-            }
+            if (ate > de) minutos.add((de, ate));
           }
         }
       }
       var semana = 0, mes = 0, ano = 0;
       for (final e in minutosPorDia.entries) {
+        final intervalos = e.value..sort((a, b) => a.$1.compareTo(b.$1));
+        var total = 0, fimAnterior = -1;
+        for (final intervalo in intervalos) {
+          final inicioEfetivo =
+              intervalo.$1 > fimAnterior ? intervalo.$1 : fimAnterior;
+          if (intervalo.$2 > inicioEfetivo) {
+            total += intervalo.$2 - inicioEfetivo;
+          }
+          if (intervalo.$2 > fimAnterior) fimAnterior = intervalo.$2;
+        }
         if (!e.key.isBefore(segunda) && !e.key.isAfter(domingo)) {
-          semana += e.value.length;
+          semana += total;
         }
         if (e.key.year == data.year) {
-          ano += e.value.length;
-          if (e.key.month == data.month) mes += e.value.length;
+          ano += total;
+          if (e.key.month == data.month) mes += total;
         }
       }
       final regras = recorrentes

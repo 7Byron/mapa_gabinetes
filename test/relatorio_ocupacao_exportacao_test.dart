@@ -6,6 +6,7 @@ import 'package:excel/excel.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mapa_gabinetes/models/gabinete.dart';
+import 'package:mapa_gabinetes/models/dados_relatorio_exportacao.dart';
 import 'package:mapa_gabinetes/models/grafico_relatorio_exportacao.dart';
 import 'package:mapa_gabinetes/models/taxa_ocupacao.dart';
 import 'package:mapa_gabinetes/services/relatorio_exportacao_service.dart';
@@ -298,15 +299,82 @@ void main() {
           g.id: const TaxaOcupacao(horasOcupadas: 6, horasDisponiveis: 12)
       },
     );
-    // Geral e nove gabinetes, em quatro painéis.
+    // Geral e nove gabinetes, em dois painéis com até nove gráficos.
     final imagens =
         await RelatorioGraficosExportacaoService.gerar(dados.graficos);
-    expect(imagens.length, 4);
-    final pdf =
-        latin1.decode(await RelatorioExportacaoService.gerarPdf(dados: dados));
+    expect(imagens.length, 2);
+    final codec = await ui.instantiateImageCodec(imagens.first.bytes);
+    final imagem = (await codec.getNextFrame()).image;
+    expect(imagem.height, 1500); // Três filas completas, nove cartões.
+    imagem.dispose();
+    codec.dispose();
+    final paginas = await RelatorioExportacaoService.gerarImagensPaginadas(
+        dados,
+        conteudo: ConteudoImagemRelatorio.grafico);
+    expect(paginas, hasLength(2));
+    final destino = Platform.environment['TAXAS_PREVIEW'];
+    if (destino != null) await File(destino).writeAsBytes(paginas.first);
+
+    final pdf = latin1.decode(await RelatorioExportacaoService.gerarPdf(
+        dados: dados, portrait: true));
+    expect(pdf, contains('/DCTDecode')); // Gráficos incorporados como JPEG.
+    expect(pdf,
+        isNot(contains('/SMask'))); // Evita máscara alpha e recompressão RGB.
     expect(RegExp(r'/Subtype\s*/Image\b').allMatches(pdf).length,
-        greaterThanOrEqualTo(4));
+        greaterThanOrEqualTo(2));
     expect(RegExp(r'/Type\s*/Page\b').allMatches(pdf).length, greaterThan(1));
+  });
+
+  test('Ocupação por gabinete empilha gráficos e exporta em vertical',
+      () async {
+    final inicio = DateTime(2026, 10, 1);
+    final dados = RelatorioOcupacaoExportacaoService.gabinete(
+      unidade: 'Clínica',
+      gabinete: '101',
+      descricao: 'Psicologia',
+      inicio: inicio,
+      fim: inicio.add(const Duration(days: 83)),
+      filtroDias: 'Todos',
+      porHora: true,
+      linhas: [
+        for (var i = 0; i < 84; i++)
+          LinhaOcupacaoExcel(
+              data: inicio.add(Duration(days: i)),
+              horasOcupadas: 4,
+              horasDisponiveis: 12,
+              inicio: '08:00',
+              fim: '12:00',
+              horasIntervalo: 4)
+      ],
+    );
+    final raw = await RelatorioGraficosExportacaoService.gerar(dados.graficos);
+    expect(raw, hasLength(7));
+    final grupos =
+        RelatorioExportacaoService.dividirGraficosImagemVertical(dados, raw);
+    expect(grupos.first.length, greaterThanOrEqualTo(2));
+    expect(grupos.expand((p) => p).toList(), raw);
+    expect(grupos.length, lessThan(raw.length));
+    final pngs = await RelatorioExportacaoService.gerarImagensPaginadas(dados,
+        conteudo: ConteudoImagemRelatorio.grafico);
+    expect(pngs.length, grupos.length);
+    final codec = await ui.instantiateImageCodec(pngs.first);
+    final imagem = (await codec.getNextFrame()).image;
+    expect(imagem.height, greaterThan(imagem.width));
+    imagem.dispose();
+    codec.dispose();
+    final pdf =
+        await RelatorioExportacaoService.gerarPdf(dados: dados, portrait: true);
+    final texto = latin1.decode(pdf);
+    final caixa = RegExp(r'/MediaBox\s*\[0\s+0\s+([\d.]+)\s+([\d.]+)\]')
+        .firstMatch(texto)!;
+    expect(double.parse(caixa.group(2)!),
+        greaterThan(double.parse(caixa.group(1)!)));
+    expect(RegExp(r'/Subtype\s*/Image\b').allMatches(texto).length, 7);
+    final destino = Platform.environment['OCUPACAO_PAGINA_PREVIEW'];
+    if (destino != null) {
+      await File('$destino.png').writeAsBytes(pngs.first);
+      await File('$destino.pdf').writeAsBytes(pdf);
+    }
   });
 
   test('Imagem anual inclui todas as linhas em painéis de altura limitada',

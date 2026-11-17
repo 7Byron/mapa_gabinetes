@@ -1,9 +1,11 @@
 import 'dart:typed_data';
+import 'excel_progresso_service.dart';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import '../models/dados_relatorio_exportacao.dart';
 import '../utils/text_search_utils.dart';
 import 'matriz_medicos_service.dart';
+import 'relatorio_exportacao_service.dart';
 
 /// Mesma seleção e ordenação para o ecrã e os três formatos de exportação.
 class MatrizMedicosExportacaoDados {
@@ -101,11 +103,60 @@ class MatrizMedicosExportacaoDados {
           ]
       ],
       colunasPercentagem: {6},
+      colunasCentradas: {3, 4, 5},
       proporcoes: [0.17, 0.14, 0.30, 0.095, 0.095, 0.095, 0.105],
     );
   }
 
-  static Uint8List gerarExcel(DadosRelatorioExportacao dados) {
+  static Future<List<Uint8List>> gerarImagens(DadosRelatorioExportacao dados,
+      {ProgressoExportacao? onProgresso}) async {
+    final paginas =
+        RelatorioExportacaoService.dividirLinhasImagemVertical(dados);
+    final imagens = <Uint8List>[];
+    final total = paginas.length;
+    for (var i = 0; i < total; i++) {
+      await onProgresso?.call(
+          0.08 + 0.82 * i / total, 'A gerar imagem ${i + 1} de $total…');
+      imagens.add(await RelatorioExportacaoService.gerarImagem(
+        dados: DadosRelatorioExportacao(
+          titulo: '${dados.titulo} · Parte ${i + 1} de $total',
+          unidade: dados.unidade,
+          inicio: dados.inicio,
+          fim: dados.fim,
+          detalhes: dados.detalhes,
+          cabecalhos: dados.cabecalhos,
+          linhas: paginas[i],
+          proporcoes: dados.proporcoes,
+          colunasPercentagem: dados.colunasPercentagem,
+          colunasCentradas: dados.colunasCentradas,
+          tamanhoFonteImagem: dados.tamanhoFonteImagem,
+        ),
+        centrarCelulas: true,
+        dividirEmPaineis: false,
+        paginaVertical: true,
+      ));
+    }
+    return imagens;
+  }
+
+  static Future<void> guardarImagens(
+      DadosRelatorioExportacao dados, String nome,
+      {ProgressoExportacao? onProgresso}) async {
+    final imagens = await gerarImagens(dados, onProgresso: onProgresso);
+    await onProgresso?.call(0.92, 'A preparar o download…');
+    await RelatorioExportacaoService.guardarImagens(imagens, nome,
+        onProgresso: onProgresso);
+  }
+
+  static Uint8List gerarExcel(DadosRelatorioExportacao dados) =>
+      Uint8List.fromList(_prepararExcel(dados).last.encode()!);
+
+  static Future<Uint8List> gerarExcelProgressivo(DadosRelatorioExportacao dados,
+          {ProgressoExportacao? onProgresso}) =>
+      ExcelProgressoService.gerar(_prepararExcel(dados),
+          totalLinhas: dados.linhas.length, onProgresso: onProgresso);
+
+  static Iterable<Excel> _prepararExcel(DadosRelatorioExportacao dados) sync* {
     final excel = Excel.createExcel()..rename('Sheet1', 'Matriz de Médicos');
     final folha = excel['Matriz de Médicos'];
     folha.appendRow([TextCellValue(dados.titulo)]);
@@ -138,9 +189,13 @@ class MatrizMedicosExportacaoDados {
       for (var coluna = 0; coluna < dados.cabecalhos.length; coluna++) {
         final celula = folha.cell(CellIndex.indexByColumnRow(
             columnIndex: coluna, rowIndex: indiceLinha));
-        celula.cellStyle = (celula.cellStyle ?? CellStyle())
-            .copyWith(verticalAlignVal: VerticalAlign.Center);
+        celula.cellStyle = (celula.cellStyle ?? CellStyle()).copyWith(
+            verticalAlignVal: VerticalAlign.Center,
+            horizontalAlignVal: dados.colunasCentradas.contains(coluna)
+                ? HorizontalAlign.Center
+                : HorizontalAlign.Left);
       }
+      yield excel;
     }
     for (var c = 0; c < dados.cabecalhos.length; c++) {
       folha.setColumnWidth(
@@ -158,6 +213,6 @@ class MatrizMedicosExportacaoDados {
               verticalAlign: VerticalAlign.Center,
               backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
-    return Uint8List.fromList(excel.encode()!);
+    yield excel;
   }
 }

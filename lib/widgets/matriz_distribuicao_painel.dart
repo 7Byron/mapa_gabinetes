@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'exportacao_progresso.dart';
+import '../services/matriz_gabinetes_exportacao_service.dart';
+import '../services/relatorio_exportacao_service.dart';
+import 'relatorio_exportacao_menu.dart';
 import '../models/gabinete.dart';
 import '../utils/matriz_colors.dart';
 import '../utils/app_colors.dart';
@@ -16,6 +20,7 @@ class MatrizDistribuicaoPainel extends StatefulWidget {
   final int ano;
   final double zoom;
   final bool mostrarLivres;
+  final ValueChanged<bool>? onMostrarLivresChanged;
   final ValueChanged<MatrizDistribuicaoItem>? onEditarMedico;
   final List<String> regrasSemGabinete;
 
@@ -30,6 +35,7 @@ class MatrizDistribuicaoPainel extends StatefulWidget {
     this.regrasSemGabinete = const [],
     this.zoom = 1,
     this.mostrarLivres = false,
+    this.onMostrarLivresChanged,
     this.onEditarMedico,
   });
 
@@ -41,6 +47,63 @@ class MatrizDistribuicaoPainel extends StatefulWidget {
 class _MatrizDistribuicaoPainelState extends State<MatrizDistribuicaoPainel> {
   static const _corLateral = MatrizColors.lateral;
   final Set<String> _pisosExpandidos = {};
+  String _pesquisa = '';
+  bool _exportando = false;
+
+  Future<void> _exportar() async {
+    final escolha = await escolherExportacaoRelatorio(context,
+        mostrarGrafico: false,
+        descricaoTabela: 'PNG (Em pasta ZIP se muito conteúdo)');
+    if (escolha == null || !mounted) return;
+    setState(() => _exportando = true);
+    try {
+      await executarComProgressoExportacao(context, (informar) async {
+        final dados = MatrizGabinetesExportacaoService.documento(
+          gabinetes: widget.gabinetes
+              .where((g) => !widget.gabinetesOcultos.contains(g.id))
+              .toList(),
+          itens: widget.itens,
+          ano: widget.ano,
+          livres: widget.mostrarLivres,
+          pesquisa: _pesquisa,
+        );
+        if (escolha.formato == FormatoExportacaoRelatorio.imagem) {
+          await MatrizGabinetesExportacaoService.guardarImagens(dados,
+              'matriz_gabinetes_${widget.ano}_${widget.mostrarLivres ? 'livres' : 'ocupacao'}',
+              onProgresso: informar);
+        } else {
+          await RelatorioExportacaoService.guardar(
+            onProgresso: informar,
+            formato: escolha.formato,
+            conteudoImagem: escolha.conteudoImagem,
+            dados: dados,
+            nome:
+                'matriz_gabinetes_${widget.ano}_${widget.mostrarLivres ? 'livres' : 'ocupacao'}',
+            imagemHorizontal: false,
+            centrarCelulas: true,
+            gerarPdfPersonalizado: () =>
+                MatrizGabinetesExportacaoService.gerarPdf(dados,
+                    onProgresso: informar),
+            dividirImagemEmPaineis: false,
+            gerarExcel: () =>
+                MatrizGabinetesExportacaoService.gerarExcelProgressivo(dados,
+                    onProgresso: informar),
+          );
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Matriz exportada.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Não foi possível exportar a matriz.')));
+      }
+    } finally {
+      if (mounted) setState(() => _exportando = false);
+    }
+  }
 
   void _selecionar(Gabinete gabinete, bool selecionado) {
     final ocultos = {...widget.gabinetesOcultos};
@@ -162,6 +225,32 @@ class _MatrizDistribuicaoPainelState extends State<MatrizDistribuicaoPainel> {
                         padding: const EdgeInsets.only(bottom: 16),
                         children: [
                           Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(children: [
+                              for (final livre in [false, true])
+                                Expanded(
+                                    child: OutlinedButton(
+                                  key: ValueKey('modo_matriz_$livre'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 4),
+                                    backgroundColor:
+                                        widget.mostrarLivres == livre
+                                            ? Colors.white12
+                                            : Colors.transparent,
+                                  ),
+                                  onPressed: widget.onMostrarLivresChanged ==
+                                          null
+                                      ? null
+                                      : () =>
+                                          widget.onMostrarLivresChanged!(livre),
+                                  child: Text(livre ? 'Livre' : 'Ocupado',
+                                      style: const TextStyle(fontSize: 11)),
+                                )),
+                            ]),
+                          ),
+                          const SizedBox(height: 12),
+                          Padding(
                             padding: const EdgeInsets.fromLTRB(12, 14, 12, 4),
                             child: Text(
                                 'Gabinetes · $selecionados/${widget.gabinetes.length}',
@@ -249,6 +338,21 @@ class _MatrizDistribuicaoPainelState extends State<MatrizDistribuicaoPainel> {
                           ),
                         ],
                       )),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Center(
+                          child: FilledButton.icon(
+                            onPressed: _exportando || visiveis.isEmpty
+                                ? null
+                                : _exportar,
+                            icon:
+                                const Icon(Icons.ios_share_outlined, size: 18),
+                            label:
+                                Text(_exportando ? 'A exportar…' : 'Exportar'),
+                          ),
+                        ),
+                      ),
                     ]),
               ),
             ),
@@ -260,6 +364,9 @@ class _MatrizDistribuicaoPainelState extends State<MatrizDistribuicaoPainel> {
                 child: MatrizDistribuicaoGrid(
                   gabinetes: visiveis,
                   itens: widget.itens,
+                  pesquisa: _pesquisa,
+                  onPesquisaChanged: (valor) =>
+                      setState(() => _pesquisa = valor.trim().toLowerCase()),
                   onEditarMedico: widget.onEditarMedico,
                   zoom: widget.zoom,
                   ano: widget.ano,

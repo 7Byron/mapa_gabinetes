@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'excel_progresso_service.dart';
+import '../models/dados_relatorio_exportacao.dart';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 
@@ -34,7 +36,53 @@ class RelatorioOcupacaoExcelService {
     required String filtroDias,
     required bool porHora,
     required List<LinhaOcupacaoExcel> linhas,
-  }) {
+  }) =>
+      Uint8List.fromList(_prepararExcel(
+              unidade: unidade,
+              gabinete: gabinete,
+              descricao: descricao,
+              inicio: inicio,
+              fim: fim,
+              filtroDias: filtroDias,
+              porHora: porHora,
+              linhas: linhas)
+          .last
+          .encode()!);
+
+  static Future<Uint8List> gerarProgressivo({
+    required String unidade,
+    required String gabinete,
+    required String descricao,
+    required DateTime inicio,
+    required DateTime fim,
+    required String filtroDias,
+    required bool porHora,
+    required List<LinhaOcupacaoExcel> linhas,
+    ProgressoExportacao? onProgresso,
+  }) =>
+      ExcelProgressoService.gerar(
+          _prepararExcel(
+              unidade: unidade,
+              gabinete: gabinete,
+              descricao: descricao,
+              inicio: inicio,
+              fim: fim,
+              filtroDias: filtroDias,
+              porHora: porHora,
+              linhas: linhas),
+          totalLinhas: linhas.length,
+          onProgresso: onProgresso);
+
+  static Iterable<Excel> _prepararExcel({
+    required String unidade,
+    required String gabinete,
+    required String descricao,
+    required DateTime inicio,
+    required DateTime fim,
+    required String filtroDias,
+    required bool porHora,
+    required List<LinhaOcupacaoExcel> linhas,
+  }) sync* {
     final excel = Excel.createExcel();
     final nome = porHora ? 'Ocupação dia e hora' : 'Ocupação por dia';
     excel.rename('Sheet1', nome);
@@ -90,6 +138,7 @@ class RelatorioOcupacaoExcelService {
                 numberFormat: NumFormat.custom(
                     formatCode: coluna == colunaPercentagem ? '0.0%' : '0.0'));
       }
+      yield excel;
     }
     for (var coluna = 0; coluna < cabecalho.length; coluna++) {
       folha.setColumnWidth(coluna, coluna < (porHora ? 3 : 1) ? 20 : 28);
@@ -100,8 +149,6 @@ class RelatorioOcupacaoExcelService {
               bold: true,
               backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
-    final bytes = excel.encode();
-    if (bytes == null) throw StateError('Não foi possível criar o Excel.');
-    return Uint8List.fromList(bytes);
+    yield excel;
   }
 }

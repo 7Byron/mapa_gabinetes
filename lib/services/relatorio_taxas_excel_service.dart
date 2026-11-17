@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'excel_progresso_service.dart';
+import '../models/dados_relatorio_exportacao.dart';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import '../models/gabinete.dart';
@@ -11,7 +13,41 @@ class RelatorioTaxasExcelService {
     required DateTime fim,
     required List<Gabinete> gabinetes,
     required Map<String, TaxaOcupacao> taxas,
-  }) {
+  }) =>
+      Uint8List.fromList(_prepararExcel(
+              unidade: unidade,
+              inicio: inicio,
+              fim: fim,
+              gabinetes: gabinetes,
+              taxas: taxas)
+          .last
+          .encode()!);
+
+  static Future<Uint8List> gerarProgressivo({
+    required String unidade,
+    required DateTime inicio,
+    required DateTime fim,
+    required List<Gabinete> gabinetes,
+    required Map<String, TaxaOcupacao> taxas,
+    ProgressoExportacao? onProgresso,
+  }) =>
+      ExcelProgressoService.gerar(
+          _prepararExcel(
+              unidade: unidade,
+              inicio: inicio,
+              fim: fim,
+              gabinetes: gabinetes,
+              taxas: taxas),
+          totalLinhas: gabinetes.length,
+          onProgresso: onProgresso);
+
+  static Iterable<Excel> _prepararExcel({
+    required String unidade,
+    required DateTime inicio,
+    required DateTime fim,
+    required List<Gabinete> gabinetes,
+    required Map<String, TaxaOcupacao> taxas,
+  }) sync* {
     final excel = Excel.createExcel();
     excel.rename('Sheet1', 'Taxas de Ocupação');
     final folha = excel['Taxas de Ocupação'];
@@ -60,6 +96,7 @@ class RelatorioTaxasExcelService {
     for (final gabinete in gabinetes.where((g) => taxas.containsKey(g.id))) {
       adicionar(gabinete.nome, gabinete.setor,
           gabinete.especialidadesPermitidas.join(', '), taxas[gabinete.id]!);
+      yield excel;
     }
     for (var coluna = 0; coluna < 6; coluna++) {
       folha.setColumnWidth(coluna, coluna == 2 ? 40 : 22);
@@ -70,8 +107,6 @@ class RelatorioTaxasExcelService {
               bold: true,
               backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
-    final bytes = excel.encode();
-    if (bytes == null) throw StateError('Não foi possível criar o Excel.');
-    return Uint8List.fromList(bytes);
+    yield excel;
   }
 }

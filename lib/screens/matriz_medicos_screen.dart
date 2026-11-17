@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import '../widgets/exportacao_progresso.dart';
 import '../models/unidade.dart';
+import '../models/medico.dart';
+import '../services/cache_version_service.dart';
 import '../services/alocacao_clinica_config_service.dart';
 import '../services/alocacao_clinica_status_service.dart';
 import '../services/matriz_medicos_exportacao_service.dart';
@@ -41,6 +44,7 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
   }
 
   Future<void> _escolherAno() async {
+    if (_carregando) return;
     final ano = await showDialog<int>(
         context: context,
         builder: (context) => AlertDialog(
@@ -67,6 +71,7 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
   }
 
   Future<void> _escolherSemana() async {
+    if (_carregando) return;
     final data = await showDatePicker(
         context: context,
         initialDate: _semanaReferencia,
@@ -86,7 +91,14 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
     _carregar();
   }
 
-  Future<void> _carregar() async {
+  Map<String, int>? _versoesCarregadas;
+  List<Medico>? _medicosCarregados;
+
+  Future<void> _carregar({bool atualizar = false}) =>
+      CacheVersionService.comVersoesPartilhadas(
+          () => _carregarInterno(atualizar: atualizar));
+
+  Future<void> _carregarInterno({required bool atualizar}) async {
     setState(() {
       _carregando = true;
       _erro = null;
@@ -102,12 +114,25 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
         }
         return;
       }
-      final medicos =
-          await buscarMedicos(unidade: widget.unidade, forcarAtualizacao: true);
+      final versoes =
+          await CacheVersionService.fetchVersions(unidadeId: widget.unidade.id);
+      final relerMedicos = atualizar ||
+          _medicosCarregados == null ||
+          _versoesCarregadas?[CacheVersionService.fieldMedicos] !=
+              versoes[CacheVersionService.fieldMedicos];
+      final relerSeries = atualizar ||
+          _versoesCarregadas == null ||
+          _versoesCarregadas?[CacheVersionService.fieldSeries] !=
+              versoes[CacheVersionService.fieldSeries];
+      if (relerSeries) SerieService.invalidateCacheSeries(widget.unidade.id);
+      final medicos = relerMedicos
+          ? await buscarMedicos(
+              unidade: widget.unidade, forcarAtualizacao: true)
+          : _medicosCarregados!;
       final series = await SerieService.carregarSeriesDeMedicos(
           medicos.where((m) => m.ativo).map((m) => m.id).toList(),
           unidade: widget.unidade,
-          forcarServidor: true);
+          forcarServidor: relerSeries);
       final regras = series.values.expand((s) => s).toList();
       final linhas = MatrizMedicosService.gerar(medicos, regras, _referencia,
           semanaReferencia: _semanaReferencia);
@@ -124,17 +149,21 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
               unidade: widget.unidade,
               dataInicio: inicio,
               dataFim: fim,
-              forcarServidor: true)));
+              forcarServidor: relerSeries)));
       final config =
           await AlocacaoClinicaConfigService.carregarHorariosEConfiguracoes(
-              unidadeId: widget.unidade.id);
+              unidadeId: widget.unidade.id, forcarServidor: atualizar);
       final fechados = <DateTime>{};
       for (var ano = inicio.year; ano <= fim.year; ano++) {
         final feriados = await AlocacaoClinicaConfigService.carregarFeriados(
-            unidadeId: widget.unidade.id, anoSelecionado: ano);
+            unidadeId: widget.unidade.id,
+            anoSelecionado: ano,
+            forcarServidor: atualizar);
         final encerramentos =
             await AlocacaoClinicaConfigService.carregarDiasEncerramento(
-                unidadeId: widget.unidade.id, anoSelecionado: ano);
+                unidadeId: widget.unidade.id,
+                anoSelecionado: ano,
+                forcarServidor: atualizar);
         for (var dia = DateTime(ano);
             dia.year == ano;
             dia = dia.add(const Duration(days: 1))) {
@@ -159,6 +188,8 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
         setState(() {
           _linhas = linhas;
           _liquidas = liquidas;
+          _versoesCarregadas = versoes;
+          _medicosCarregados = medicos;
         });
       }
     } catch (_) {
@@ -175,7 +206,7 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
     final cores = Theme.of(context).colorScheme;
     return Container(
       constraints: const BoxConstraints(minWidth: 74),
-      alignment: Alignment.centerRight,
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: anual ? cores.primaryContainer : cores.surfaceContainerHighest,
@@ -242,7 +273,7 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
                           'Total\nMês',
                           'Total\nAno'
                         ])
-                          celula(Text(titulo)),
+                          celula(Text(titulo, textAlign: TextAlign.center)),
                         celula(const Tooltip(
                             message:
                                 'Percentagem das horas de todos os médicos da clínica; mantém o total mesmo ao pesquisar.',
@@ -323,22 +354,34 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
 
   Future<void> _exportar() async {
     if (_carregando || _exportando || _dadosExportacao.visiveis.isEmpty) return;
-    final escolha =
-        await escolherExportacaoRelatorio(context, mostrarGrafico: false);
+    final escolha = await escolherExportacaoRelatorio(context,
+        mostrarGrafico: false,
+        descricaoTabela: 'PNG (Em pasta ZIP se muito conteúdo)');
     if (escolha == null || !mounted) return;
-    final dados = _dadosExportacao.documento(widget.unidade.nome);
     setState(() => _exportando = true);
     try {
-      await RelatorioExportacaoService.guardar(
-          formato: escolha.formato,
-          conteudoImagem: escolha.conteudoImagem,
-          imagemHorizontal: true,
-          pdfPortrait: true,
-          centrarCelulas: true,
-          dividirImagemEmPaineis: false,
-          dados: dados,
-          nome: 'matriz_medicos_${_referencia.year}_${_referencia.month}',
-          gerarExcel: () => MatrizMedicosExportacaoDados.gerarExcel(dados));
+      await executarComProgressoExportacao(context, (informar) async {
+        final dados = _dadosExportacao.documento(widget.unidade.nome);
+        if (escolha.formato == FormatoExportacaoRelatorio.imagem) {
+          await MatrizMedicosExportacaoDados.guardarImagens(
+              dados, 'matriz_medicos_${_referencia.year}_${_referencia.month}',
+              onProgresso: informar);
+        } else {
+          await RelatorioExportacaoService.guardar(
+              onProgresso: informar,
+              formato: escolha.formato,
+              conteudoImagem: escolha.conteudoImagem,
+              imagemHorizontal: true,
+              pdfPortrait: true,
+              centrarCelulas: true,
+              dividirImagemEmPaineis: false,
+              dados: dados,
+              nome: 'matriz_medicos_${_referencia.year}_${_referencia.month}',
+              gerarExcel: () =>
+                  MatrizMedicosExportacaoDados.gerarExcelProgressivo(dados,
+                      onProgresso: informar));
+        }
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Relatório exportado.')));
@@ -364,7 +407,25 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
     return Scaffold(
       appBar: CustomAppBar(
           title: 'Matriz de Médicos',
-          onRefresh: _carregando ? null : _carregar),
+          titleWidget: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Flexible(
+              child: Text('Matriz de Médicos',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(width: 12),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Previsto')),
+                ButtonSegment(value: true, label: Text('Real')),
+              ],
+              selected: {_descontar.every((v) => v)},
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              onSelectionChanged: (valores) =>
+                  setState(() => _descontar.fillRange(0, 3, valores.single)),
+            ),
+          ]),
+          onRefresh: _carregando ? null : () => _carregar(atualizar: true)),
       body: RelatorioLayout(
           ocupado: _exportando,
           acoes: FilledButton.icon(
@@ -443,21 +504,27 @@ class _MatrizMedicosScreenState extends State<MatrizMedicosScreen> {
                       const SizedBox(height: 12),
                       const Divider(),
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<int>(
-                          key: const ValueKey('matriz_ordenacao'),
-                          initialValue: _ordenacao,
-                          isExpanded: true,
-                          decoration:
-                              const InputDecoration(labelText: 'Ordenar por'),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 0, child: Text('Nome do médico')),
-                            DropdownMenuItem(
-                                value: 1, child: Text('Especialidade')),
-                            DropdownMenuItem(value: 2, child: Text('Horas'))
-                          ],
-                          onChanged: (v) =>
-                              setState(() => _ordenacao = v ?? 0)),
+                      const Text('Ordenar por',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        key: const ValueKey('matriz_ordenacao'),
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final opcao in const [
+                            (0, 'Nome'),
+                            (1, 'Especialidade'),
+                            (2, 'Horas')
+                          ])
+                            ChoiceChip(
+                              label: Text(opcao.$2),
+                              selected: _ordenacao == opcao.$1,
+                              onSelected: (_) =>
+                                  setState(() => _ordenacao = opcao.$1),
+                            ),
+                        ],
+                      ),
                       const SizedBox(height: 16),
                       const Text('Totais',
                           style: TextStyle(fontWeight: FontWeight.w600)),

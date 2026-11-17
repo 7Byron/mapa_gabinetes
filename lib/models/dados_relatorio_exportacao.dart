@@ -1,6 +1,9 @@
 import 'package:intl/intl.dart';
 import 'grafico_relatorio_exportacao.dart';
 
+typedef ProgressoExportacao = Future<void> Function(
+    double progresso, String mensagem);
+
 enum FormatoExportacaoRelatorio { excel, imagem, pdf }
 
 enum ConteudoImagemRelatorio { completo, grafico, tabela }
@@ -31,6 +34,10 @@ class DadosRelatorioExportacao {
   final List<List<Object>> linhas;
   final Set<int> colunasPercentagem;
   final Set<int> linhasDestaque;
+  final Set<int> colunasNegrito;
+  final Set<int> colunasCentradas;
+  final bool grelhaImagem;
+  final double tamanhoFonteImagem;
   final List<double>? proporcoes;
   final List<GraficoRelatorioExportacao> graficos;
 
@@ -44,23 +51,28 @@ class DadosRelatorioExportacao {
     this.detalhes = const [],
     this.colunasPercentagem = const {},
     this.linhasDestaque = const {},
+    this.colunasNegrito = const {},
+    this.colunasCentradas = const {},
+    this.grelhaImagem = false,
+    this.tamanhoFonteImagem = 22,
     this.proporcoes,
     this.graficos = const [],
   });
 
-  List<List<String>> get linhasFormatadas {
+  List<List<String>> get linhasFormatadas => formatarLinhas().toList();
+
+  Iterable<List<String>> formatarLinhas() sync* {
     final numero = NumberFormat('#,##0.##', 'pt_PT');
     final percentagem = NumberFormat('0.0%', 'pt_PT');
-    return [
-      for (final linha in linhas)
-        [
-          for (var coluna = 0; coluna < linha.length; coluna++)
-            if (linha[coluna] case final num valor)
-              (colunasPercentagem.contains(coluna) ? percentagem : numero)
-                  .format(valor)
-            else
-              '${linha[coluna]}',
-        ],
-    ];
+    for (final linha in linhas) {
+      yield [
+        for (var coluna = 0; coluna < linha.length; coluna++)
+          if (linha[coluna] case final num valor)
+            (colunasPercentagem.contains(coluna) ? percentagem : numero)
+                .format(valor)
+          else
+            '${linha[coluna]}',
+      ];
+    }
   }
 }

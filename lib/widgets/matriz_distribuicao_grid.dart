@@ -12,6 +12,8 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
   final List<Gabinete> gabinetes;
   final List<MatrizDistribuicaoItem> itens;
   final double zoom;
+  final String pesquisa;
+  final ValueChanged<String>? onPesquisaChanged;
   final int? ano;
   final bool mostrarLivres;
   final DateTime? dataReferencia;
@@ -23,6 +25,8 @@ class MatrizDistribuicaoGrid extends StatefulWidget {
     required this.gabinetes,
     required this.itens,
     this.zoom = 1.0,
+    this.pesquisa = '',
+    this.onPesquisaChanged,
     this.ano,
     this.mostrarLivres = false,
     this.dataReferencia,
@@ -191,11 +195,16 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
       Container(
         padding: EdgeInsets.all(widget.mostrarLivres ? 6 : 8),
         decoration: BoxDecoration(
-          color: widget.mostrarLivres
-              ? MatrizColors.livre
-              : item.conflito
-                  ? MyAppTheme.gabineteConflito
-                  : MatrizColors.ocupado,
+          color: widget.pesquisa.isNotEmpty &&
+                  '${item.medicoNome} ${item.especialidade}'
+                      .toLowerCase()
+                      .contains(widget.pesquisa)
+              ? Colors.amber.shade200
+              : widget.mostrarLivres
+                  ? MatrizColors.livre
+                  : item.conflito
+                      ? MyAppTheme.gabineteConflito
+                      : MatrizColors.ocupado,
           border: Border.all(
             color: widget.mostrarLivres
                 ? MatrizColors.bordaLivre
@@ -496,17 +505,58 @@ class _MatrizDistribuicaoGridState extends State<MatrizDistribuicaoGrid> {
                                         height: 42,
                                         alignment: Alignment.center,
                                         decoration: BoxDecoration(
-                                            color: MatrizColors.cabecalho,
+                                            color: const Color(0xFFCBDDDF),
                                             border: Border.symmetric(
                                                 vertical: BorderSide(
                                                     color:
                                                         MatrizColors.borda))),
-                                        child: Text(
-                                            widget.ano == null
-                                                ? 'Semana tipo'
-                                                : 'Semana tipo · ${widget.ano}',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold))),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceEvenly,
+                                          children: [
+                                            Text(
+                                              widget.ano == null
+                                                  ? 'Semana tipo'
+                                                  : 'Semana tipo · ${widget.ano}',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                            if (!widget.mostrarLivres)
+                                              SizedBox(
+                                                width: 300,
+                                                height: 32,
+                                                child: TextField(
+                                                  style: const TextStyle(
+                                                      fontSize: 13),
+                                                  textAlignVertical:
+                                                      TextAlignVertical.center,
+                                                  onChanged:
+                                                      widget.onPesquisaChanged,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    isDense: true,
+                                                    filled: true,
+                                                    fillColor: Colors.white,
+                                                    prefixIconConstraints:
+                                                        BoxConstraints(
+                                                            minWidth: 32,
+                                                            minHeight: 28),
+                                                    contentPadding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal: 12,
+                                                            vertical: 6),
+                                                    prefixIcon: Icon(
+                                                        Icons.search,
+                                                        size: 20),
+                                                    hintText:
+                                                        'Médico ou especialidade',
+                                                    border:
+                                                        OutlineInputBorder(),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        )),
                                     Row(children: [
                                       for (final dia in _dias)
                                         Container(

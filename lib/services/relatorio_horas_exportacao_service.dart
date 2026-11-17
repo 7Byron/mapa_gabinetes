@@ -99,6 +99,7 @@ class RelatorioHorasExportacaoService {
           {required String unidade,
           required RelatorioHorasEspecialidade relatorio}) =>
       RelatorioExportacaoService.gerarPdf(
+          portrait: true,
           dados: RelatorioHorasExportacaoDados(relatorio).documento(unidade));
 
   static Future<Uint8List> gerarImagem(

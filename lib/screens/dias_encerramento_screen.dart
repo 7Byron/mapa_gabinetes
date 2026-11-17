@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:mapa_gabinetes/widgets/custom_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unidade.dart';
+import '../services/feriados_service.dart';
 import '../utils/ui_atualizar_dia.dart';
 
 /// Tela para gerenciar dias de encerramento da clínica
@@ -24,6 +25,141 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
   List<Map<String, dynamic>> diasEncerramento = [];
   String anoSelecionado = DateTime.now().year.toString();
   List<String> anosDisponiveis = [];
+
+  bool _importando = false;
+
+  Future<void> _importarFeriados() async {
+    final ano = anoSelecionado;
+    setState(() => _importando = true);
+    try {
+      final service = FeriadosService();
+      final municipios = await service.municipios();
+      if (!mounted) return;
+      Map<String, dynamic>? municipio;
+      final continuar = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Carregar feriados de Portugal — $ano'),
+          content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                      'Inclui os feriados nacionais. Escolha um município para acrescentar o feriado municipal, ou deixe vazio.'),
+                  Autocomplete<Map<String, dynamic>>(
+                    displayStringForOption: (m) =>
+                        '${m['municipality']} (${m['district']})',
+                    optionsBuilder: (value) => municipios.where((m) =>
+                        '${m['municipality']} ${m['district']}'
+                            .toLowerCase()
+                            .contains(value.text.toLowerCase())),
+                    onSelected: (m) => municipio = m,
+                    fieldViewBuilder: (context, controller, focus, submit) =>
+                        TextField(
+                      controller: controller,
+                      focusNode: focus,
+                      onChanged: (_) => municipio = null,
+                      decoration: const InputDecoration(
+                          labelText: 'Município (opcional)',
+                          prefixIcon: Icon(Icons.search)),
+                    ),
+                  ),
+                ],
+              )),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Consultar')),
+          ],
+        ),
+      );
+      if (continuar != true) return;
+      final feriados = await service.feriados(ano, municipio);
+      if (!mounted) return;
+      final confirmar = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: Text('Importar feriados — $ano'),
+                content: SizedBox(
+                    width: 420,
+                    child: SingleChildScrollView(
+                        child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                            'Estes dias serão adicionados como dias de encerramento. Datas já existentes serão preservadas.'),
+                        const SizedBox(height: 12),
+                        ...feriados.map((f) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text(
+                                '${f['date']} — ${f['name']}${f['scope'] == 'municipal' ? ' (municipal)' : ''}'))),
+                      ],
+                    ))),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Importar')),
+                ],
+              ));
+      if (confirmar != true) return;
+      final raiz = widget.unidade == null
+          ? FirebaseFirestore.instance.collection('encerramentos')
+          : FirebaseFirestore.instance
+              .collection('unidades')
+              .doc(widget.unidade!.id)
+              .collection('encerramentos');
+      final anoRef = raiz.doc(ano);
+      final registos = anoRef.collection('registos');
+      final existentes = await registos.get();
+      final idsExistentes = existentes.docs.map((doc) => doc.id).toSet();
+      final datas = existentes.docs
+          .map((d) => (d.data()['data'] as String? ?? '').split('T').first)
+          .toSet();
+      final batch = FirebaseFirestore.instance.batch();
+      var adicionados = 0;
+      for (final f in feriados) {
+        final data = DateTime.parse(f['date'] as String);
+        if (data.year.toString() != ano) {
+          throw const FormatException('Ano inválido');
+        }
+        if (idsExistentes.contains('feriado_${f['date']}') ||
+            !datas.add(f['date'] as String)) {
+          continue;
+        }
+        batch.set(registos.doc('feriado_${f['date']}'), {
+          'data': data.toIso8601String(),
+          'descricao': f['name'],
+          'motivo': 'Feriado',
+        });
+        adicionados++;
+      }
+      batch.set(anoRef, {'ano': int.parse(ano)}, SetOptions(merge: true));
+      await batch.commit();
+      if (widget.unidade != null) {
+        await invalidateCacheEncerramento(widget.unidade!.id, int.parse(ano));
+      }
+      if (!mounted) return;
+      await _carregarDiasEncerramento();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$adicionados feriados adicionados em $ano.')));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao carregar feriados: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _importando = false);
+    }
+  }
 
   @override
   void initState() {
@@ -581,6 +717,13 @@ class _DiasEncerramentoScreenState extends State<DiasEncerramentoScreen> {
                           color: Colors.blue,
                         ),
                         const Spacer(),
+                        OutlinedButton(
+                          onPressed: _importando ? null : _importarFeriados,
+                          child: Text(_importando
+                              ? 'A importar…'
+                              : 'Importar Feriados'),
+                        ),
+                        const SizedBox(width: 8),
                         ElevatedButton.icon(
                           onPressed: _adicionarDiaEncerramento,
                           icon: const Icon(Icons.add),

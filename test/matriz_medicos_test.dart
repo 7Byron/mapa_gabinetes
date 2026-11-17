@@ -271,8 +271,6 @@ void main() {
     await expectLater(find.byType(MaterialApp),
         matchesGoldenFile('previews/matriz_medicos.png'));
     for (final opcao in ['Horas']) {
-      await tester.tap(find.byKey(const ValueKey('matriz_ordenacao')));
-      await tester.pumpAndSettle();
       await tester.tap(find.text(opcao).last);
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(find.text('Dr. Nuno Florêncio')).dy,

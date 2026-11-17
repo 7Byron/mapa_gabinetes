@@ -94,7 +94,8 @@ void main() {
     expect(linhas.last[6]!.value, isA<DoubleCellValue>());
   });
 
-  test('Imagem longa mantém uma única tabela contínua', () async {
+  test('Lista longa divide-se em imagens verticais de altura limitada',
+      () async {
     final linhas = [
       for (var i = 0; i < 40; i++) linha('$i', 'Médico $i', 'MGF', 120)
     ];
@@ -108,14 +109,38 @@ void main() {
             referencia: DateTime(2026),
             semanaReferencia: DateTime(2026))
         .documento('Clínica');
-    final png = await RelatorioExportacaoService.gerarImagem(
-        dados: dados, horizontal: true, dividirEmPaineis: false);
-    final codec = await ui.instantiateImageCodec(png);
-    final imagem = (await codec.getNextFrame()).image;
-    expect(imagem.width, 2400);
-    expect(imagem.height, greaterThan(3000));
-    imagem.dispose();
-    codec.dispose();
+    final imagens = await MatrizMedicosExportacaoDados.gerarImagens(dados);
+    expect(imagens.length, greaterThan(1));
+    expect(imagens.length, lessThan(7));
+    final pdfSemProgresso = await RelatorioExportacaoService.gerarPdf(
+        dados: dados, portrait: true, centrarCelulas: true);
+    final progressos = <double>[];
+    final pdfComProgresso = await RelatorioExportacaoService.gerarPdf(
+        dados: dados,
+        portrait: true,
+        centrarCelulas: true,
+        onProgresso: (valor, mensagem) async {
+          progressos.add(valor);
+        });
+    int paginas(List<int> bytes) =>
+        RegExp(r'/Type\s*/Page\b').allMatches(latin1.decode(bytes)).length;
+    expect(paginas(pdfComProgresso), paginas(pdfSemProgresso));
+    expect(paginas(pdfComProgresso), greaterThan(1));
+    expect(progressos.length, greaterThan(2));
+    final destino = Platform.environment['MATRIZ_PAGINACAO_PREVIEW'];
+    if (destino != null) {
+      await File('$destino.png').writeAsBytes(imagens.first);
+      await File('$destino.pdf').writeAsBytes(pdfComProgresso);
+    }
+    for (final png in imagens) {
+      final codec = await ui.instantiateImageCodec(png);
+      final imagem = (await codec.getNextFrame()).image;
+      expect(imagem.width, 1600);
+      expect(imagem.height, greaterThan(imagem.width));
+      expect(imagem.height, lessThan(8192));
+      imagem.dispose();
+      codec.dispose();
+    }
   });
 
   test('PDF e imagem são gerados com o mesmo documento filtrado', () async {

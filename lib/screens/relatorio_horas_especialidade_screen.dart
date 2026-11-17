@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../widgets/exportacao_progresso.dart';
 import 'package:intl/intl.dart';
 import '../services/relatorio_exportacao_service.dart';
 import '../widgets/relatorio_exportacao_menu.dart';
@@ -365,19 +366,27 @@ class _RelatorioHorasEspecialidadeScreenState
     final imagem = formato == FormatoExportacaoRelatorio.imagem;
     setState(() => _exportando = true);
     try {
-      final data = DateFormat('yyyy-MM-dd');
-      await RelatorioExportacaoService.guardar(
-        formato: formato,
-        conteudoImagem: conteudoImagem,
-        imagemHorizontal: imagem,
-        dados: RelatorioHorasExportacaoDados(relatorio)
-            .documento(widget.unidade.nome, incluirGraficos: imagem),
-        nome:
-            'horas_${relatorio.porMedico ? 'medico' : 'especialidade'}_${data.format(relatorio.inicio)}_${data.format(relatorio.fim)}'
-            '${imagem ? '_${conteudoImagem.name}' : ''}',
-        gerarExcel: () => RelatorioHorasExcelService.gerar(
-            unidade: widget.unidade.nome, relatorio: relatorio),
-      );
+      await executarComProgressoExportacao(context, (informar) async {
+        final data = DateFormat('yyyy-MM-dd');
+        await RelatorioExportacaoService.guardar(
+          onProgresso: informar,
+          formato: formato,
+          conteudoImagem: conteudoImagem,
+          imagemHorizontal: imagem,
+          pdfPortrait: true,
+          dados: RelatorioHorasExportacaoDados(relatorio).documento(
+              widget.unidade.nome,
+              incluirGraficos:
+                  imagem || formato == FormatoExportacaoRelatorio.pdf),
+          nome:
+              'horas_${relatorio.porMedico ? 'medico' : 'especialidade'}_${data.format(relatorio.inicio)}_${data.format(relatorio.fim)}'
+              '${imagem ? '_${conteudoImagem.name}' : ''}',
+          gerarExcel: () => RelatorioHorasExcelService.gerarProgressivo(
+              onProgresso: informar,
+              unidade: widget.unidade.nome,
+              relatorio: relatorio),
+        );
+      });
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Relatório exportado.')));

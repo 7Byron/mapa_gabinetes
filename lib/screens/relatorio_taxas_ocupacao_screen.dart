@@ -1,5 +1,6 @@
 import '../services/cache_version_service.dart';
 import 'package:flutter/material.dart';
+import '../widgets/exportacao_progresso.dart';
 import 'package:intl/intl.dart';
 import '../services/relatorio_exportacao_service.dart';
 import '../services/relatorio_ocupacao_exportacao_service.dart';
@@ -159,29 +160,34 @@ class _RelatorioTaxasOcupacaoScreenState
     final imagem = formato == FormatoExportacaoRelatorio.imagem;
     setState(() => _exportando = true);
     try {
-      final data = DateFormat('yyyy-MM-dd');
-      await RelatorioExportacaoService.guardar(
-        formato: formato,
-        conteudoImagem: escolha.conteudoImagem,
-        imagemHorizontal: imagem,
-        dados: RelatorioOcupacaoExportacaoService.taxas(
-          unidade: widget.unidade.nome,
-          inicio: _inicioRelatorio!,
-          fim: _fimRelatorio!,
-          gabinetes: _gabinetes,
-          taxas: _taxas,
-        ),
-        nome:
-            'taxas_ocupacao_${data.format(_inicioRelatorio!)}_${data.format(_fimRelatorio!)}'
-            '${imagem ? '_${escolha.conteudoImagem.name}' : ''}',
-        gerarExcel: () => RelatorioTaxasExcelService.gerar(
-          unidade: widget.unidade.nome,
-          inicio: _inicioRelatorio!,
-          fim: _fimRelatorio!,
-          gabinetes: _gabinetes,
-          taxas: _taxas,
-        ),
-      );
+      await executarComProgressoExportacao(context, (informar) async {
+        final data = DateFormat('yyyy-MM-dd');
+        await RelatorioExportacaoService.guardar(
+          onProgresso: informar,
+          formato: formato,
+          conteudoImagem: escolha.conteudoImagem,
+          imagemHorizontal: imagem,
+          pdfPortrait: true,
+          dados: RelatorioOcupacaoExportacaoService.taxas(
+            unidade: widget.unidade.nome,
+            inicio: _inicioRelatorio!,
+            fim: _fimRelatorio!,
+            gabinetes: _gabinetes,
+            taxas: _taxas,
+          ),
+          nome:
+              'taxas_ocupacao_${data.format(_inicioRelatorio!)}_${data.format(_fimRelatorio!)}'
+              '${imagem ? '_${escolha.conteudoImagem.name}' : ''}',
+          gerarExcel: () => RelatorioTaxasExcelService.gerarProgressivo(
+            onProgresso: informar,
+            unidade: widget.unidade.nome,
+            inicio: _inicioRelatorio!,
+            fim: _fimRelatorio!,
+            gabinetes: _gabinetes,
+            taxas: _taxas,
+          ),
+        );
+      });
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Relatório exportado.')));

@@ -35,6 +35,8 @@ class MatrizDistribuicaoScreen extends StatefulWidget {
 
 class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
   late bool _mostrarLivres = widget.mostrarLivres;
+  // O modo visível só muda juntamente com os novos dados.
+  late bool _modoApresentado = widget.mostrarLivres;
   ClinicaConfiguracoes? _config;
   Set<DateTime> _encerramentos = {};
   List<Gabinete> _gabinetes = [];
@@ -101,7 +103,6 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
     _progresso.iniciar();
     setState(() {
       _carregando = true;
-      _grelhaPreparada = false;
       _mensagemCarregamento = 'A verificar alterações...';
       _erro = null;
     });
@@ -204,8 +205,17 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
       _progresso.parar();
       setState(() {
         _carregando = false;
-        _erro = 'Não foi possível carregar a matriz.';
+        if (_grelhaPreparada) {
+          _mostrarLivres = _modoApresentado;
+        } else {
+          _erro = 'Não foi possível carregar a matriz.';
+        }
       });
+      if (_grelhaPreparada) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Não foi possível carregar a nova matriz. Tente novamente.')));
+      }
     }
   }
 
@@ -226,6 +236,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
             config: _config!,
             encerramentos: _encerramentos)
         : ocupacao;
+    _modoApresentado = _mostrarLivres;
   }
 
   Future<void> _carregarFuncionamento(bool atualizar) async {
@@ -319,7 +330,7 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
         gabinetes: _gabinetes,
         itens: _matriz.itens,
         onEditarMedico:
-            widget.isAdmin && !_mostrarLivres ? _editarMedico : null,
+            widget.isAdmin && !_modoApresentado ? _editarMedico : null,
         gabinetesOcultos: _gabinetesOcultos,
         onOcultosChanged: (ocultos) =>
             setState(() => _gabinetesOcultos = ocultos),
@@ -327,7 +338,14 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
         ano: _referencia.year,
         zoom: _zoom,
         regrasSemGabinete: _matriz.regrasSemGabinete,
-        mostrarLivres: _mostrarLivres,
+        mostrarLivres: _modoApresentado,
+        onMostrarLivresChanged: _carregando
+            ? null
+            : (valor) {
+                if (valor == _mostrarLivres) return;
+                setState(() => _mostrarLivres = valor);
+                _carregar();
+              },
       );
 
   @override
@@ -338,25 +356,28 @@ class _MatrizDistribuicaoScreenState extends State<MatrizDistribuicaoScreen> {
             refreshColor: MatrizColors.iconeClaro,
             title: 'Matriz de Gabinetes',
             titleWidget: Row(mainAxisSize: MainAxisSize.min, children: [
-              Flexible(
-                  child: DropdownButtonHideUnderline(
-                      child: DropdownButton<bool>(
-                value: _mostrarLivres,
-                items: const [
-                  DropdownMenuItem(
-                      value: false,
-                      child: Text('Matriz de Gabinetes · Ocupação')),
-                  DropdownMenuItem(
-                      value: true, child: Text('Matriz de Gabinetes · Livre')),
+              const Flexible(
+                  child: Text('Matriz de Gabinetes',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w600))),
+              const SizedBox(width: 12),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Ocupado')),
+                  ButtonSegment(value: true, label: Text('Livre')),
                 ],
-                onChanged: _carregando
+                selected: {_mostrarLivres},
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                onSelectionChanged: _carregando
                     ? null
-                    : (valor) {
-                        if (valor == null || valor == _mostrarLivres) return;
+                    : (valores) {
+                        final valor = valores.single;
+                        if (valor == _mostrarLivres) return;
                         setState(() => _mostrarLivres = valor);
                         _carregar();
                       },
-              ))),
+              ),
               MatrizDistribuicaoAjuda(mostrarLivres: _mostrarLivres)
             ]),
             currentZoom: _zoom,

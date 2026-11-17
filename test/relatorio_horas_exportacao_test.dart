@@ -8,6 +8,7 @@ import 'package:mapa_gabinetes/models/dados_relatorio_exportacao.dart';
 import 'package:mapa_gabinetes/models/grafico_relatorio_exportacao.dart';
 import 'package:mapa_gabinetes/models/relatorio_horas_especialidade.dart';
 import 'package:mapa_gabinetes/services/relatorio_graficos_exportacao_service.dart';
+import 'package:mapa_gabinetes/services/relatorio_exportacao_service.dart';
 import 'package:mapa_gabinetes/services/relatorio_horas_exportacao_service.dart';
 import 'package:mapa_gabinetes/utils/app_theme.dart';
 
@@ -114,13 +115,74 @@ void main() {
     expect(RegExp(r'/Subtype\s*/Image\b').hasMatch(pdf), isFalse);
   });
 
+  test('Gráficos aproveitam página vertical por especialidade e por médico',
+      () async {
+    final especialidades =
+        RelatorioHorasExportacaoDados(relatorio(quantidade: 9))
+            .documento('Clínica', incluirGraficos: true);
+    final raw =
+        await RelatorioGraficosExportacaoService.gerar(especialidades.graficos);
+    expect(raw, hasLength(1));
+    final codec = await ui.instantiateImageCodec(raw.single.bytes);
+    final imagem = (await codec.getNextFrame()).image;
+    expect(imagem.height, 1500);
+    imagem.dispose();
+    codec.dispose();
+    final medicos = RelatorioHorasEspecialidade(
+      inicio: DateTime(2026, 11),
+      fim: DateTime(2026, 11, 30),
+      linhas: const [],
+      totalMedicosAtivosClinica: 10,
+      totalHorasConsultaClinica: 100,
+      medicos: [
+        for (var i = 0; i < 10; i++)
+          RelatorioHorasMedicoLinha(
+              medicoId: '$i',
+              nome: 'Médico $i',
+              especialidade: 'MGF',
+              horasConsulta: 10)
+      ],
+    );
+    final dadosMedicos = RelatorioHorasExportacaoDados(medicos)
+        .documento('Clínica', incluirGraficos: true);
+    final rawMedicos =
+        await RelatorioGraficosExportacaoService.gerar(dadosMedicos.graficos);
+    expect(rawMedicos, hasLength(2));
+    final codecMedicos = await ui.instantiateImageCodec(rawMedicos.first.bytes);
+    final imgMedicos = (await codecMedicos.getNextFrame()).image;
+    expect(imgMedicos.height, 1460);
+    imgMedicos.dispose();
+    codecMedicos.dispose();
+    for (final dados in [especialidades, dadosMedicos]) {
+      final imagens = await RelatorioExportacaoService.gerarImagensPaginadas(
+          dados,
+          conteudo: ConteudoImagemRelatorio.grafico);
+      expect(imagens.length, identical(dados, especialidades) ? 1 : 2);
+      final bytesPdf = await RelatorioExportacaoService.gerarPdf(
+          dados: dados, portrait: true);
+      final texto = latin1.decode(bytesPdf);
+      expect(RegExp(r'/Subtype\s*/Image\b').allMatches(texto).length,
+          greaterThanOrEqualTo(imagens.length));
+      final caixa = RegExp(r'/MediaBox\s*\[0\s+0\s+([\d.]+)\s+([\d.]+)\]')
+          .firstMatch(texto)!;
+      expect(double.parse(caixa.group(2)!),
+          greaterThan(double.parse(caixa.group(1)!)));
+      final destino = Platform.environment['HORAS_PAGINA_PREVIEW'];
+      if (destino != null) {
+        await File(
+                '${destino}_${identical(dados, especialidades) ? 'especialidades' : 'medicos'}.png')
+            .writeAsBytes(imagens.first);
+      }
+    }
+  });
+
   test('Gráficos incluem todas as especialidades e suportam relatório vazio',
       () async {
     final dados = RelatorioHorasExportacaoDados(relatorio(quantidade: 4))
         .documento('Clínica', incluirGraficos: true);
     final imagens =
         await RelatorioGraficosExportacaoService.gerar(dados.graficos);
-    expect(imagens.length, 2);
+    expect(imagens.length, 1);
     final png = await RelatorioHorasExportacaoService.gerarImagem(
         unidade: 'Clínica',
         relatorio: relatorio(quantidade: 4),
@@ -128,7 +190,7 @@ void main() {
         horizontal: true);
     final codec = await ui.instantiateImageCodec(png);
     final imagem = (await codec.getNextFrame()).image;
-    expect(imagem.width, 4800);
+    expect(imagem.width, 2400);
     expect(imagem.width, greaterThan(imagem.height));
     imagem.dispose();
     codec.dispose();
